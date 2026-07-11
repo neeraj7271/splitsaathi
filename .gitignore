@@ -1,0 +1,10 @@
+node_modules
+dist
+.expo
+.env
+.env.*
+coverage
+*.log
+apps/mobile/.expo
+apps/mobile/web-build
+tmp

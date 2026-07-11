@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "SplitSaathi",
+    "slug": "splitsaathi",
+    "scheme": "splitsaathi",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.splitsaathi.mobile"
+    },
+    "android": {
+      "package": "in.splitsaathi.mobile"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SplitSaathi to scan invite QR codes."
+        }
+      ],
+      "expo-notifications",
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}

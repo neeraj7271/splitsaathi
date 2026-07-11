@@ -1,0 +1,47 @@
+import 'reflect-metadata';
+import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
+import { AppModule } from './app.module';
+import { ApiConfigService } from './config/api-config.service';
+import { setupSwagger } from './swagger/setup-swagger';
+
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const config = app.get(ApiConfigService);
+
+  app.use(
+    json({
+      verify: (request: any, _response, buffer) => {
+        request.rawBody = buffer.toString('utf8');
+      }
+    })
+  );
+  app.use(
+    urlencoded({
+      extended: true,
+      verify: (request: any, _response, buffer) => {
+        request.rawBody = buffer.toString('utf8');
+      }
+    })
+  );
+
+  app.enableCors({
+    origin: true,
+    credentials: true
+  });
+  app.setGlobalPrefix('v1');
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true
+    })
+  );
+
+  setupSwagger(app);
+
+  await app.listen(config.env.PORT, '0.0.0.0');
+}
+
+void bootstrap();

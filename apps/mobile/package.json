@@ -1,0 +1,51 @@
+{
+  "name": "@splitsaathi/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "test": "jest --passWithNoTests",
+    "test:e2e": "echo \"E2E scaffold only. Configure Detox or Maestro device runners before enabling.\""
+  },
+  "dependencies": {
+    "@expo-google-fonts/inter": "^0.2.3",
+    "@expo-google-fonts/jetbrains-mono": "^0.2.3",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
+    "@expo/metro-runtime": "~4.0.1",
+    "@shopify/react-native-skia": "1.12.4",
+    "@tanstack/react-query": "^5.62.8",
+    "expo": "^52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-camera": "~16.0.18",
+    "expo-document-picker": "~13.0.3",
+    "expo-file-system": "~18.0.12",
+    "expo-font": "~13.0.4",
+    "expo-haptics": "~14.0.1",
+    "expo-linear-gradient": "~14.0.2",
+    "expo-modules-core": "~2.2.3",
+    "expo-notifications": "^0.29.14",
+    "expo-secure-store": "~14.0.1",
+    "expo-sqlite": "15.2.14",
+    "phosphor-react-native": "^2.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-qrcode-svg": "^6.3.21",
+    "react-native-reanimated": "3.19.5",
+    "react-native-svg": "15.15.5",
+    "react-native-web": "~0.19.13",
+    "victory-native": "^41.16.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@expo/cli": "^0.22.28",
+    "@testing-library/react-native": "^12.9.0",
+    "@types/react": "^18.3.17",
+    "jest-expo": "^52.0.2",
+    "metro": "^0.81.5",
+    "react-test-renderer": "18.3.1"
+  }
+}
