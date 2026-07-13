@@ -59,6 +59,7 @@ export interface GroupSummary {
   netBalanceMinor?: number;
   pendingProofCount?: number;
   participantCount?: number;
+  currentUserRole?: MembershipRole;
   updatedAt?: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, LinkSimple, UserPlus } from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -12,12 +12,12 @@ import { EmptyState } from "../components/EmptyState";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
-import { SectionHeader } from "../components/SectionHeader";
+import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { useTheme } from "../theme";
-import { GroupMode, GroupType, MembershipRole } from "../types/domain";
+import { GroupMode, GroupSummary, GroupType, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { formatSignedMoney } from "../utils/money";
@@ -31,9 +31,17 @@ const groupTypes: Array<{ label: string; value: GroupType }> = [
   { label: "Other", value: "other" }
 ];
 
+type GroupsTab = "create" | "list";
+
+const tabOptions: Array<{ label: string; value: GroupsTab }> = [
+  { label: "Create group", value: "create" },
+  { label: "Group list", value: "list" }
+];
+
 export function GroupCreateScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<GroupsTab>("list");
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GroupMode>("flat");
   const [groupType, setGroupType] = useState<GroupType>("home");
@@ -147,62 +155,37 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
         <Button label="Import CSV" variant="secondary" onPress={() => navigation.go("importExport")} />
       </View>
 
-      <View style={styles.section}>
-        <SectionHeader title="Create group" />
-        <InputField label="Group name" value={name} onChangeText={setName} placeholder="Flat 3B rent and groceries" />
-        <View style={styles.imagePicker}>
-          {groupImage ? <Image source={{ uri: groupImage.uri }} style={styles.groupImage} /> : null}
-          <Button label={groupImage ? "Change group image" : "Add group image"} variant="secondary" onPress={() => void selectGroupImage()} />
-          {groupImage ? <Button label="Remove image" variant="ghost" onPress={() => setGroupImage(null)} /> : null}
-        </View>
-        <ThemedText variant="bodyMedium">Choose a group type</ThemedText>
-        <ThemedText variant="bodySm" tone="muted">This helps organize your groups. You can change other details later.</ThemedText>
-        <GroupTypePicker
-          selected={groupType}
-          onSelect={(type) => {
-            setGroupType(type);
-            setMode(type === "home" ? "flat" : type === "other" ? "custom" : type);
-          }}
+      <SegmentedControl value={activeTab} options={tabOptions} onChange={setActiveTab} />
+
+      {activeTab === "create" ? (
+        <CreateGroupTab
+          name={name}
+          setName={setName}
+          groupType={groupType}
+          setGroupType={setGroupType}
+          setMode={setMode}
+          groupImage={groupImage}
+          selectGroupImage={selectGroupImage}
+          setGroupImage={setGroupImage}
+          createGroup={createGroup}
+          participantName={participantName}
+          setParticipantName={setParticipantName}
+          addDraftParticipant={addDraftParticipant}
+          openContactPicker={openContactPicker}
+          participants={participants}
+          setParticipants={setParticipants}
+          contactError={contactError}
         />
-        <Button label="Create group" onPress={() => createGroup.mutate()} loading={createGroup.isPending} disabled={!name.trim()} />
-
-        <DataSurface>
-          <View style={styles.formBlock}>
-            <View style={styles.formHeader}>
-              <UserPlus size={20} color={theme.colors.inkMuted} weight="duotone" />
-              <View style={styles.formHeaderText}>
-                <ThemedText variant="bodyMedium">Add people by name</ThemedText>
-                <ThemedText variant="bodySm" tone="muted">
-                  Type a name manually or pick from your phone contacts.
-                </ThemedText>
-              </View>
-            </View>
-            <InputField label="Name" value={participantName} onChangeText={setParticipantName} placeholder="e.g. Priya" />
-            <Button label="Add name" variant="secondary" onPress={addDraftParticipant} disabled={!participantName.trim()} />
-            <Button label="Add from contacts" variant="secondary" onPress={() => void openContactPicker()} />
-          </View>
-          {participants.map((participant, index) => (
-            <View key={`${participant.displayName}-${index}`} style={[styles.draftRow, { borderTopColor: theme.colors.hairline }]}>
-              <View>
-                <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
-                {participant.phoneE164 ? (
-                  <ThemedText variant="bodySm" tone="muted">
-                    {participant.phoneE164}
-                  </ThemedText>
-                ) : null}
-              </View>
-              <Pressable onPress={() => setParticipants((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-                <ThemedText variant="caption" tone="disputed">
-                  Remove
-                </ThemedText>
-              </Pressable>
-            </View>
-          ))}
-        </DataSurface>
-
-        {createGroup.error ? <InlineNotice title="Group could not be created" body={createGroup.error.message} tone="owe" /> : null}
-        {contactError ? <InlineNotice title="Contacts unavailable" body={contactError} tone="owe" /> : null}
-      </View>
+      ) : (
+        <GroupListTab
+          groupsQuery={groupsQuery}
+          onOpenGroup={(groupId) => {
+            navigation.setSelectedGroupId(groupId);
+            navigation.go("groupDetail");
+          }}
+          onCreateGroup={() => setActiveTab("create")}
+        />
+      )}
 
       <ContactPicker
         visible={contactPickerVisible}
@@ -211,41 +194,149 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
         onClose={() => setContactPickerVisible(false)}
         onConfirm={addContactsToDraft}
       />
+    </Screen>
+  );
+}
 
-      <View style={styles.section}>
-        <SectionHeader title="Manage existing" />
-        {groupsQuery.error ? <InlineNotice title="Groups could not load" body={groupsQuery.error.message} tone="owe" /> : null}
-        {groupsQuery.data?.length ? (
-          <DataSurface>
-            {groupsQuery.data.map((group) => (
-              <Pressable
-                key={group.id}
-                onPress={() => {
-                  navigation.setSelectedGroupId(group.id);
-                  navigation.go("groupDetail");
-                }}
-                style={[styles.groupRow, { borderBottomColor: theme.colors.hairline }]}
-              >
-                <UserAvatar displayName={group.name} avatarUrl={group.imageUrl} size={40} />
-                <View style={styles.groupText}>
-                  <ThemedText variant="bodyMedium">{group.name}</ThemedText>
-                  <ThemedText variant="bodySm" tone="muted">
-                    {group.groupType ? `${formatGroupType(group.groupType)} · ` : ""}{group.participantCount ?? 0} members
-                  </ThemedText>
-                </View>
-                <View style={styles.trailing}>
-                  {group.state === "archived" ? <StatusPill state="expired" /> : null}
-                  <ThemedText variant="amountSm" tone={(group.netBalanceMinor ?? 0) >= 0 ? "receive" : "owe"}>
-                    {formatSignedMoney(group.netBalanceMinor, group.baseCurrencyCode)}
-                  </ThemedText>
-                </View>
-              </Pressable>
-            ))}
-          </DataSurface>
-        ) : (
-          <EmptyState title="No groups yet" body="Create a group or import a Splitwise CSV to start." />
-        )}
+function CreateGroupTab({
+  name,
+  setName,
+  groupType,
+  setGroupType,
+  setMode,
+  groupImage,
+  selectGroupImage,
+  setGroupImage,
+  createGroup,
+  participantName,
+  setParticipantName,
+  addDraftParticipant,
+  openContactPicker,
+  participants,
+  setParticipants,
+  contactError
+}: {
+  name: string;
+  setName: (value: string) => void;
+  groupType: GroupType;
+  setGroupType: (value: GroupType) => void;
+  setMode: (value: GroupMode) => void;
+  groupImage: { uri: string; mimeType: string; fileName?: string } | null;
+  selectGroupImage: () => Promise<void>;
+  setGroupImage: (value: null) => void;
+  createGroup: { mutate: () => void; isPending: boolean; error: Error | null };
+  participantName: string;
+  setParticipantName: (value: string) => void;
+  addDraftParticipant: () => void;
+  openContactPicker: () => Promise<void>;
+  participants: Array<{ displayName: string; phoneE164?: string; role: Exclude<MembershipRole, "owner"> }>;
+  setParticipants: React.Dispatch<React.SetStateAction<Array<{ displayName: string; phoneE164?: string; role: Exclude<MembershipRole, "owner"> }>>>;
+  contactError: string | null;
+}) {
+  const theme = useTheme();
+
+  return (
+    <View style={styles.section}>
+      <InputField label="Group name" value={name} onChangeText={setName} placeholder="Flat 3B rent and groceries" />
+      <View style={styles.imagePicker}>
+        {groupImage ? <Image source={{ uri: groupImage.uri }} style={styles.groupImage} /> : null}
+        <Button label={groupImage ? "Change group image" : "Add group image"} variant="secondary" onPress={() => void selectGroupImage()} />
+        {groupImage ? <Button label="Remove image" variant="ghost" onPress={() => setGroupImage(null)} /> : null}
       </View>
+      <ThemedText variant="bodyMedium">Choose a group type</ThemedText>
+      <ThemedText variant="bodySm" tone="muted">This helps organize your groups. You can change other details later.</ThemedText>
+      <GroupTypePicker
+        selected={groupType}
+        onSelect={(type) => {
+          setGroupType(type);
+          setMode(type === "home" ? "flat" : type === "other" ? "custom" : type);
+        }}
+      />
+
+      <DataSurface>
+        <View style={styles.formBlock}>
+          <View style={styles.formHeader}>
+            <UserPlus size={20} color={theme.colors.inkMuted} weight="duotone" />
+            <View style={styles.formHeaderText}>
+              <ThemedText variant="bodyMedium">Add people by name</ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                Type a name manually or pick from your phone contacts.
+              </ThemedText>
+            </View>
+          </View>
+          <InputField label="Name" value={participantName} onChangeText={setParticipantName} placeholder="e.g. Priya" />
+          <Button label="Add name" variant="secondary" onPress={addDraftParticipant} disabled={!participantName.trim()} />
+          <Button label="Add from contacts" variant="secondary" onPress={() => void openContactPicker()} />
+        </View>
+        {participants.map((participant, index) => (
+          <View key={`${participant.displayName}-${index}`} style={[styles.draftRow, { borderTopColor: theme.colors.hairline }]}>
+            <View>
+              <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
+              {participant.phoneE164 ? (
+                <ThemedText variant="bodySm" tone="muted">
+                  {participant.phoneE164}
+                </ThemedText>
+              ) : null}
+            </View>
+            <Pressable onPress={() => setParticipants((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+              <ThemedText variant="caption" tone="disputed">
+                Remove
+              </ThemedText>
+            </Pressable>
+          </View>
+        ))}
+      </DataSurface>
+
+      <Button label="Create group" onPress={() => createGroup.mutate()} loading={createGroup.isPending} disabled={!name.trim()} />
+      {createGroup.error ? <InlineNotice title="Group could not be created" body={createGroup.error.message} tone="owe" /> : null}
+      {contactError ? <InlineNotice title="Contacts unavailable" body={contactError} tone="owe" /> : null}
+    </View>
+  );
+}
+
+function GroupListTab({
+  groupsQuery,
+  onOpenGroup,
+  onCreateGroup
+}: {
+  groupsQuery: {
+    data?: GroupSummary[];
+    error: Error | null;
+    isLoading: boolean;
+    isFetching: boolean;
+  };
+  onOpenGroup: (groupId: string) => void;
+  onCreateGroup: () => void;
+}) {
+  const theme = useTheme();
+  const groups = groupsQuery.data ?? [];
+  const canSplitByRole = groups.some((group) => group.currentUserRole != null);
+  const ownedGroups = canSplitByRole ? groups.filter((group) => group.currentUserRole === "owner") : [];
+  const sharedGroups = canSplitByRole ? groups.filter((group) => group.currentUserRole !== "owner") : groups;
+
+  return (
+    <View style={styles.section}>
+      {groupsQuery.error ? <InlineNotice title="Groups could not load" body={groupsQuery.error.message} tone="owe" /> : null}
+      {groupsQuery.isLoading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color={theme.colors.inkMuted} />
+        </View>
+      ) : groups.length ? (
+        <>
+          {ownedGroups.length ? (
+            <GroupSection title="Created by you" groups={ownedGroups} onOpenGroup={onOpenGroup} />
+          ) : null}
+          {sharedGroups.length ? (
+            <GroupSection title={canSplitByRole ? "Added by friends" : "Your groups"} groups={sharedGroups} onOpenGroup={onOpenGroup} />
+          ) : null}
+        </>
+      ) : (
+        <EmptyState
+          title="No groups yet"
+          body="Create a group or accept an invite from a friend to get started."
+          action={{ label: "Create group", onPress: onCreateGroup }}
+        />
+      )}
 
       <View style={styles.managementNotes}>
         <View style={styles.noteRow}>
@@ -261,7 +352,52 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
           </ThemedText>
         </View>
       </View>
-    </Screen>
+    </View>
+  );
+}
+
+function GroupSection({
+  title,
+  groups,
+  onOpenGroup
+}: {
+  title: string;
+  groups: GroupSummary[];
+  onOpenGroup: (groupId: string) => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <View style={styles.listSection}>
+      <ThemedText variant="bodyMedium">{title}</ThemedText>
+      <DataSurface>
+        {groups.map((group, index) => (
+          <Pressable
+            key={group.id}
+            onPress={() => onOpenGroup(group.id)}
+            style={[
+              styles.groupRow,
+              index < groups.length - 1 ? { borderBottomColor: theme.colors.hairline, borderBottomWidth: 1 } : null
+            ]}
+          >
+            <UserAvatar displayName={group.name} avatarUrl={group.imageUrl} size={40} />
+            <View style={styles.groupText}>
+              <ThemedText variant="bodyMedium">{group.name}</ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                {group.groupType ? `${formatGroupType(group.groupType)} · ` : ""}
+                {group.participantCount ?? 0} members
+              </ThemedText>
+            </View>
+            <View style={styles.trailing}>
+              {group.state === "archived" ? <StatusPill state="expired" /> : null}
+              <ThemedText variant="amountSm" tone={(group.netBalanceMinor ?? 0) >= 0 ? "receive" : "owe"}>
+                {formatSignedMoney(group.netBalanceMinor, group.baseCurrencyCode)}
+              </ThemedText>
+            </View>
+          </Pressable>
+        ))}
+      </DataSurface>
+    </View>
   );
 }
 
@@ -308,6 +444,13 @@ const styles = StyleSheet.create({
   section: {
     gap: 12
   },
+  listSection: {
+    gap: 8
+  },
+  loading: {
+    paddingVertical: 32,
+    alignItems: "center"
+  },
   formBlock: {
     gap: 12,
     padding: 14
@@ -343,7 +486,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     padding: 14,
-    borderBottomWidth: 1,
     gap: 12
   },
   groupText: {
