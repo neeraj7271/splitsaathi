@@ -2,6 +2,7 @@ import { GroupMode } from '@splitsaathi/contracts';
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 export type GroupState = 'active' | 'archived';
+export type GroupType = 'trip' | 'couple' | 'home' | 'event' | 'business' | 'other';
 
 @Entity({ name: 'groups' })
 export class GroupEntity {
@@ -22,6 +23,15 @@ export class GroupEntity {
 
   @Column({ name: 'created_by_user_id', type: 'uuid' })
   createdByUserId!: string;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  category!: string | null;
+
+  @Column({ name: 'group_type', type: 'varchar', length: 24, default: 'other' })
+  groupType!: GroupType;
+
+  @Column({ name: 'image_attachment_id', type: 'uuid', nullable: true })
+  imageAttachmentId!: string | null;
 
   @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
   archivedAt!: Date | null;

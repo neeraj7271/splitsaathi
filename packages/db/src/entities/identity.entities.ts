@@ -36,6 +36,9 @@ export class UserEntity {
   @Column({ name: 'avatar_attachment_id', type: 'uuid', nullable: true })
   avatarAttachmentId!: string | null;
 
+  @Column({ name: 'upi_vpa', type: 'text', nullable: true })
+  upiVpa!: string | null;
+
   @Column({ name: 'default_currency_code', type: 'char', length: 3, default: 'INR' })
   defaultCurrencyCode!: string;
 

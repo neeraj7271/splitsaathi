@@ -10,6 +10,12 @@ export class UserEntity {
   @Column({ name: 'display_name', type: 'varchar', length: 80 })
   displayName!: string;
 
+  @Column({ name: 'avatar_attachment_id', type: 'uuid', nullable: true })
+  avatarAttachmentId!: string | null;
+
+  @Column({ name: 'upi_vpa', type: 'varchar', length: 120, nullable: true })
+  upiVpa?: string | null;
+
   @Column({ name: 'default_currency_code', type: 'char', length: 3, default: 'INR' })
   defaultCurrencyCode!: string;
 

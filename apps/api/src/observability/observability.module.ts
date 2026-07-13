@@ -5,6 +5,7 @@ import { HealthController } from './health.controller';
 import { HttpMetricsInterceptor } from './http-metrics.interceptor';
 import { MetricsService } from './metrics.service';
 import { RequestContextMiddleware } from './request-context.middleware';
+import { RequestLoggingMiddleware } from './request-logging.middleware';
 
 @Module({
   controllers: [HealthController],
@@ -23,6 +24,6 @@ import { RequestContextMiddleware } from './request-context.middleware';
 })
 export class ObservabilityModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware, RequestLoggingMiddleware).forRoutes('*');
   }
 }

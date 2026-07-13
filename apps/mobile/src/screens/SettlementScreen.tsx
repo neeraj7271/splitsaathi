@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,13 +23,16 @@ import { useTheme } from "../theme";
 import { SettlementIntent, SettlementSuggestion } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
+import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
 
 type SettlementMode = "suggested" | "custom";
+type PaymentMethod = "cash" | "upi";
 
 export function SettlementScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<SettlementMode>("suggested");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
   const [selectedSuggestion, setSelectedSuggestion] = useState<SettlementSuggestion>();
   const [customAmount, setCustomAmount] = useState("");
   const [payerParticipantId, setPayerParticipantId] = useState("");
@@ -66,17 +69,33 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     }
   }, [groups, navigation]);
 
+  const lookups = useMemo(() => (groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined), [groupQuery.data]);
+  const suggestions = useMemo(
+    () => (suggestionsQuery.data && lookups ? enrichSettlementSuggestions(suggestionsQuery.data, lookups) : suggestionsQuery.data ?? []),
+    [lookups, suggestionsQuery.data]
+  );
+
   useEffect(() => {
-    if (suggestionsQuery.data?.[0] && !selectedSuggestion) {
-      setSelectedSuggestion(suggestionsQuery.data[0]);
+    if (suggestions[0] && !selectedSuggestion) {
+      setSelectedSuggestion(suggestions[0]);
     }
-  }, [selectedSuggestion, suggestionsQuery.data]);
+  }, [selectedSuggestion, suggestions]);
+
+  const invalidateSettlementBalances = (groupId: string) => {
+    void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    void queryClient.invalidateQueries({ queryKey: ["group", groupId] });
+    void queryClient.invalidateQueries({ queryKey: ["balances", groupId] });
+    void queryClient.invalidateQueries({ queryKey: ["settlementSuggestions", groupId] });
+    void queryClient.invalidateQueries({ queryKey: ["settlementHistory", groupId] });
+  };
 
   const createIntent = useMutation({
     mutationFn: () => {
       if (!selectedGroupId) {
         throw new Error("Select a group first");
       }
+      const payeeName =
+        mode === "custom" && lookups ? resolveParticipantDisplayName(payeeParticipantId, lookups) : undefined;
       const payload =
         mode === "suggested" && selectedSuggestion
           ? {
@@ -86,7 +105,8 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               amountMinor: selectedSuggestion.amountMinor,
               currencyCode: selectedSuggestion.currencyCode,
               suggestionId: selectedSuggestion.id,
-              payeeVpa,
+              paymentMethod,
+              payeeVpa: paymentMethod === "upi" ? payeeVpa : undefined,
               payeeName: selectedSuggestion.payeeName
             }
           : {
@@ -95,12 +115,22 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               payeeParticipantId,
               amountMinor: parseAmountToMinor(customAmount),
               currencyCode: "INR",
-              payeeVpa
+              paymentMethod,
+              payeeVpa: paymentMethod === "upi" ? payeeVpa : undefined,
+              payeeName
             };
 
       return apiClient.createSettlementIntent(payload);
     },
-    onSuccess: setIntent
+    onSuccess: (response) => {
+      setIntent(response);
+      if (response.paymentMethod === "cash" || response.state === "ledger_posted") {
+        invalidateSettlementBalances(response.groupId);
+        setSelectedSuggestion(undefined);
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["settlementHistory", response.groupId] });
+      }
+    }
   });
 
   const submitProof = useMutation({
@@ -144,8 +174,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     mutationFn: () => apiClient.confirmSettlement(intent?.id as string),
     onSuccess: (response) => {
       setIntent(response);
-      queryClient.invalidateQueries({ queryKey: ["balances", selectedGroupId] });
-      queryClient.invalidateQueries({ queryKey: ["settlementHistory", selectedGroupId] });
+      invalidateSettlementBalances(response.groupId);
     }
   });
   const reject = useMutation({
@@ -183,9 +212,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       <View style={styles.header}>
         <View>
           <ThemedText variant="caption" tone="muted">
-            UPI settlement
+            {paymentMethod === "cash" ? "Cash settlement" : "UPI settlement"}
           </ThemedText>
-          <ThemedText variant="title">Proof before posted</ThemedText>
+          <ThemedText variant="title" numberOfLines={1}>{paymentMethod === "cash" ? "Mark cash payment" : "Proof before posted"}</ThemedText>
         </View>
         {intent ? <StatusPill state={intent.state} /> : null}
       </View>
@@ -210,6 +239,11 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       {!intent ? (
         <View style={styles.section}>
           <SegmentedControl value={mode} options={[{ label: "Suggested", value: "suggested" }, { label: "Custom", value: "custom" }]} onChange={setMode} />
+          <SegmentedControl
+            value={paymentMethod}
+            options={[{ label: "Pay via UPI", value: "upi" }, { label: "Paid in cash", value: "cash" }]}
+            onChange={setPaymentMethod}
+          />
 
           {mode === "suggested" ? (
             <View style={styles.section}>
@@ -217,7 +251,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
               {suggestionsQuery.data?.length ? (
                 <DataSurface>
-                  {suggestionsQuery.data.map((suggestion) => (
+                  {suggestions.map((suggestion) => (
                     <Pressable
                       key={suggestion.id}
                       onPress={() => setSelectedSuggestion(suggestion)}
@@ -244,8 +278,13 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               ) : (
                 <EmptyState title="No suggestion" body="The backend suggestion projection has no settlement route yet." />
               )}
-              <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" />
-              <Button label="Create UPI intent" onPress={() => createIntent.mutate()} loading={createIntent.isPending} disabled={!selectedSuggestion || !payeeVpa.trim()} />
+              {paymentMethod === "upi" ? <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" /> : null}
+              <Button
+                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI intent"}
+                onPress={() => createIntent.mutate()}
+                loading={createIntent.isPending}
+                disabled={!selectedSuggestion || (paymentMethod === "upi" && !payeeVpa.trim())}
+              />
             </View>
           ) : null}
 
@@ -264,7 +303,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                     </View>
                   ))}
                   <InputField label="Amount" value={customAmount} onChangeText={setCustomAmount} keyboardType="decimal-pad" amount />
-                  <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" />
+                  {paymentMethod === "upi" ? <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" /> : null}
                   <NumericKeypad
                     onKey={(key) => {
                       if (key === "backspace") {
@@ -276,10 +315,24 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   />
                 </View>
               </DataSurface>
-              <Button label="Create UPI intent" onPress={() => createIntent.mutate()} loading={createIntent.isPending} disabled={!canCreateCustom || !payeeVpa.trim()} />
+              <Button
+                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI intent"}
+                onPress={() => createIntent.mutate()}
+                loading={createIntent.isPending}
+                disabled={!canCreateCustom || (paymentMethod === "upi" && !payeeVpa.trim())}
+              />
             </View>
           ) : null}
         </View>
+      ) : intent.paymentMethod === "cash" ? (
+        <DataSurface>
+          <View style={styles.formBlock}>
+            <ThemedText variant="bodyMedium">Cash payment recorded</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              This settlement was immediately posted to the ledger. Balances have been updated.
+            </ThemedText>
+          </View>
+        </DataSurface>
       ) : (
         <View style={styles.section}>
           <SectionHeader title="UPI handoff" />
@@ -335,7 +388,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             {historyQuery.data.map((row) => (
               <View key={row.id} style={[styles.historyRow, { borderBottomColor: theme.colors.hairline }]}>
                 <View style={styles.titleBlock}>
-                  <ThemedText variant="bodyMedium">{row.clientReference ?? row.id}</ThemedText>
+                  <ThemedText variant="bodyMedium">
+                    {lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement"}
+                  </ThemedText>
                   <ThemedText variant="bodySm" tone="muted">
                     {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
                   </ThemedText>

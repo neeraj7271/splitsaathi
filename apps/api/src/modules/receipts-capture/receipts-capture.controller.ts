@@ -2,17 +2,21 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   Inject,
   Param,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request';
 import type { CreateExpenseCommand } from '../expenses';
@@ -44,6 +48,27 @@ export class ReceiptsCaptureController {
       sizeBytes: file?.size ?? body.sizeBytes,
       buffer: file?.buffer
     });
+  }
+
+  @Public()
+  @Get('public/avatars/:id')
+  async streamPublicAvatar(@Param('id') attachmentId: string, @Res() response: Response) {
+    const content = await this.receipts.getPublicAvatarContent(attachmentId);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader('Cache-Control', 'public, max-age=3600');
+    response.send(content.buffer);
+  }
+
+  @Get('attachments/:id/content')
+  async streamAttachmentContent(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id') attachmentId: string,
+    @Res() response: Response
+  ) {
+    const content = await this.receipts.getAttachmentContent(attachmentId, currentUser.userId);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader('Cache-Control', 'private, max-age=3600');
+    response.send(content.buffer);
   }
 
   @Post('receipt-drafts')

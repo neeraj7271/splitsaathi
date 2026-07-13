@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, ForbiddenException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   AttachmentEntity,
@@ -136,6 +136,62 @@ export class ReceiptsCaptureService {
     };
     this.attachments.set(record.id, record);
     return { ...record };
+  }
+
+  async getPublicAvatarContent(attachmentId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const attachment = this.attachmentRepository
+      ? await this.attachmentRepository.findOne({ where: { id: attachmentId } })
+      : undefined;
+    const inMemory = this.attachments.get(attachmentId);
+
+    if (!attachment && !inMemory) {
+      throw new NotFoundException('Attachment not found.');
+    }
+
+    const purpose = attachment?.purpose ?? inMemory!.purpose;
+    if (purpose !== 'avatar') {
+      throw new NotFoundException('Attachment not found.');
+    }
+
+    const storageKey = attachment?.storageKey ?? inMemory!.storageKey;
+    const mimeType = attachment?.mimeType ?? inMemory!.mimeType ?? 'application/octet-stream';
+
+    if (!storageKey || !this.objectStorage?.getObjectBuffer) {
+      throw new NotFoundException('Attachment content is unavailable.');
+    }
+
+    const buffer = await this.objectStorage.getObjectBuffer(storageKey);
+    return { buffer, mimeType };
+  }
+
+  async getAttachmentContent(
+    attachmentId: string,
+    requesterUserId: string
+  ): Promise<{ buffer: Buffer; mimeType: string }> {
+    const attachment = this.attachmentRepository
+      ? await this.attachmentRepository.findOne({ where: { id: attachmentId } })
+      : undefined;
+    const inMemory = this.attachments.get(attachmentId);
+
+    if (!attachment && !inMemory) {
+      throw new NotFoundException('Attachment not found.');
+    }
+
+    const ownerUserId = attachment?.ownerUserId ?? inMemory!.uploadedBy;
+    const purpose = attachment?.purpose ?? inMemory!.purpose;
+    const storageKey = attachment?.storageKey ?? inMemory!.storageKey;
+    const mimeType = attachment?.mimeType ?? inMemory!.mimeType ?? 'application/octet-stream';
+
+    if (ownerUserId !== requesterUserId && purpose !== 'avatar') {
+      throw new ForbiddenException('You do not have access to this attachment.');
+    }
+
+    if (!storageKey || !this.objectStorage?.getObjectBuffer) {
+      throw new NotFoundException('Attachment content is unavailable.');
+    }
+
+    const buffer = await this.objectStorage.getObjectBuffer(storageKey);
+    return { buffer, mimeType };
   }
 
   async createReceiptDraft(input: {
@@ -370,7 +426,7 @@ export class ReceiptsCaptureService {
 }
 
 function normalizePurpose(purpose: string): AttachmentPurpose {
-  if (purpose === 'payment_proof' || purpose === 'avatar' || purpose === 'export') {
+  if (purpose === 'payment_proof' || purpose === 'avatar' || purpose === 'group_image' || purpose === 'export') {
     return purpose;
   }
   return 'receipt';

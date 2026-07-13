@@ -6,6 +6,7 @@ import type { OcrAnalyzeInput, OcrAnalyzeResult, OcrLineItemCandidate, OcrProvid
 export class TesseractOcrProvider implements OcrProviderPort {
   async analyzeReceipt(input: OcrAnalyzeInput): Promise<OcrAnalyzeResult> {
     const rawText = input.rawText ?? (await this.readText(input));
+    console.log('[OCR] Raw extracted text:\n', rawText);
     const items = parseReceiptLineItems(rawText);
     const confidence = items.length > 0 ? Math.min(0.92, 0.55 + items.length * 0.08) : 0.2;
     return {

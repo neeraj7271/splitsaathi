@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { AttachmentEntity } from '@splitsaathi/db';
 import request from 'supertest';
 import { ApiConfigService } from '../src/config/api-config.service';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
@@ -27,6 +28,7 @@ describe('groups endpoints', () => {
       displayName: 'Priya Shah',
       defaultCurrencyCode: 'INR',
       state: 'active',
+      avatarAttachmentId: null,
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -36,6 +38,7 @@ describe('groups endpoints', () => {
   const membershipRepository = new InMemoryRepository<GroupMembershipEntity>();
   const rolePermissionRepository = new InMemoryRepository<GroupRolePermissionEntity>();
   const inviteRepository = new InMemoryRepository<GroupInviteEntity>();
+  const attachmentRepository = new InMemoryRepository<AttachmentEntity>();
 
   class TestAuthGuard implements CanActivate {
     canActivate(context: ExecutionContext): boolean {
@@ -75,6 +78,7 @@ describe('groups endpoints', () => {
         { provide: getRepositoryToken(GroupMembershipEntity), useValue: membershipRepository },
         { provide: getRepositoryToken(GroupRolePermissionEntity), useValue: rolePermissionRepository },
         { provide: getRepositoryToken(GroupInviteEntity), useValue: inviteRepository }
+        ,{ provide: getRepositoryToken(AttachmentEntity), useValue: attachmentRepository }
       ]
     })
       .overrideGuard(JwtAuthGuard)

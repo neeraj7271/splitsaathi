@@ -7,6 +7,7 @@ export type DomainEventType =
   | 'ExpenseAdjusted'
   | 'ExpenseVoided'
   | 'SettlementIntentCreated'
+  | 'CashSettlementRecorded'
   | 'UpiIntentGenerated'
   | 'UpiAppOpened'
   | 'PaymentProofSubmitted'

@@ -1,7 +1,10 @@
 import React from "react";
 import { ScrollView, StatusBar, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../theme";
+
+const TAB_BAR_HEIGHT = 64;
 
 export function Screen({
   children,
@@ -13,13 +16,37 @@ export function Screen({
   footer?: React.ReactNode;
 }) {
   const theme = useTheme();
-  const content = <View style={[styles.content, { paddingHorizontal: theme.spacing.screen, gap: theme.spacing.sectionGap }]}>{children}</View>;
+  const insets = useSafeAreaInsets();
+
+  const paddingTop = Math.max(48, insets.top + 16);
+  const paddingBottom = Math.max(24, insets.bottom + 16);
+  const scrollBottomPadding = paddingBottom + TAB_BAR_HEIGHT;
+
+  const content = (
+    <View
+      style={[
+        styles.content,
+        {
+          paddingHorizontal: theme.spacing.screen,
+          gap: theme.spacing.sectionGap,
+          paddingTop,
+          paddingBottom
+        }
+      ]}
+    >
+      {children}
+    </View>
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
       <StatusBar barStyle={theme.mode === "dark" ? "light-content" : "dark-content"} />
       {scroll ? (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {content}
         </ScrollView>
       ) : (
@@ -34,11 +61,7 @@ const styles = StyleSheet.create({
   root: {
     flex: 1
   },
-  scroll: {
-    paddingBottom: 112
-  },
   content: {
-    paddingTop: 56,
-    paddingBottom: 24
+    flexGrow: 1
   }
 });

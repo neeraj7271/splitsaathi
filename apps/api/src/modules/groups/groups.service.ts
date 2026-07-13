@@ -8,7 +8,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MembershipRole } from '@splitsaathi/contracts';
 import { randomBytes } from 'crypto';
 import { In, Repository } from 'typeorm';
+import { AttachmentEntity } from '@splitsaathi/db';
 import { ApiConfigService } from '../../config/api-config.service';
+import { BalanceProjector } from '../ledger/balance.projector';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { AddParticipantDto } from './dto/add-participant.dto';
@@ -54,20 +56,29 @@ export class GroupsService {
     private readonly rolePermissions: Repository<GroupRolePermissionEntity>,
     @InjectRepository(GroupInviteEntity)
     private readonly invites: Repository<GroupInviteEntity>,
+    @InjectRepository(AttachmentEntity)
+    private readonly attachments: Repository<AttachmentEntity>,
     @Inject(OBLIGATION_TRANSFER_PORT)
     private readonly obligationTransferPort: ObligationTransferPort,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
-    private readonly config: ApiConfigService
+    private readonly config: ApiConfigService,
+    private readonly balanceProjector: BalanceProjector
   ) {}
 
   async createGroup(userId: string, dto: CreateGroupDto): Promise<GroupResponseDto> {
     const creator = await this.usersService.findByIdOrThrow(userId);
+    if (dto.imageAttachmentId) {
+      await this.assertGroupImageAttachment(userId, dto.imageAttachmentId);
+    }
     const group = await this.groups.save(
       this.groups.create({
         name: dto.name,
         mode: dto.mode,
         baseCurrencyCode: dto.baseCurrencyCode.toUpperCase(),
+        category: dto.category?.trim() ?? null,
+        groupType: dto.groupType,
+        imageAttachmentId: dto.imageAttachmentId ?? null,
         state: 'active',
         createdByUserId: userId,
         archivedAt: null
@@ -143,9 +154,28 @@ export class GroupsService {
       currentMemberships.map((membership) => [membership.groupId, membership])
     );
 
-    return groups.map((group) =>
-      GroupSummaryResponseDto.fromEntities(group, membershipByGroupId.get(group.id)!)
-    );
+    const countRows = await this.participants
+      .createQueryBuilder('p')
+      .select('p.group_id', 'groupId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('p.group_id IN (:...ids)', { ids: groupIds })
+      .groupBy('p.group_id')
+      .getRawMany<{ groupId: string; cnt: string }>();
+    const countByGroupId = new Map(countRows.map((row) => [row.groupId, Number(row.cnt)]));
+
+    return groups.map((group) => {
+      const membership = membershipByGroupId.get(group.id)!;
+      const participantId = membership.participantId ?? undefined;
+      const netBalanceMinor = participantId
+        ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
+        : 0;
+      return GroupSummaryResponseDto.fromEntities(
+        group,
+        membership,
+        countByGroupId.get(group.id) ?? 0,
+        netBalanceMinor
+      );
+    });
   }
 
   async getGroupForUser(userId: string, groupId: string): Promise<GroupResponseDto> {
@@ -411,6 +441,13 @@ export class GroupsService {
       throw new NotFoundException('Group not found.');
     }
     return group;
+  }
+
+  private async assertGroupImageAttachment(userId: string, attachmentId: string): Promise<void> {
+    const attachment = await this.attachments.findOne({ where: { id: attachmentId } });
+    if (!attachment || attachment.ownerUserId !== userId || attachment.purpose !== 'group_image') {
+      throw new ForbiddenException('Group image attachment is invalid.');
+    }
   }
 
   private async findUsableInviteOrThrow(token: string, enforceUsage: boolean): Promise<GroupInviteEntity> {

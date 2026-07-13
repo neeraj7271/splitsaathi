@@ -51,6 +51,18 @@ export class ConsentsService {
     return rows.map((record) => this.toRecord(record));
   }
 
+  async hasActiveConsent(userId: string, purpose: ConsentPurpose): Promise<boolean> {
+    const latest = await this.getLatestConsent(userId, purpose);
+    return latest?.status === 'granted';
+  }
+
+  async getLatestConsent(userId: string, purpose: ConsentPurpose): Promise<ConsentRecord | undefined> {
+    const records = await this.listForUser(userId);
+    return records
+      .filter((record) => record.purpose === purpose)
+      .sort((left, right) => new Date(right.recordedAt).getTime() - new Date(left.recordedAt).getTime())[0];
+  }
+
   private toRecord(record: ConsentRecordEntity): ConsentRecord {
     return {
       id: record.id,

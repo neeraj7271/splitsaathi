@@ -23,6 +23,11 @@ export function AuditRail({ entries }: { entries: AuditEntry[] }) {
                 Reason: {entry.reason}
               </ThemedText>
             ) : null}
+            {entry.changes?.map((change) => (
+              <ThemedText key={change.field} variant="bodySm" tone="muted">
+                {change.detail}
+              </ThemedText>
+            ))}
             <ThemedText variant="caption" tone="faint">
               {entry.actorName ? `${entry.actorName} - ` : ""}
               {new Date(entry.createdAt).toLocaleString()}

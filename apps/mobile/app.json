@@ -6,9 +6,6 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "in.splitsaathi.mobile"
@@ -20,6 +17,12 @@
       "expo-secure-store",
       "expo-sqlite",
       [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow SplitSaathi to find friends who already use the app."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow SplitSaathi to scan invite QR codes."
@@ -27,7 +30,9 @@
       ],
       "expo-notifications",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-web-browser"
     ]
   }
 }

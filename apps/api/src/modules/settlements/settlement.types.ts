@@ -1,5 +1,7 @@
 import type { SettlementState } from '@splitsaathi/contracts';
 
+export type SettlementPaymentMethod = 'cash' | 'upi';
+
 export interface SettlementIntentRow {
   settlementIntentId: string;
   groupId: string;
@@ -8,6 +10,7 @@ export interface SettlementIntentRow {
   amountMinor: number;
   currencyCode: string;
   note: string;
+  paymentMethod: SettlementPaymentMethod;
   state: SettlementState;
   providerReference?: string;
   upiUri?: string;
@@ -58,7 +61,8 @@ export interface CreateSettlementIntentCommand {
   payeeParticipantId: string;
   amountMinor: number;
   currencyCode?: string;
-  payeeVpa: string;
+  paymentMethod?: SettlementPaymentMethod;
+  payeeVpa?: string;
   payeeName: string;
   note?: string;
 }

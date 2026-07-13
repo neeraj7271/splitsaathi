@@ -1,4 +1,5 @@
 export type GroupMode = "flat" | "trip" | "couple" | "event" | "business" | "custom";
+export type GroupType = "trip" | "couple" | "home" | "event" | "business" | "other";
 export type MembershipRole = "owner" | "admin" | "member" | "viewer";
 export type SplitType = "equal" | "exact" | "percent" | "weight" | "itemized";
 export type SettlementState =
@@ -31,6 +32,7 @@ export interface Participant {
   displayName: string;
   phoneE164?: string;
   phoneHash?: string;
+  linkedUserId?: string;
   participantType?: "individual" | "guest" | "couple" | "household" | "subgroup";
   state?: "active" | "claimed" | "inactive";
 }
@@ -38,6 +40,7 @@ export interface Participant {
 export interface Membership {
   id: string;
   participantId: string;
+  userId?: string;
   role: MembershipRole;
   status: "active" | "inactive_locked" | "removed_zero_balance" | "transferred_obligation";
   balanceMinor?: number;
@@ -49,6 +52,10 @@ export interface GroupSummary {
   mode: GroupMode;
   baseCurrencyCode: string;
   state: "active" | "archived" | "deleted_empty";
+  category?: string | null;
+  groupType: GroupType;
+  imageAttachmentId?: string | null;
+  imageUrl?: string | null;
   netBalanceMinor?: number;
   pendingProofCount?: number;
   participantCount?: number;
@@ -82,26 +89,80 @@ export interface ExpenseRow {
   updatedAt?: string;
 }
 
+export interface ReportEnvelope<T> {
+  from: string;
+  to: string;
+  items: T[];
+}
+
+export interface MonthlyComparisonReport {
+  month: string;
+  amountMinor: string;
+  expenseCount: number;
+}
+
+export interface MemberContributionReport {
+  participantId: string;
+  displayName: string;
+  amountMinor: string;
+}
+
+export interface SettlementMethodReport {
+  method: "cash" | "upi";
+  amountMinor: string;
+  count: number;
+}
+
+export interface NetPositionReport {
+  participantId: string;
+  displayName: string;
+  currencyCode: string;
+  amountMinor: string;
+}
+
 export interface ActivityRowDto {
   id: string;
   groupId: string;
   activityType: string;
   title: string;
   body?: string;
+  actorId?: string;
   amountMinor?: number;
   currencyCode?: string;
   entityType?: string;
   entityId?: string;
   status?: SettlementState | "pending" | "confirmed" | "disputed";
+  context?: Record<string, unknown>;
   occurredAt: string;
+}
+
+export interface ExpenseExplanation {
+  expenseId: string;
+  groupId: string;
+  description: string;
+  status: "active" | "voided";
+  totalAmountMinor: number;
+  currencyCode: string;
+  formattedTotal: string;
+  splitMethod: SplitType | "mixed";
+  paidBy: Array<{ participantId: string; amountMinor: number; formattedAmount: string }>;
+  owedBy: Array<{ participantId: string; amountMinor: number; formattedAmount: string; shareType: SplitType; roundingDeltaMinor: number }>;
+  itemizedDetail?: {
+    lineItems: Array<{ label: string; amountMinor: number; participantIds: string[]; formattedAmount: string }>;
+    billAdjustments: Array<{ adjustmentType: string; label: string; amountMinor: number; allocationBasis: string; formattedAmount: string }>;
+  };
+  explanation: string;
+  snapshotVersion: number;
 }
 
 export interface AuditEntry {
   id: string;
   version?: number;
+  actorId?: string;
   actorName?: string;
   summary: string;
   reason?: string;
+  changes?: Array<{ field: string; detail: string }>;
   createdAt: string;
 }
 
@@ -124,6 +185,7 @@ export interface SettlementIntent {
   payeeParticipantId: string;
   amountMinor: number;
   currencyCode: string;
+  paymentMethod?: "cash" | "upi";
   state: SettlementState;
   upiUri?: string;
   qrPayload?: string;
@@ -162,7 +224,18 @@ export interface ExportJob {
 
 export interface StartOtpResponse {
   challengeId: string;
+  maskedDestination?: string;
+  deliveryMode?: string;
   expiresAt?: string;
+  devCode?: string;
+}
+
+export interface StartEmailOtpResponse {
+  challengeId: string;
+  deliveryMode: string;
+  expiresAt: string;
+  resendAvailableAt: string;
+  devCode?: string;
 }
 
 export interface VerifyOtpResponse {
@@ -176,4 +249,34 @@ export interface VerifyOtpResponse {
     refreshToken: string;
     expiresInSeconds: number;
   };
+  needsOnboarding?: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  defaultCurrencyCode: string;
+  state: string;
+  phoneMasked?: string;
+  avatarAttachmentId?: string | null;
+  avatarUrl?: string | null;
+  upiVpa?: string | null;
+}
+
+export type UserAppearancePreference = "system" | "light" | "dark";
+
+export interface UserPreferences {
+  biometricAuthEnabled: boolean;
+  sessionTimeoutSeconds: number;
+  appearance: UserAppearancePreference;
+  pushNotificationsEnabled: boolean;
+  emailGroupAdded: boolean;
+  emailFriendAdded: boolean;
+  emailExpenseAdded: boolean;
+  emailExpenseEdited: boolean;
+  emailExpenseComment: boolean;
+  emailExpenseDue: boolean;
+  emailPaymentReceived: boolean;
+  emailMonthlySummary: boolean;
+  emailNewsUpdates: boolean;
 }

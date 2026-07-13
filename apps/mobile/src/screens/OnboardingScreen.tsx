@@ -2,26 +2,70 @@ import React, { useEffect, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
-import { ArrowRight, Bell, Check, LinkSimple, Phone, ShieldCheck, UsersThree } from "phosphor-react-native";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
+import { Bell, Check, EnvelopeSimple, Key, LinkSimple, Phone, ShieldCheck, UsersThree } from "phosphor-react-native";
 import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client";
+import { markLoggedInBefore, hasLoggedInBefore } from "../auth/loginStore";
 import { Button } from "../components/Button";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { ThemedText } from "../components/ThemedText";
 import { registerPushIfPossible } from "../notifications/registerPush";
+import { syncDeviceContacts } from "../utils/contactDiscovery";
 import { useTheme } from "../theme";
 
-type OnboardingStep = "welcome" | "phone" | "otp" | "profile" | "consent" | "join";
+WebBrowser.maybeCompleteAuthSession();
+
+type OnboardingStep =
+  | "welcome"
+  | "phone"
+  | "otp"
+  | "emailSignup"
+  | "emailVerify"
+  | "emailLogin"
+  | "forgotPassword"
+  | "resetPassword"
+  | "profile"
+  | "consent"
+  | "join";
+
+function shouldSkipOnboarding(response: { needsOnboarding?: boolean; user: { displayName: string } }) {
+  if (response.needsOnboarding === false) {
+    return true;
+  }
+  if (response.needsOnboarding === true) {
+    return false;
+  }
+  return Boolean(response.user.displayName) && !/^User \d{4}$/.test(response.user.displayName);
+}
+
+function formatPhoneE164(phone: string) {
+  const trimmed = phone.trim();
+  if (!trimmed.startsWith("+")) {
+    return `+91${trimmed}`;
+  }
+  return trimmed;
+}
 
 export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const theme = useTheme();
   const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [returningUser, setReturningUser] = useState(false);
   const [phone, setPhone] = useState("+91");
+  const [phoneE164, setPhoneE164] = useState("");
   const [code, setCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [challengeId, setChallengeId] = useState<string>();
+  const [maskedDestination, setMaskedDestination] = useState<string>();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailChallengeId, setEmailChallengeId] = useState<string>();
+  const [otpVerified, setOtpVerified] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -32,14 +76,167 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     notifications: true,
     proofStorage: true
   });
+  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const [googleRequest, googleResponse, promptGoogle] = Google.useIdTokenAuthRequest({
+    webClientId: googleClientId
+  });
 
   const startOtp = useMutation({
-    mutationFn: () => apiClient.startOtp(phone),
-    onSuccess: (response) => {
+    mutationFn: (formattedPhone: string) => apiClient.startOtp(formattedPhone),
+    onSuccess: (response, formattedPhone) => {
+      setPhoneE164(formattedPhone);
       setChallengeId(response.challengeId);
+      setMaskedDestination(response.maskedDestination);
+      setCode("");
+      setOtpVerified(false);
+      verifyOtp.reset();
       setStep("otp");
     }
   });
+
+  const verifyOtp = useMutation({
+    mutationFn: async () => {
+      if (!challengeId) {
+        throw new Error("OTP challenge was not started.");
+      }
+      return apiClient.verifyOtp(challengeId, code.trim());
+    },
+    onSuccess: async (response) => {
+      setOtpVerified(true);
+      if (shouldSkipOnboarding(response)) {
+        await markLoggedInBefore();
+        onAuthenticated();
+        return;
+      }
+      setDisplayName(response.user.displayName.startsWith("User ") ? "" : response.user.displayName);
+      setStep("profile");
+    }
+  });
+
+  const loginWithGoogle = useMutation({
+    mutationFn: (idToken: string) => apiClient.loginWithGoogle(idToken),
+    onSuccess: async (response) => {
+      setOtpVerified(true);
+      if (shouldSkipOnboarding(response)) {
+        await markLoggedInBefore();
+        onAuthenticated();
+        return;
+      }
+      setDisplayName(response.user.displayName);
+      setStep("profile");
+    }
+  });
+
+  useEffect(() => {
+    const idToken = googleResponse?.type === "success" ? googleResponse.authentication?.idToken : undefined;
+    if (idToken) {
+      loginWithGoogle.mutate(idToken);
+    }
+  }, [googleResponse]);
+
+  const startEmailSignup = useMutation({
+    mutationFn: () => apiClient.startEmailSignup(email.trim(), password, displayName.trim() || undefined),
+    onSuccess: (response) => {
+      setEmailChallengeId(response.challengeId);
+      setEmailCode("");
+      verifyEmailSignup.reset();
+      setStep("emailVerify");
+    }
+  });
+
+  const verifyEmailSignup = useMutation({
+    mutationFn: async () => {
+      if (!emailChallengeId) throw new Error("Email verification was not started.");
+      return apiClient.verifyEmailSignup(emailChallengeId, emailCode);
+    },
+    onSuccess: async (response) => {
+      setOtpVerified(true);
+      if (shouldSkipOnboarding(response)) {
+        await markLoggedInBefore();
+        onAuthenticated();
+        return;
+      }
+      setDisplayName(response.user.displayName);
+      setStep("profile");
+    }
+  });
+
+  const loginWithEmail = useMutation({
+    mutationFn: () => apiClient.loginWithEmailPassword(email.trim(), password),
+    onSuccess: async (response) => {
+      setOtpVerified(true);
+      if (shouldSkipOnboarding(response)) {
+        await markLoggedInBefore();
+        onAuthenticated();
+        return;
+      }
+      setDisplayName(response.user.displayName);
+      setStep("profile");
+    }
+  });
+
+  const startPasswordReset = useMutation({
+    mutationFn: () => apiClient.startPasswordReset(email.trim()),
+    onSuccess: (response) => {
+      setEmailChallengeId(response.challengeId);
+      setEmailCode("");
+      resetPassword.reset();
+      setStep("resetPassword");
+    }
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: async () => {
+      if (!emailChallengeId) throw new Error("Password reset was not started.");
+      await apiClient.resetPassword(emailChallengeId, emailCode, newPassword);
+    },
+    onSuccess: () => {
+      setPassword("");
+      setNewPassword("");
+      setEmailCode("");
+      setStep("emailLogin");
+    }
+  });
+
+  const finishSetup = useMutation({
+    mutationFn: async () => {
+      if (!otpVerified) {
+        throw new Error("Verify your phone number before finishing setup.");
+      }
+      if (displayName.trim()) {
+        await apiClient.updateMe({ displayName: displayName.trim() });
+      }
+      await Promise.allSettled([
+        apiClient.recordConsent("contacts_discovery", consents.contacts),
+        apiClient.recordConsent("notification_delivery", consents.notifications),
+        apiClient.recordConsent("upi_proof_storage", consents.proofStorage)
+      ]);
+      if (consents.contacts) {
+        await syncDeviceContacts().catch(() => undefined);
+      }
+      if (consents.notifications) {
+        await registerPushIfPossible();
+      }
+      if (inviteLink.trim()) {
+        await apiClient.claimInvite(inviteLink, displayName.trim());
+      }
+    },
+    onSuccess: async () => {
+      await markLoggedInBefore();
+      onAuthenticated();
+    }
+  });
+
+  useEffect(() => {
+    hasLoggedInBefore()
+      .then((loggedInBefore) => {
+        if (loggedInBefore) {
+          setReturningUser(true);
+          setStep("phone");
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const applyUrl = (url?: string | null) => {
@@ -53,29 +250,24 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     return () => subscription.remove();
   }, []);
 
-  const verifyOtp = useMutation({
-    mutationFn: async () => {
-      if (!challengeId) {
-        throw new Error("OTP challenge was not started");
-      }
+  function sendOtp() {
+    startOtp.mutate(formatPhoneE164(phone));
+  }
 
-      const response = await apiClient.verifyOtp(challengeId, code, displayName);
-      await Promise.allSettled([
-        apiClient.recordConsent("contacts_discovery", consents.contacts),
-        apiClient.recordConsent("notification_delivery", consents.notifications),
-        apiClient.recordConsent("upi_proof_storage", consents.proofStorage)
-      ]);
-      if (consents.notifications) {
-        await registerPushIfPossible();
-      }
-      if (inviteLink.trim()) {
-        await apiClient.claimInvite(inviteLink, displayName);
-      }
+  function resendOtp() {
+    if (phoneE164) {
+      startOtp.mutate(phoneE164);
+    } else {
+      sendOtp();
+    }
+  }
 
-      return response;
-    },
-    onSuccess: onAuthenticated
-  });
+  function returnToOtpStep() {
+    setStep("otp");
+    setCode("");
+    verifyOtp.reset();
+    finishSetup.reset();
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
@@ -97,8 +289,17 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               </ThemedText>
             </View>
             <View style={styles.stack}>
-              <InlineNotice title="Phone-first account" body="Start with OTP. Contacts are optional and can be skipped." tone="confirmed" />
+              <InlineNotice title="Your choice of sign-in" body="Use phone OTP or email and password. Contacts are optional and can be skipped." tone="confirmed" />
               <Button label="Start with phone" onPress={() => setStep("phone")} />
+              <Button label="Create account with email" variant="secondary" onPress={() => setStep("emailSignup")} />
+              <Button label="Sign in with email" variant="secondary" onPress={() => setStep("emailLogin")} />
+              <Button
+                label="Continue with Google"
+                variant="secondary"
+                onPress={() => void promptGoogle()}
+                disabled={!googleClientId || !googleRequest || loginWithGoogle.isPending}
+              />
+              {loginWithGoogle.error ? <InlineNotice title="Google sign-in failed" body={loginWithGoogle.error.message} tone="owe" /> : null}
               <Button label="Join with invite" variant="secondary" onPress={() => setStep("join")} />
             </View>
           </>
@@ -106,24 +307,114 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
         {step === "phone" ? (
           <AuthPanel
-            title="Enter phone"
-            body="We use OTP for recovery and group accountability. Contact upload is not required."
+            title={returningUser ? "Welcome back" : "Enter phone"}
+            body={
+              returningUser
+                ? "Sign in with your phone number. Your profile and groups are already saved."
+                : "We use OTP for recovery and group accountability. Contact upload is not required."
+            }
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
             <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {startOtp.error ? <InlineNotice title="OTP could not start" body={startOtp.error.message} tone="owe" /> : null}
-            <Button label="Send OTP" onPress={() => startOtp.mutate()} loading={startOtp.isPending} disabled={phone.length < 8} />
+            <Button label="Send OTP" onPress={sendOtp} loading={startOtp.isPending} disabled={phone.length < 8} />
+            {returningUser ? null : <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />}
+          </AuthPanel>
+        ) : null}
+
+        {step === "emailSignup" ? (
+          <AuthPanel title="Create account" body="Verify your email, then use your password to sign in." icon={<EnvelopeSimple size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <InputField label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+            {startEmailSignup.error ? <InlineNotice title="Email signup could not start" body={startEmailSignup.error.message} tone="owe" /> : null}
+            <Button label="Send verification code" onPress={() => startEmailSignup.mutate()} loading={startEmailSignup.isPending} disabled={!email.includes("@") || password.length < 8} />
+            <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
+          </AuthPanel>
+        ) : null}
+
+        {step === "emailVerify" ? (
+          <AuthPanel title="Verify email" body={`Enter the six digit code sent to ${email.trim()}.`} icon={<ShieldCheck size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <InputField label="Verification code" value={emailCode} onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} />
+            {verifyEmailSignup.error ? <InlineNotice title="Verification failed" body={verifyEmailSignup.error.message} tone="owe" /> : null}
+            <Button label="Verify email" onPress={() => verifyEmailSignup.mutate()} loading={verifyEmailSignup.isPending} disabled={emailCode.length !== 6} />
+            <Button label="Resend code" variant="secondary" onPress={() => startEmailSignup.mutate()} loading={startEmailSignup.isPending} />
+            <Button label="Use a different email" variant="ghost" onPress={() => setStep("emailSignup")} />
+          </AuthPanel>
+        ) : null}
+
+        {step === "emailLogin" ? (
+          <AuthPanel title="Welcome back" body="Sign in with your verified email and password." icon={<Key size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <InputField label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+            {loginWithEmail.error ? <InlineNotice title="Sign in failed" body={loginWithEmail.error.message} tone="owe" /> : null}
+            <Button label="Sign in" onPress={() => loginWithEmail.mutate()} loading={loginWithEmail.isPending} disabled={!email.includes("@") || !password} />
+            <Button label="Forgot password?" variant="secondary" onPress={() => setStep("forgotPassword")} />
+            <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
+          </AuthPanel>
+        ) : null}
+
+        {step === "forgotPassword" ? (
+          <AuthPanel title="Reset password" body="We will send a verification code to your email address." icon={<EnvelopeSimple size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <InputField label="Email address" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            {startPasswordReset.error ? <InlineNotice title="Reset could not start" body={startPasswordReset.error.message} tone="owe" /> : null}
+            <Button label="Send reset code" onPress={() => startPasswordReset.mutate()} loading={startPasswordReset.isPending} disabled={!email.includes("@")} />
+            <Button label="Back to sign in" variant="ghost" onPress={() => setStep("emailLogin")} />
+          </AuthPanel>
+        ) : null}
+
+        {step === "resetPassword" ? (
+          <AuthPanel title="Choose a new password" body="Enter the code from your email and a new password. This signs out your other devices." icon={<Key size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <InputField label="Verification code" value={emailCode} onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} />
+            <InputField label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
+            {resetPassword.error ? <InlineNotice title="Password reset failed" body={resetPassword.error.message} tone="owe" /> : null}
+            <Button label="Reset password" onPress={() => resetPassword.mutate()} loading={resetPassword.isPending} disabled={emailCode.length !== 6 || newPassword.length < 8} />
+            <Button label="Send another code" variant="secondary" onPress={() => startPasswordReset.mutate()} loading={startPasswordReset.isPending} />
+            <Button label="Back to sign in" variant="ghost" onPress={() => setStep("emailLogin")} />
           </AuthPanel>
         ) : null}
 
         {step === "otp" ? (
           <AuthPanel
             title="Verify code"
-            body="Enter the six digit OTP before setting up profile and consent choices."
+            body={
+              maskedDestination
+                ? `Enter the six digit code sent to ${maskedDestination}.`
+                : "Enter the six digit OTP sent to your phone."
+            }
             icon={<ShieldCheck size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
-            <InputField label="OTP code" value={code} onChangeText={setCode} keyboardType="number-pad" maxLength={6} />
-            <Button label="Continue" onPress={() => setStep("profile")} disabled={code.length !== 6} />
+            <InputField
+              label="OTP code"
+              value={code}
+              onChangeText={(value) => {
+                setCode(value.replace(/\D/g, "").slice(0, 6));
+                if (verifyOtp.error) {
+                  verifyOtp.reset();
+                }
+              }}
+              keyboardType="number-pad"
+              maxLength={6}
+            />
+            {verifyOtp.error ? (
+              <InlineNotice title="Incorrect code" body={`${verifyOtp.error.message} Check the code and try again, or resend a new one.`} tone="owe" />
+            ) : null}
+            {startOtp.error ? <InlineNotice title="Resend failed" body={startOtp.error.message} tone="owe" /> : null}
+            <Button
+              label="Verify code"
+              onPress={() => verifyOtp.mutate()}
+              loading={verifyOtp.isPending}
+              disabled={code.length !== 6 || !challengeId}
+            />
+            <Button label="Resend code" variant="secondary" onPress={resendOtp} loading={startOtp.isPending} disabled={!phoneE164 && phone.length < 8} />
+            <Button
+              label="Change phone number"
+              variant="ghost"
+              onPress={() => {
+                setStep("phone");
+                setCode("");
+                verifyOtp.reset();
+              }}
+            />
           </AuthPanel>
         ) : null}
 
@@ -131,6 +422,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           <AuthPanel title="Profile name" body="This name appears in groups, audit history, and payment confirmations." icon={<UsersThree size={24} color={theme.colors.confirmed} weight="duotone" />}>
             <InputField label="Display name" value={displayName} onChangeText={setDisplayName} />
             <Button label="Review consent choices" onPress={() => setStep("consent")} disabled={!displayName.trim()} />
+            <Button label="Back to OTP" variant="ghost" onPress={returnToOtpStep} />
           </AuthPanel>
         ) : null}
 
@@ -149,8 +441,9 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               selected={consents.proofStorage}
               onPress={() => setConsents((value) => ({ ...value, proofStorage: !value.proofStorage }))}
             />
-            {verifyOtp.error ? <InlineNotice title="Verification failed" body={verifyOtp.error.message} tone="owe" /> : null}
-            <Button label="Finish setup" onPress={() => verifyOtp.mutate()} loading={verifyOtp.isPending} disabled={!challengeId || code.length !== 6} />
+            {finishSetup.error ? <InlineNotice title="Setup failed" body={finishSetup.error.message} tone="owe" /> : null}
+            <Button label="Finish setup" onPress={() => finishSetup.mutate()} loading={finishSetup.isPending} disabled={!otpVerified || !displayName.trim()} />
+            <Button label="Back to OTP" variant="ghost" onPress={returnToOtpStep} />
           </AuthPanel>
         ) : null}
 

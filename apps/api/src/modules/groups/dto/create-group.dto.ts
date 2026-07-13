@@ -4,6 +4,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   MaxLength,
   MinLength,
@@ -13,6 +14,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { GroupMode, GroupModes, MembershipRoles } from '@splitsaathi/contracts';
 
 const assignableRoles = MembershipRoles.filter((role) => role !== 'owner');
+const groupTypes = ['trip', 'couple', 'home', 'event', 'business', 'other'] as const;
 
 export class CreateGroupParticipantDto {
   @ApiProperty({ example: 'Rahul' })
@@ -51,6 +53,22 @@ export class CreateGroupDto {
   @IsString()
   @Length(3, 3)
   baseCurrencyCode = 'INR';
+
+  @ApiProperty({ example: 'Trip', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  category?: string;
+
+  @ApiProperty({ enum: groupTypes, default: 'other' })
+  @IsOptional()
+  @IsIn(groupTypes)
+  groupType: (typeof groupTypes)[number] = 'other';
+
+  @ApiProperty({ required: false, format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  imageAttachmentId?: string;
 
   @ApiProperty({ type: CreateGroupParticipantDto, isArray: true, default: [] })
   @IsOptional()

@@ -1,6 +1,7 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BalanceProjectorModule } from './balance-projector.module';
 import {
   AttachmentEntity,
   CaptureJobEntity,
@@ -41,6 +42,8 @@ import {
   TesseractOcrProvider
 } from '../receipts-capture';
 import { RecurringController, RecurringExpenseService, RecurringProjector, ReminderScheduleService } from '../recurring';
+import { ReportsController } from '../reports/reports.controller';
+import { ReportsService } from '../reports/reports.service';
 import {
   DevUpiIntentProvider,
   ManualPaymentGateway,
@@ -77,12 +80,12 @@ const controllers = [
   RecurringController,
   OfflineSyncController,
   ActivityController,
-  ReceiptsCaptureController
+  ReceiptsCaptureController,
+  ReportsController
 ];
 
 const sharedProviders: Provider[] = [
   JwtAuthGuard,
-  BalanceProjector,
   ExpenseProjector,
   ActivityProjector,
   SettlementProjector,
@@ -90,6 +93,7 @@ const sharedProviders: Provider[] = [
   CsvOnlyBankImportProvider,
   SetuAccountAggregatorProvider,
   RecurringProjector,
+  ReportsService,
   ExpenseAllocationService,
   FxRateService,
   ReminderScheduleService,
@@ -263,7 +267,7 @@ const exportsList = [
 ];
 
 @Module({
-  imports: [ApiConfigModule, JwtModule.register({})],
+  imports: [ApiConfigModule, JwtModule.register({}), BalanceProjectorModule],
   controllers,
   providers: [
     InMemoryEventStore,
@@ -284,7 +288,7 @@ export class FinancialLedgerModule {
     if (options.eventStore !== 'postgres') {
       return {
         module: FinancialLedgerModule,
-        imports: [ApiConfigModule, JwtModule.register({})],
+        imports: [ApiConfigModule, JwtModule.register({}), BalanceProjectorModule],
         controllers,
         providers: [
           InMemoryEventStore,
@@ -307,6 +311,7 @@ export class FinancialLedgerModule {
       imports: [
         ApiConfigModule,
         JwtModule.register({}),
+        BalanceProjectorModule,
         GroupsModule,
         TypeOrmModule.forFeature([
           EventStoreEntity,

@@ -2,16 +2,22 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { AttachmentEntity } from '@splitsaathi/db';
 import request from 'supertest';
 import { ApiConfigService } from '../src/config/api-config.service';
+import { ConsentsService } from '../src/modules/consents/consents.service';
 import { AuthController } from '../src/modules/auth/auth.controller';
-import { OTP_PROVIDER } from '../src/modules/auth/auth.constants';
+import { EMAIL_PROVIDER, OTP_PROVIDER } from '../src/modules/auth/auth.constants';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { AuthIdentityEntity } from '../src/modules/auth/entities/auth-identity.entity';
+import { EmailCredentialEntity } from '../src/modules/auth/entities/email-credential.entity';
+import { EmailOtpChallengeEntity } from '../src/modules/auth/entities/email-otp-challenge.entity';
 import { OtpChallengeEntity } from '../src/modules/auth/entities/otp-challenge.entity';
 import { RefreshSessionEntity } from '../src/modules/auth/entities/refresh-session.entity';
 import { DevOtpProvider } from '../src/modules/auth/providers/dev-otp.provider';
+import { DevEmailProvider } from '../src/modules/auth/providers/dev-email.provider';
 import { UserEntity } from '../src/modules/users/entities/user.entity';
+import { UserPreferencesEntity } from '../src/modules/users/entities/user-preferences.entity';
 import { UsersService } from '../src/modules/users/users.service';
 import { InMemoryRepository } from './support/in-memory-repository';
 
@@ -21,6 +27,10 @@ describe('auth endpoints', () => {
   const identityRepository = new InMemoryRepository<AuthIdentityEntity>();
   const challengeRepository = new InMemoryRepository<OtpChallengeEntity>();
   const refreshSessionRepository = new InMemoryRepository<RefreshSessionEntity>();
+  const emailCredentialRepository = new InMemoryRepository<EmailCredentialEntity>();
+  const emailChallengeRepository = new InMemoryRepository<EmailOtpChallengeEntity>();
+  const userPreferencesRepository = new InMemoryRepository<UserPreferencesEntity>();
+  const attachmentRepository = new InMemoryRepository<AttachmentEntity>();
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -28,6 +38,7 @@ describe('auth endpoints', () => {
     process.env.JWT_ACCESS_SECRET = 'test-access-secret-123456';
     process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-123456';
     process.env.OTP_DEV_CODE = '123456';
+    process.env.EMAIL_DEV_CODE = '123456';
     process.env.APP_PUBLIC_URL = 'http://localhost:3000';
     process.env.MOBILE_API_URL = 'http://localhost:3000';
 
@@ -38,13 +49,20 @@ describe('auth endpoints', () => {
         ApiConfigService,
         AuthService,
         UsersService,
+        { provide: ConsentsService, useValue: { listForUser: async () => [] } },
         DevOtpProvider,
+        DevEmailProvider,
         JwtService,
         { provide: OTP_PROVIDER, useExisting: DevOtpProvider },
+        { provide: EMAIL_PROVIDER, useExisting: DevEmailProvider },
         { provide: getRepositoryToken(UserEntity), useValue: userRepository },
         { provide: getRepositoryToken(AuthIdentityEntity), useValue: identityRepository },
         { provide: getRepositoryToken(OtpChallengeEntity), useValue: challengeRepository },
-        { provide: getRepositoryToken(RefreshSessionEntity), useValue: refreshSessionRepository }
+        { provide: getRepositoryToken(RefreshSessionEntity), useValue: refreshSessionRepository },
+        { provide: getRepositoryToken(EmailCredentialEntity), useValue: emailCredentialRepository },
+        { provide: getRepositoryToken(EmailOtpChallengeEntity), useValue: emailChallengeRepository },
+        { provide: getRepositoryToken(UserPreferencesEntity), useValue: userPreferencesRepository },
+        { provide: getRepositoryToken(AttachmentEntity), useValue: attachmentRepository }
       ]
     }).compile();
 
@@ -139,5 +157,36 @@ describe('auth endpoints', () => {
       .post('/v1/auth/refresh')
       .send({ refreshToken: 'not-a-real-refresh-token-with-enough-length' })
       .expect(401);
+  });
+
+  it('signs up with verified email and resets password by revoking sessions', async () => {
+    const signup = await request(app.getHttpServer())
+      .post('/v1/auth/email/signup/start')
+      .send({ email: 'priya@example.com', password: 'safe-password-123', displayName: 'Priya Shah' })
+      .expect(201);
+
+    const verified = await request(app.getHttpServer())
+      .post('/v1/auth/email/signup/verify')
+      .send({ challengeId: signup.body.challengeId, code: '123456' })
+      .expect(200);
+    expect(verified.body.tokens.refreshToken).toBeDefined();
+
+    const reset = await request(app.getHttpServer())
+      .post('/v1/auth/password/forgot')
+      .send({ email: 'priya@example.com' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/v1/auth/password/reset')
+      .send({ challengeId: reset.body.challengeId, code: '123456', password: 'new-safe-password-456' })
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: verified.body.tokens.refreshToken })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/v1/auth/email/login')
+      .send({ email: 'priya@example.com', password: 'new-safe-password-456' })
+      .expect(200);
   });
 });

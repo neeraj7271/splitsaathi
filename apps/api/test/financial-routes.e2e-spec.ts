@@ -208,6 +208,26 @@ describe('financial HTTP routes', () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.length).toBeGreaterThanOrEqual(1);
+        expect(body).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'ExpenseCreated',
+              entityType: 'expense',
+              entityId: 'route-expense-1',
+              amountMinor: 10000,
+              currencyCode: 'INR'
+            }),
+            expect.objectContaining({
+              type: 'SettlementIntentCreated',
+              entityType: 'settlement_intent',
+              amountMinor: 5000,
+              context: expect.objectContaining({
+                payerParticipantId: 'route-pb',
+                payeeParticipantId: 'route-pa'
+              })
+            })
+          ])
+        );
       });
 
     await request(app.getHttpServer())
@@ -530,6 +550,24 @@ describe('financial HTTP routes', () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.map((event: any) => event.eventType)).toEqual(['ExpenseCreated', 'ExpenseAdjusted']);
+        expect(body[1].changes).toEqual(
+          expect.arrayContaining([expect.objectContaining({ field: 'description' }), expect.objectContaining({ field: 'totalAmountMinor' })])
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get('/v1/expenses/route-expense-lifecycle/explain')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          expenseId: 'route-expense-lifecycle',
+          splitMethod: 'exact',
+          totalAmountMinor: 14000,
+          snapshotVersion: 2
+        });
+        expect(body.owedBy).toEqual(
+          expect.arrayContaining([expect.objectContaining({ participantId: 'route-lp1', amountMinor: 6000 })])
+        );
       });
 
     await request(app.getHttpServer())

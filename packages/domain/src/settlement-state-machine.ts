@@ -4,6 +4,7 @@ export type SettlementEventName =
   | 'create_intent'
   | 'generate_intent'
   | 'open_upi_app'
+  | 'record_cash'
   | 'submit_proof'
   | 'auto_match'
   | 'request_confirmation'
@@ -20,14 +21,25 @@ export type SettlementEventName =
 
 const transitions: Record<SettlementState, Partial<Record<SettlementEventName, SettlementState>>> = {
   suggested: { create_intent: 'intent_created' },
-  intent_created: { generate_intent: 'intent_generated', cancel: 'cancelled', expire: 'expired' },
-  intent_generated: {
-    open_upi_app: 'payer_opened_upi_app',
-    submit_proof: 'proof_submitted',
+  intent_created: {
+    generate_intent: 'intent_generated',
+    record_cash: 'confirmed',
     cancel: 'cancelled',
     expire: 'expired'
   },
-  payer_opened_upi_app: { submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
+  intent_generated: {
+    open_upi_app: 'payer_opened_upi_app',
+    submit_proof: 'proof_submitted',
+    request_confirmation: 'awaiting_receiver_confirmation',
+    cancel: 'cancelled',
+    expire: 'expired'
+  },
+  payer_opened_upi_app: {
+    submit_proof: 'proof_submitted',
+    request_confirmation: 'awaiting_receiver_confirmation',
+    cancel: 'cancelled',
+    expire: 'expired'
+  },
   awaiting_payment_evidence: { submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
   proof_submitted: {
     auto_match: 'auto_matched',

@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 
+import { formatActivityTitle, humanizeEventType } from "../utils/displayNames";
 import { useTheme } from "../theme";
 import { ActivityRowDto, SettlementState } from "../types/domain";
 import { formatSignedMoney } from "../utils/money";
@@ -14,12 +15,12 @@ export function ActivityRow({ item }: { item: ActivityRowDto }) {
   return (
     <View style={[styles.row, { borderBottomColor: theme.colors.hairline, paddingVertical: theme.spacing.rowVertical }]}>
       <View style={[styles.avatar, { backgroundColor: theme.colors.surfaceRaised }]}>
-        <ThemedText variant="caption">{item.title.slice(0, 1).toUpperCase()}</ThemedText>
+        <ThemedText variant="caption">{formatActivityTitle(item.title).slice(0, 1).toUpperCase()}</ThemedText>
       </View>
       <View style={styles.middle}>
-        <ThemedText variant="bodyMedium">{item.title}</ThemedText>
-        <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
-          {item.body || item.activityType}
+        <ThemedText variant="bodyMedium">{formatActivityTitle(item.title)}</ThemedText>
+        <ThemedText variant="bodySm" tone="muted" numberOfLines={2}>
+          {item.body || humanizeEventType(item.activityType)}
         </ThemedText>
       </View>
       <View style={styles.trailing}>
@@ -28,7 +29,7 @@ export function ActivityRow({ item }: { item: ActivityRowDto }) {
             {formatSignedMoney(item.amountMinor, item.currencyCode)}
           </ThemedText>
         ) : null}
-        {item.status ? <StatusPill state={item.status as SettlementState} /> : null}
+        {item.status && isSettlementStatus(item.status) ? <StatusPill state={item.status} /> : null}
       </View>
     </View>
   );
@@ -59,3 +60,26 @@ const styles = StyleSheet.create({
     maxWidth: 128
   }
 });
+
+function isSettlementStatus(status: NonNullable<ActivityRowDto["status"]>): status is SettlementState {
+  return [
+    "suggested",
+    "intent_created",
+    "intent_generated",
+    "payer_opened_upi_app",
+    "awaiting_payment_evidence",
+    "proof_submitted",
+    "auto_matched",
+    "awaiting_receiver_confirmation",
+    "confirmed",
+    "ledger_posted",
+    "expired",
+    "cancelled",
+    "disputed",
+    "rejected",
+    "partial_detected",
+    "duplicate_reference_review",
+    "reversed",
+    "refunded"
+  ].includes(status as SettlementState);
+}

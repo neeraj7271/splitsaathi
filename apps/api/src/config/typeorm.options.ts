@@ -1,6 +1,8 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AppEnv } from '@splitsaathi/config';
 import { AuthIdentityEntity } from '../modules/auth/entities/auth-identity.entity';
+import { EmailCredentialEntity } from '../modules/auth/entities/email-credential.entity';
+import { EmailOtpChallengeEntity } from '../modules/auth/entities/email-otp-challenge.entity';
 import { OtpChallengeEntity } from '../modules/auth/entities/otp-challenge.entity';
 import { RefreshSessionEntity } from '../modules/auth/entities/refresh-session.entity';
 import { GroupInviteEntity } from '../modules/groups/entities/group-invite.entity';
@@ -11,12 +13,16 @@ import { ParticipantEntity } from '../modules/groups/entities/participant.entity
 import { NotificationDeliveryEntity } from '../modules/notifications/entities/notification-delivery.entity';
 import { NotificationEntity } from '../modules/notifications/entities/notification.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
+import { UserPreferencesEntity } from '../modules/users/entities/user-preferences.entity';
 
 export const apiEntities = [
   UserEntity,
+  UserPreferencesEntity,
   AuthIdentityEntity,
   OtpChallengeEntity,
   RefreshSessionEntity,
+  EmailCredentialEntity,
+  EmailOtpChallengeEntity,
   GroupEntity,
   ParticipantEntity,
   GroupMembershipEntity,

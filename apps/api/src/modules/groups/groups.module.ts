@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AttachmentEntity } from '@splitsaathi/db';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiConfigModule } from '../../config/api-config.module';
+import { BalanceProjectorModule } from '../ledger/balance-projector.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { GroupInviteEntity } from './entities/group-invite.entity';
@@ -19,6 +21,7 @@ import { NoopObligationTransferProvider } from './providers/noop-obligation-tran
   imports: [
     ApiConfigModule,
     JwtModule.register({}),
+    BalanceProjectorModule,
     UsersModule,
     NotificationsModule,
     TypeOrmModule.forFeature([
@@ -26,7 +29,8 @@ import { NoopObligationTransferProvider } from './providers/noop-obligation-tran
       ParticipantEntity,
       GroupMembershipEntity,
       GroupRolePermissionEntity,
-      GroupInviteEntity
+      GroupInviteEntity,
+      AttachmentEntity
     ])
   ],
   controllers: [GroupsController],

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Scales } from "phosphor-react-native";
@@ -15,12 +15,18 @@ import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
+import { buildGroupDisplayLookups, enrichBalanceRows, enrichSettlementSuggestions } from "../utils/displayNames";
 
 export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const groupQuery = useQuery({
+    queryKey: ["group", selectedGroupId],
+    queryFn: () => apiClient.getGroup(selectedGroupId as string),
+    enabled: Boolean(selectedGroupId)
+  });
   const balancesQuery = useQuery({
     queryKey: ["balances", selectedGroupId],
     queryFn: () => apiClient.getBalances(selectedGroupId as string),
@@ -38,10 +44,20 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
     }
   }, [groups, navigation]);
 
+  const lookups = useMemo(() => (groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined), [groupQuery.data]);
+  const balances = useMemo(
+    () => (balancesQuery.data && lookups ? enrichBalanceRows(balancesQuery.data, lookups) : balancesQuery.data ?? []),
+    [balancesQuery.data, lookups]
+  );
+  const suggestions = useMemo(
+    () => (suggestionsQuery.data && lookups ? enrichSettlementSuggestions(suggestionsQuery.data, lookups) : suggestionsQuery.data ?? []),
+    [lookups, suggestionsQuery.data]
+  );
+
   return (
     <Screen>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTitle}>
           <ThemedText variant="caption" tone="muted">
             Explainability
           </ThemedText>
@@ -56,9 +72,9 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
 
       <View style={styles.section}>
         <SectionHeader title="Participant balances" />
-        {balancesQuery.data?.length ? (
+        {balances.length ? (
           <DataSurface>
-            {balancesQuery.data.map((balance) => (
+            {balances.map((balance) => (
               <View key={`${balance.participantId}-${balance.currencyCode}`} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
                 <View style={styles.titleBlock}>
                   <ThemedText variant="bodyMedium">{balance.displayName}</ThemedText>
@@ -80,9 +96,9 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
       <View style={styles.section}>
         <SectionHeader title="Why this payment?" />
         {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
-        {suggestionsQuery.data?.length ? (
+        {suggestions.length ? (
           <DataSurface>
-            {suggestionsQuery.data.map((suggestion) => (
+            {suggestions.map((suggestion) => (
               <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline }]}>
                 <View style={styles.suggestionHeader}>
                   <Scales size={22} color={theme.colors.confirmed} weight="duotone" />
@@ -122,6 +138,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12
+  },
+  headerTitle: {
+    flex: 1,
+    minWidth: 0
   },
   section: {
     gap: 12

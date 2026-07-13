@@ -122,7 +122,7 @@ export type SettlementConfirmationDecision =
   | 'dispute'
   | 'accept_partial';
 
-export type AttachmentPurpose = 'receipt' | 'payment_proof' | 'avatar' | 'export';
+export type AttachmentPurpose = 'receipt' | 'payment_proof' | 'avatar' | 'group_image' | 'export';
 export type ReceiptDraftSource = 'gallery' | 'camera' | 'screenshot' | 'share_sheet' | 'manual_text';
 export type ReceiptDraftState =
   | 'uploaded'

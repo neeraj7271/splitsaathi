@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { SettlementStateMachine, type LedgerPostingInput, type SettlementEventName } from '@splitsaathi/domain';
-import { LedgerService, type DomainEvent } from '../ledger';
+import { LedgerService, type DomainEvent, type NewDomainEvent } from '../ledger';
 import { SettlementProjector } from './settlement.projector';
 import { DevUpiIntentProvider, ManualPaymentGateway } from './manual-upi.providers';
 import type { GatewayPaymentStatus, PaymentGatewayPort, UpiIntentProviderPort } from './upi-provider.ports';
@@ -54,26 +54,12 @@ export class SettlementCommandService {
     const settlementIntentId = command.settlementIntentId ?? randomUUID();
     const currencyCode = command.currencyCode ?? 'INR';
     const note = command.note ?? `SplitSaathi settlement ${settlementIntentId}`;
-    const ledgerReference = `SS-${settlementIntentId.replaceAll('-', '').slice(0, 24).toUpperCase()}`;
-    const upiIntent = this.upiIntentProvider.createIntent({
-      settlementIntentId,
-      payerParticipantId: command.payerParticipantId,
-      payeeParticipantId: command.payeeParticipantId,
-      payeeVpa: command.payeeVpa,
-      payeeName: command.payeeName,
-      amountMinor: command.amountMinor,
-      currencyCode,
-      note,
-      ledgerReference
-    });
+    const paymentMethod = command.paymentMethod ?? 'upi';
+    if (paymentMethod === 'upi' && !command.payeeVpa?.trim()) {
+      throw new Error('A payee UPI ID is required for a UPI settlement.');
+    }
 
-    const events = await this.ledger.appendAndProject({
-      aggregateType: 'settlement_intent',
-      aggregateId: settlementIntentId,
-      expectedVersion: 0,
-      idempotencyKey: command.idempotencyKey,
-      idempotencyPayload: command,
-      events: [
+    const eventsToAppend: NewDomainEvent[] = [
         {
           type: 'SettlementIntentCreated',
           aggregateType: 'settlement_intent',
@@ -87,23 +73,84 @@ export class SettlementCommandService {
             payeeParticipantId: command.payeeParticipantId,
             amountMinor: command.amountMinor,
             currencyCode,
-            note
+            note,
+            paymentMethod
           },
           metadata: { command: 'create_settlement_intent' }
-        },
+        }
+      ];
+    if (paymentMethod === 'cash') {
+      eventsToAppend.push(
         {
-          type: 'UpiIntentGenerated',
+          type: 'CashSettlementRecorded',
           aggregateType: 'settlement_intent',
           aggregateId: settlementIntentId,
           groupId: command.groupId,
           actorId: command.actorId,
-          payload: {
-            settlementIntentId,
-            ...upiIntent
-          },
-          metadata: { command: 'generate_upi_intent' }
+          payload: { settlementIntentId, reason: 'Marked as paid in cash' },
+          metadata: { command: 'record_cash_settlement' }
+        },
+        {
+          type: 'SettlementLedgerPosted',
+          aggregateType: 'settlement_intent',
+          aggregateId: settlementIntentId,
+          groupId: command.groupId,
+          actorId: command.actorId,
+          payload: { settlementIntentId },
+          postings: settlementPostings(
+            {
+              settlementIntentId,
+              groupId: command.groupId,
+              payerParticipantId: command.payerParticipantId,
+              payeeParticipantId: command.payeeParticipantId,
+              amountMinor: command.amountMinor,
+              currencyCode,
+              note,
+              paymentMethod,
+              state: 'confirmed',
+              createdBy: command.actorId,
+              createdAt: '',
+              updatedAt: '',
+              proofs: [],
+              appOpenEvents: [],
+              timeline: []
+            },
+            'cash_settlement'
+          ),
+          metadata: { command: 'post_cash_settlement_ledger' }
         }
-      ]
+      );
+    } else {
+      eventsToAppend.push({
+        type: 'UpiIntentGenerated',
+        aggregateType: 'settlement_intent',
+        aggregateId: settlementIntentId,
+        groupId: command.groupId,
+        actorId: command.actorId,
+        payload: {
+          settlementIntentId,
+          ...this.upiIntentProvider.createIntent({
+            settlementIntentId,
+            payerParticipantId: command.payerParticipantId,
+            payeeParticipantId: command.payeeParticipantId,
+            payeeVpa: command.payeeVpa!,
+            payeeName: command.payeeName,
+            amountMinor: command.amountMinor,
+            currencyCode,
+            note,
+            ledgerReference: `SS-${settlementIntentId.replaceAll('-', '').slice(0, 24).toUpperCase()}`
+          })
+        },
+        metadata: { command: 'generate_upi_intent' }
+      });
+    }
+    const events = await this.ledger.appendAndProject({
+      aggregateType: 'settlement_intent',
+      aggregateId: settlementIntentId,
+      expectedVersion: 0,
+      idempotencyKey: command.idempotencyKey,
+      idempotencyPayload: command,
+      events: eventsToAppend
     });
 
     const intent = this.requireIntent(events[0].aggregateId);
@@ -135,6 +182,18 @@ export class SettlementCommandService {
             upiApp: command.upiApp
           },
           metadata: { command: 'mark_upi_opened' }
+        },
+        {
+          type: 'ReceiverConfirmationRequested',
+          aggregateType: 'settlement_intent',
+          aggregateId: command.settlementIntentId,
+          groupId: intent.groupId,
+          actorId: command.actorId,
+          payload: {
+            settlementIntentId: command.settlementIntentId,
+            reason: 'Payer reported completing the UPI handoff'
+          },
+          metadata: { command: 'request_upi_payment_confirmation' }
         }
       ]
     });

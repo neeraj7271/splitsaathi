@@ -9,7 +9,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = context.getResponse();
     const request = context.getRequest();
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
-    const message = exception instanceof Error ? exception.message : 'Unhandled error';
+    let message = exception instanceof Error ? exception.message : 'Unhandled error';
+    if (exception instanceof HttpException) {
+      const responseBody = exception.getResponse() as any;
+      if (responseBody && typeof responseBody === 'object' && responseBody.message) {
+        message = Array.isArray(responseBody.message) 
+          ? responseBody.message.join(', ') 
+          : responseBody.message;
+      }
+    }
+
     this.logger.error(
       JSON.stringify({
         requestId: request.requestId,

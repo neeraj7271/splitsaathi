@@ -4,19 +4,30 @@ import {
   BalanceRow,
   ExportJob,
   ExpenseRow,
+  ExpenseExplanation,
   GroupDetail,
   GroupMode,
+  GroupType,
   GroupSummary,
   ImportJob,
   MembershipRole,
+  MemberContributionReport,
+  MonthlyComparisonReport,
+  NetPositionReport,
   RecurringSchedule,
+  ReportEnvelope,
+  SettlementMethodReport,
   SettlementIntent,
   SettlementSuggestion,
+  StartEmailOtpResponse,
   StartOtpResponse,
+  UserPreferences,
+  UserProfile,
   VerifyOtpResponse
 } from "../types/domain";
 import { createIdempotencyKey } from "../utils/idempotency";
-import { getAccessToken, getRefreshToken, setTokens } from "../auth/tokenStore";
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "../auth/tokenStore";
+import { logApiConfig, logApiError, logApiRequest, logApiResponse } from "./debugLog";
 
 const DEFAULT_API_URL = "http://localhost:3000";
 
@@ -43,7 +54,10 @@ type RequestOptions = {
 export interface CreateGroupRequest {
   name: string;
   mode: GroupMode;
+  groupType: GroupType;
+  imageAttachmentId?: string;
   baseCurrencyCode: string;
+  category?: string;
   participants: Array<{
     displayName: string;
     phoneE164?: string;
@@ -126,6 +140,7 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     payeeParticipantId: row.payeeParticipantId,
     amountMinor: row.amountMinor,
     currencyCode: row.currencyCode,
+    paymentMethod: row.paymentMethod,
     state: row.state,
     upiUri: row.upiUri,
     qrPayload: row.qrPayload,
@@ -177,6 +192,7 @@ export class SplitSaathiApiClient {
 
   constructor(baseUrl = process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    logApiConfig(this.baseUrl);
   }
 
   async startOtp(phoneE164: string) {
@@ -198,6 +214,60 @@ export class SplitSaathiApiClient {
     return response;
   }
 
+  async startEmailSignup(email: string, password: string, displayName?: string) {
+    return this.request<StartEmailOtpResponse>("/v1/auth/email/signup/start", {
+      method: "POST",
+      body: { email, password, displayName },
+      skipAuth: true
+    });
+  }
+
+  async verifyEmailSignup(challengeId: string, code: string) {
+    const response = await this.request<VerifyOtpResponse>("/v1/auth/email/signup/verify", {
+      method: "POST",
+      body: { challengeId, code },
+      skipAuth: true
+    });
+    await setTokens(response.tokens.accessToken, response.tokens.refreshToken);
+    return response;
+  }
+
+  async loginWithEmailPassword(email: string, password: string) {
+    const response = await this.request<VerifyOtpResponse>("/v1/auth/email/login", {
+      method: "POST",
+      body: { email, password },
+      skipAuth: true
+    });
+    await setTokens(response.tokens.accessToken, response.tokens.refreshToken);
+    return response;
+  }
+
+  async loginWithGoogle(idToken: string) {
+    const response = await this.request<VerifyOtpResponse>("/v1/auth/google", {
+      method: "POST",
+      body: { idToken },
+      skipAuth: true
+    });
+    await setTokens(response.tokens.accessToken, response.tokens.refreshToken);
+    return response;
+  }
+
+  async startPasswordReset(email: string) {
+    return this.request<StartEmailOtpResponse>("/v1/auth/password/forgot", {
+      method: "POST",
+      body: { email },
+      skipAuth: true
+    });
+  }
+
+  async resetPassword(challengeId: string, code: string, password: string) {
+    return this.request<void>("/v1/auth/password/reset", {
+      method: "POST",
+      body: { challengeId, code, password },
+      skipAuth: true
+    });
+  }
+
   async refresh() {
     const refreshToken = await getRefreshToken();
     if (!refreshToken) {
@@ -215,15 +285,100 @@ export class SplitSaathiApiClient {
     return response;
   }
 
-  async recordConsent(purpose: "contacts_discovery" | "receipt_upload" | "upi_proof_storage" | "notification_delivery", granted: boolean) {
+  async logout() {
+    const refreshToken = await getRefreshToken();
+    try {
+      await this.request<void>("/v1/auth/logout", {
+        method: "POST",
+        body: refreshToken ? { refreshToken } : {}
+      });
+    } catch {
+      // Local session is still cleared even if the server revoke fails.
+    }
+    await clearTokens();
+  }
+
+  resolveUrl(path?: string | null) {
+    if (!path) {
+      return null;
+    }
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      return path;
+    }
+    return `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+
+  async getMe() {
+    return this.request<UserProfile>("/v1/users/me");
+  }
+
+  async updateMe(input: { displayName?: string; avatarAttachmentId?: string | null; upiVpa?: string | null }) {
+    return this.request<UserProfile>("/v1/users/me", {
+      method: "PATCH",
+      body: input
+    });
+  }
+
+  async getPreferences() {
+    return this.request<UserPreferences>("/v1/users/me/preferences");
+  }
+
+  async updatePreferences(input: Partial<UserPreferences>) {
+    return this.request<UserPreferences>("/v1/users/me/preferences", {
+      method: "PATCH",
+      body: input
+    });
+  }
+
+  async uploadAvatar(file: { uri: string; mimeType: string; name?: string }) {
+    const formData = new FormData();
+    formData.append("purpose", "avatar");
+    formData.append("file", {
+      uri: file.uri,
+      name: file.name ?? "avatar.jpg",
+      type: file.mimeType
+    } as unknown as Blob);
+
+    return this.request<{ id: string }>("/v1/attachments", {
+      method: "POST",
+      formData
+    });
+  }
+
+  async recordConsent(purpose: "contacts_discovery" | "receipt_upload" | "upi_proof_storage" | "notification_delivery", granted: boolean, source: "onboarding" | "settings" = "onboarding") {
     return this.request<{ id: string }>("/v1/consents", {
       method: "POST",
       body: {
         purpose,
         status: granted ? "granted" : "revoked",
-        source: "onboarding"
+        source
       }
     });
+  }
+
+  async listConsents() {
+    return this.request<Array<{ id: string; purpose: string; status: "granted" | "revoked"; recordedAt: string }>>("/v1/consents");
+  }
+
+  async importContacts(contacts: Array<{ phoneHash: string; displayName?: string }>) {
+    return this.request<{ importedCount: number; matchedOnSplitSaathi: number }>("/v1/contacts/import", {
+      method: "POST",
+      body: { contacts }
+    });
+  }
+
+  async listContacts() {
+    return this.request<
+      Array<{
+        id: string;
+        phoneHash: string;
+        displayName?: string | null;
+        source: string;
+        onSplitSaathi: boolean;
+        matchedUserId?: string | null;
+        matchedDisplayName?: string | null;
+      }>
+    >("/v1/contacts");
   }
 
   async registerDeviceInstallation(payload: { platform: "ios" | "android"; appVersion?: string; pushToken?: string }) {
@@ -344,11 +499,19 @@ export class SplitSaathiApiClient {
     return rows.map((row) => ({
       id: row.eventId ?? row.id,
       version: row.version,
-      actorName: row.actorId,
-      summary: row.eventType ?? row.summary,
+      actorId: row.actorId,
+      actorName: row.actorName ?? row.actorDisplayName,
+      summary: row.eventType ?? row.summary ?? "Update",
       reason: row.reason,
+      changes: Array.isArray(row.changes)
+        ? row.changes.map((change: Record<string, any>) => ({ field: String(change.field), detail: String(change.detail) }))
+        : undefined,
       createdAt: row.occurredAt ?? row.createdAt
     }));
+  }
+
+  async explainExpense(expenseId: string) {
+    return this.request<ExpenseExplanation>(`/v1/expenses/${expenseId}/explain`);
   }
 
   async getGroupActivity(groupId: string) {
@@ -359,7 +522,13 @@ export class SplitSaathiApiClient {
       activityType: row.activityType ?? row.type,
       title: row.title,
       body: row.body,
-      entityId: row.aggregateId,
+      actorId: row.actorId,
+      amountMinor: row.amountMinor,
+      currencyCode: row.currencyCode,
+      entityType: row.entityType ?? row.aggregateType,
+      entityId: row.entityId ?? row.aggregateId,
+      status: row.status,
+      context: row.context,
       occurredAt: row.occurredAt
     }));
   }
@@ -368,7 +537,7 @@ export class SplitSaathiApiClient {
     const summary = await this.request<{ balances: Array<Record<string, any>> }>(`/v1/groups/${groupId}/balances`);
     return summary.balances.map((row) => ({
       participantId: row.participantId,
-      displayName: row.displayName ?? row.participantId,
+      displayName: row.displayName ?? "",
       currencyCode: row.currencyCode,
       balanceMinor: row.balanceMinor ?? row.amountMinor,
       explanation: row.explanation
@@ -381,13 +550,29 @@ export class SplitSaathiApiClient {
       id: row.id ?? `${groupId}:${index}:${row.payerParticipantId}:${row.payeeParticipantId}`,
       groupId,
       payerParticipantId: row.payerParticipantId,
-      payerName: row.payerName ?? row.payerParticipantId,
+      payerName: row.payerName ?? "",
       payeeParticipantId: row.payeeParticipantId,
-      payeeName: row.payeeName ?? row.payeeParticipantId,
+      payeeName: row.payeeName ?? "",
       amountMinor: row.amountMinor,
       currencyCode: row.currencyCode,
       explanation: row.explanation
     }));
+  }
+
+  async getMonthlyComparisonReport(groupId: string, range: { from: string; to: string }) {
+    return this.request<ReportEnvelope<MonthlyComparisonReport>>(`/v1/groups/${groupId}/reports/monthly-comparison?${toQuery(range)}`);
+  }
+
+  async getMemberContributionsReport(groupId: string, range: { from: string; to: string }) {
+    return this.request<ReportEnvelope<MemberContributionReport>>(`/v1/groups/${groupId}/reports/member-contributions?${toQuery(range)}`);
+  }
+
+  async getSettlementMethodsReport(groupId: string, range: { from: string; to: string }) {
+    return this.request<ReportEnvelope<SettlementMethodReport>>(`/v1/groups/${groupId}/reports/settlement-methods?${toQuery(range)}`);
+  }
+
+  async getNetPositionReport(groupId: string, range: { from: string; to: string }) {
+    return this.request<ReportEnvelope<NetPositionReport>>(`/v1/groups/${groupId}/reports/net-position?${toQuery(range)}`);
   }
 
   async createSettlementIntent(payload: {
@@ -398,6 +583,7 @@ export class SplitSaathiApiClient {
     currencyCode: string;
     suggestionId?: string;
     preferredUpiApp?: string;
+    paymentMethod?: "cash" | "upi";
     payeeVpa?: string;
     payeeName?: string;
   }) {
@@ -405,7 +591,6 @@ export class SplitSaathiApiClient {
       method: "POST",
       body: {
         ...payload,
-        payeeVpa: payload.payeeVpa ?? `${payload.payeeParticipantId}@upi`,
         payeeName: payload.payeeName ?? payload.payeeParticipantId
       },
       idempotencyKey: createIdempotencyKey("settlement.intent")
@@ -478,7 +663,7 @@ export class SplitSaathiApiClient {
     return rows.map(mapSettlementIntent);
   }
 
-  async uploadAttachment(file: { uri: string; name: string; type: string }, purpose: "receipt" | "payment_proof" | "avatar" | "export") {
+  async uploadAttachment(file: { uri: string; name: string; type: string }, purpose: "receipt" | "payment_proof" | "avatar" | "group_image" | "export") {
     const formData = new FormData();
     formData.append("purpose", purpose);
     formData.append("file", file as unknown as Blob);
@@ -628,6 +813,10 @@ export class SplitSaathiApiClient {
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const method = options.method ?? "GET";
+    const startedAt = Date.now();
+    const requestPayload = options.formData ?? options.body;
+    logApiRequest(method, path, requestPayload);
+
     const headers: Record<string, string> = {};
 
     if (!options.formData) {
@@ -643,13 +832,20 @@ export class SplitSaathiApiClient {
       }
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: options.formData ?? (options.body ? JSON.stringify(options.body) : undefined)
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: options.formData ?? (options.body ? JSON.stringify(options.body) : undefined)
+      });
+    } catch (error) {
+      logApiError(method, path, Date.now() - startedAt, error);
+      throw error;
+    }
 
     if (response.status === 401 && options.retryOnUnauthorized !== false && !options.skipAuth) {
+      logApiResponse(method, path, response.status, Date.now() - startedAt, { message: "Refreshing access token" });
       await this.refresh();
       return this.request<T>(path, { ...options, retryOnUnauthorized: false });
     }
@@ -662,14 +858,20 @@ export class SplitSaathiApiClient {
         typeof payload === "object" && payload && "message" in payload
           ? String((payload as { message: unknown }).message)
           : `Request failed with status ${response.status}`;
+      logApiError(method, path, Date.now() - startedAt, new ApiError(response.status, message, payload));
       throw new ApiError(response.status, message, payload);
     }
 
+    logApiResponse(method, path, response.status, Date.now() - startedAt, payload);
     return payload as T;
   }
 }
 
 export const apiClient = new SplitSaathiApiClient();
+
+function toQuery(values: Record<string, string>) {
+  return new URLSearchParams(values).toString();
+}
 
 export function extractInviteToken(tokenOrUrl: string) {
   const trimmed = tokenOrUrl.trim();

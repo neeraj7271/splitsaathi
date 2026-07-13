@@ -8,7 +8,13 @@ export type AppRoute =
   | "audit"
   | "recurring"
   | "importExport"
-  | "offline";
+  | "offline"
+  | "profile"
+  | "settings"
+  | "securitySettings"
+  | "notificationSettings"
+  | "appearanceSettings"
+  | "contactsSettings";
 
 export interface AppNavigation {
   route: AppRoute;
@@ -17,4 +23,5 @@ export interface AppNavigation {
   setSelectedGroupId: (groupId?: string) => void;
   setSelectedExpenseId: (expenseId?: string) => void;
   go: (route: AppRoute) => void;
+  signOut: () => void;
 }

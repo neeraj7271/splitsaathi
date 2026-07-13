@@ -20,6 +20,8 @@ function transitionForEvent(type: string): SettlementEventName | undefined {
       return 'generate_intent';
     case 'UpiAppOpened':
       return 'open_upi_app';
+    case 'CashSettlementRecorded':
+      return 'record_cash';
     case 'PaymentProofSubmitted':
       return 'submit_proof';
     case 'PaymentAutoMatched':
@@ -61,6 +63,7 @@ export class SettlementProjector implements Projector {
   apply(event: DomainEvent): void {
     if (
       !event.type.startsWith('Settlement') &&
+      !event.type.startsWith('Cash') &&
       !event.type.includes('Payment') &&
       !event.type.includes('Upi') &&
       !event.type.includes('Receiver')
@@ -77,6 +80,7 @@ export class SettlementProjector implements Projector {
         amountMinor: number;
         currencyCode: string;
         note: string;
+        paymentMethod?: 'cash' | 'upi';
       };
       const state = this.machine.transition('suggested', 'create_intent');
       const row: SettlementIntentRow = {
@@ -87,6 +91,7 @@ export class SettlementProjector implements Projector {
         amountMinor: payload.amountMinor,
         currencyCode: payload.currencyCode,
         note: payload.note,
+        paymentMethod: payload.paymentMethod ?? 'upi',
         state,
         createdBy: event.actorId ?? 'system',
         createdAt: event.occurredAt,

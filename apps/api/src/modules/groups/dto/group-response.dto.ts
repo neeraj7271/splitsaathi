@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { GroupInviteEntity } from '../entities/group-invite.entity';
 import { GroupMembershipEntity } from '../entities/group-membership.entity';
 import { GroupEntity } from '../entities/group.entity';
@@ -85,6 +85,18 @@ export class GroupResponseDto {
   @ApiProperty({ format: 'uuid' })
   createdByUserId!: string;
 
+  @ApiPropertyOptional()
+  category!: string | null;
+
+  @ApiProperty()
+  groupType!: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  imageAttachmentId!: string | null;
+
+  @ApiPropertyOptional()
+  imageUrl!: string | null;
+
   @ApiProperty({ nullable: true })
   archivedAt!: string | null;
 
@@ -106,6 +118,10 @@ export class GroupResponseDto {
       baseCurrencyCode: group.baseCurrencyCode,
       state: group.state,
       createdByUserId: group.createdByUserId,
+      category: group.category ?? null,
+      groupType: group.groupType,
+      imageAttachmentId: group.imageAttachmentId ?? null,
+      imageUrl: group.imageAttachmentId ? `/v1/attachments/${group.imageAttachmentId}/content` : null,
       archivedAt: toIso(group.archivedAt),
       participants: participants.map(ParticipantResponseDto.fromEntity),
       memberships: memberships.map(MembershipResponseDto.fromEntity)
@@ -132,14 +148,43 @@ export class GroupSummaryResponseDto {
   @ApiProperty()
   currentUserRole!: string;
 
-  static fromEntities(group: GroupEntity, membership: GroupMembershipEntity): GroupSummaryResponseDto {
+  @ApiProperty()
+  participantCount!: number;
+
+  @ApiPropertyOptional()
+  category!: string | null;
+
+  @ApiProperty()
+  groupType!: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  imageAttachmentId!: string | null;
+
+  @ApiPropertyOptional()
+  imageUrl!: string | null;
+
+  @ApiPropertyOptional({ description: "Current user's net balance in this group (positive = owed money, negative = owes money)" })
+  netBalanceMinor!: number;
+
+  static fromEntities(
+    group: GroupEntity,
+    membership: GroupMembershipEntity,
+    participantCount = 0,
+    netBalanceMinor = 0
+  ): GroupSummaryResponseDto {
     return {
       id: group.id,
       name: group.name,
       mode: group.mode,
       baseCurrencyCode: group.baseCurrencyCode,
       state: group.state,
-      currentUserRole: membership.role
+      currentUserRole: membership.role,
+      participantCount,
+      category: group.category ?? null,
+      groupType: group.groupType,
+      imageAttachmentId: group.imageAttachmentId ?? null,
+      imageUrl: group.imageAttachmentId ? `/v1/attachments/${group.imageAttachmentId}/content` : null,
+      netBalanceMinor
     };
   }
 }

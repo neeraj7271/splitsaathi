@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Inject, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Inject, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -7,6 +7,63 @@ import { ExpenseProjector } from '../ledger';
 import { FINANCIAL_AUTHORIZATION, type FinancialAuthorizationPort } from '../ledger/financial-authorization';
 import { ExpenseCommandService } from './expense-command.service';
 import type { CreateExpenseCommand, ReviseExpenseCommand, VoidExpenseCommand } from './expense.types';
+
+function formatMinor(amountMinor: number, currencyCode: string): string {
+  return `${currencyCode} ${(amountMinor / 100).toFixed(2)}`;
+}
+
+function explainExpense(expense: ReturnType<ExpenseProjector['getExpense']>) {
+  if (!expense) {
+    throw new NotFoundException('Expense not found.');
+  }
+  const splitTypes = [...new Set(expense.shares.map((share) => share.shareType))];
+  const splitMethod = splitTypes.length === 1 ? splitTypes[0] : 'mixed';
+  const paidBy = expense.payers.map((payer) => ({
+    participantId: payer.participantId,
+    amountMinor: payer.amountMinor,
+    formattedAmount: formatMinor(payer.amountMinor, expense.currencyCode)
+  }));
+  const owedBy = expense.shares.map((share) => ({
+    participantId: share.participantId,
+    amountMinor: share.amountMinor,
+    formattedAmount: formatMinor(share.amountMinor, expense.currencyCode),
+    shareType: share.shareType,
+    roundingDeltaMinor: share.roundingDeltaMinor
+  }));
+  const methodDetail =
+    splitMethod === 'equal'
+      ? `Split equally between ${owedBy.length} participants; any minor-unit remainder is recorded in each participant's rounding delta.`
+      : splitMethod === 'exact'
+        ? 'Each participant owes the exact amount recorded in the expense snapshot.'
+        : splitMethod === 'weight'
+          ? 'Each participant owes the deterministic weighted allocation recorded in the expense snapshot.'
+          : splitMethod === 'itemized'
+            ? 'Each participant owes their allocated line items and bill adjustments from the expense snapshot.'
+            : 'The recorded expense snapshot contains the final allocation for each participant.';
+  const itemizedDetail =
+    splitMethod === 'itemized'
+      ? {
+          lineItems: expense.lineItems.map((item) => ({ ...item, formattedAmount: formatMinor(item.amountMinor, expense.currencyCode) })),
+          billAdjustments: expense.billAdjustments.map((adjustment) => ({ ...adjustment, formattedAmount: formatMinor(adjustment.amountMinor, expense.currencyCode) }))
+        }
+      : undefined;
+
+  return {
+    expenseId: expense.expenseId,
+    groupId: expense.groupId,
+    description: expense.description,
+    status: expense.status,
+    totalAmountMinor: expense.totalAmountMinor,
+    currencyCode: expense.currencyCode,
+    formattedTotal: formatMinor(expense.totalAmountMinor, expense.currencyCode),
+    splitMethod,
+    paidBy,
+    owedBy,
+    itemizedDetail,
+    explanation: `${expense.description} totals ${formatMinor(expense.totalAmountMinor, expense.currencyCode)}. ${methodDetail}`,
+    snapshotVersion: expense.version
+  };
+}
 
 @ApiTags('expenses')
 @ApiBearerAuth()
@@ -114,6 +171,19 @@ export class ExpensesController {
       await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
     }
     return this.expenses.listExpenseHistory(expenseId);
+  }
+
+  @Get('expenses/:expenseId/explain')
+  async explain(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('expenseId') expenseId: string
+  ): Promise<ReturnType<typeof explainExpense>> {
+    const expense = this.expenses.getExpense(expenseId);
+    if (!expense) {
+      throw new NotFoundException('Expense not found.');
+    }
+    await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
+    return explainExpense(expense);
   }
 
   private requireIdempotencyKey(headerValue: string | undefined, body: unknown): string {

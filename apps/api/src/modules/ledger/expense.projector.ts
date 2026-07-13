@@ -57,8 +57,16 @@ export interface ExpenseVersionRow {
   actorId?: string;
   occurredAt: string;
   reason?: string;
+  changes: ExpenseChange[];
   before?: ExpenseProjectionRow;
   after?: ExpenseProjectionRow;
+}
+
+export interface ExpenseChange {
+  field: string;
+  before?: unknown;
+  after?: unknown;
+  detail: string;
 }
 
 type ExpenseSnapshotPayload = Omit<
@@ -74,6 +82,43 @@ function cloneExpense(row: ExpenseProjectionRow): ExpenseProjectionRow {
     lineItems: row.lineItems.map((item) => ({ ...item, participantIds: [...item.participantIds] })),
     billAdjustments: row.billAdjustments.map((adjustment) => ({ ...adjustment }))
   };
+}
+
+function equivalent(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function describeValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `${value.length} record${value.length === 1 ? '' : 's'}`;
+  }
+  return String(value ?? 'none');
+}
+
+function expenseChanges(before: ExpenseProjectionRow | undefined, after: ExpenseProjectionRow): ExpenseChange[] {
+  if (!before) {
+    return [{ field: 'expense', after: after.description, detail: `Created "${after.description}" for ${after.totalAmountMinor} ${after.currencyCode}.` }];
+  }
+  const fields: Array<keyof Pick<ExpenseProjectionRow, 'description' | 'category' | 'expenseDate' | 'currencyCode' | 'totalAmountMinor' | 'payers' | 'shares' | 'lineItems' | 'billAdjustments' | 'status'>> = [
+    'description',
+    'category',
+    'expenseDate',
+    'currencyCode',
+    'totalAmountMinor',
+    'payers',
+    'shares',
+    'lineItems',
+    'billAdjustments',
+    'status'
+  ];
+  return fields
+    .filter((field) => !equivalent(before[field], after[field]))
+    .map((field) => ({
+      field,
+      before: before[field],
+      after: after[field],
+      detail: `${field} changed from ${describeValue(before[field])} to ${describeValue(after[field])}.`
+    }));
 }
 
 export class ExpenseProjector implements Projector {
@@ -108,6 +153,7 @@ export class ExpenseProjector implements Projector {
         actorId: event.actorId,
         occurredAt: event.occurredAt,
         reason: payload.reason,
+        changes: expenseChanges(undefined, row),
         after: cloneExpense(row)
       });
       return;
@@ -142,6 +188,7 @@ export class ExpenseProjector implements Projector {
         actorId: event.actorId,
         occurredAt: event.occurredAt,
         reason: payload.reason,
+        changes: expenseChanges(before, after),
         before,
         after: cloneExpense(after)
       });
@@ -174,6 +221,7 @@ export class ExpenseProjector implements Projector {
         actorId: event.actorId,
         occurredAt: event.occurredAt,
         reason: payload.reason,
+        changes: expenseChanges(before, after),
         before,
         after: cloneExpense(after)
       });
@@ -197,6 +245,7 @@ export class ExpenseProjector implements Projector {
       .filter((version) => version.expenseId === expenseId)
       .map((version) => ({
         ...version,
+        changes: version.changes.map((change) => ({ ...change })),
         before: version.before ? cloneExpense(version.before) : undefined,
         after: version.after ? cloneExpense(version.after) : undefined
       }));

@@ -1,7 +1,7 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { CloudArrowUp, FileCsv, Receipt, Scales } from "phosphor-react-native";
+import { CloudArrowUp, FileCsv, Receipt, Repeat, Scales } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActivityRow } from "../components/ActivityRow";
@@ -15,13 +15,16 @@ import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
+import { UserAvatar } from "../components/UserAvatar";
 import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
+import { buildGroupDisplayLookups, enrichActivityRows } from "../utils/displayNames";
 
 export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
+  const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const activityQuery = useQuery({
@@ -29,6 +32,20 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
     queryFn: () => apiClient.getGroupActivity(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+  const groupQuery = useQuery({
+    queryKey: ["group", selectedGroupId],
+    queryFn: () => apiClient.getGroup(selectedGroupId as string),
+    enabled: Boolean(selectedGroupId)
+  });
+  const enrichedActivity = useMemo(() => {
+    if (!activityQuery.data?.length) {
+      return [];
+    }
+    if (!groupQuery.data) {
+      return activityQuery.data;
+    }
+    return enrichActivityRows(activityQuery.data, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
+  }, [activityQuery.data, groupQuery.data]);
 
   useEffect(() => {
     if (!navigation.selectedGroupId && groups[0]?.id) {
@@ -46,9 +63,14 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
           <ThemedText variant="caption" tone="muted">
             SplitSaathi
           </ThemedText>
-          <ThemedText variant="title">Current & Calm</ThemedText>
+          <ThemedText variant="title">{profileQuery.data?.displayName ?? "Current & Calm"}</ThemedText>
         </View>
-        {pendingProofs ? <StatusPill state="proof_submitted" /> : null}
+        <View style={styles.headerRight}>
+          {pendingProofs ? <StatusPill state="proof_submitted" /> : null}
+          <Pressable onPress={() => navigation.go("profile")} style={styles.profileButton}>
+            <UserAvatar displayName={profileQuery.data?.displayName ?? "?"} avatarUrl={profileQuery.data?.avatarUrl} size={36} />
+          </Pressable>
+        </View>
       </View>
 
       <BalanceHeroCard
@@ -56,13 +78,14 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
         amountMinor={netBalance}
         currencyCode="INR"
         primaryAction={{ label: "Settle Up", onPress: () => navigation.go("settlement") }}
-        secondaryAction={{ label: "Add Expense", onPress: () => navigation.go("expense") }}
+        secondaryAction={{ label: "Balances", onPress: () => navigation.go("balances") }}
       />
 
       <QuickActionGrid
         actions={[
           { label: "Expense", icon: Receipt, onPress: () => navigation.go("expense") },
           { label: "Settle", icon: Scales, onPress: () => navigation.go("settlement") },
+          { label: "Recurring", icon: Repeat, onPress: () => navigation.go("recurring") },
           { label: "Sync", icon: CloudArrowUp, onPress: () => navigation.go("offline") },
           { label: "Import", icon: FileCsv, onPress: () => navigation.go("importExport") }
         ]}
@@ -88,7 +111,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
                   <View style={styles.groupMeta}>
                     <ThemedText variant="bodyMedium">{group.name}</ThemedText>
                     <ThemedText variant="bodySm" tone="muted">
-                      {group.mode} - {group.participantCount ?? 0} members
+                      {group.category ? `${group.category} · ` : ""}{group.participantCount ?? 0} members
                     </ThemedText>
                   </View>
                   <ThemedText variant="amount" tone={(group.netBalanceMinor ?? 0) >= 0 ? "receive" : "owe"} align="right">
@@ -106,8 +129,8 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
       <View style={styles.section}>
         <SectionHeader title="Recent activity" />
         {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
-        {activityQuery.data?.length ? (
-          <DataSurface>{activityQuery.data.slice(0, 6).map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
+        {enrichedActivity.length ? (
+          <DataSurface>{enrichedActivity.slice(0, 6).map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
         ) : (
           <EmptyState title="No ledger activity yet" body="Accepted expenses, proofs, edits, and settlements will appear here." />
         )}
@@ -121,6 +144,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center"
   },
   section: {
     gap: 12

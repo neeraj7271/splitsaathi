@@ -1,8 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client";
+import { buildGroupDisplayLookups, enrichActivityRows, enrichAuditEntries, resolveActorDisplayName } from "../utils/displayNames";
 import { ActivityRow } from "../components/ActivityRow";
 import { AuditRail } from "../components/AuditRail";
 import { Button } from "../components/Button";
@@ -24,11 +25,23 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
     queryFn: () => apiClient.getGroupActivity(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+  const groupQuery = useQuery({
+    queryKey: ["group", selectedGroupId],
+    queryFn: () => apiClient.getGroup(selectedGroupId as string),
+    enabled: Boolean(selectedGroupId)
+  });
   const historyQuery = useQuery({
     queryKey: ["expenseHistory", navigation.selectedExpenseId],
     queryFn: () => apiClient.getExpenseHistory(navigation.selectedExpenseId as string),
     enabled: Boolean(navigation.selectedExpenseId)
   });
+
+  const expenseHistoryEntries = useMemo(() => {
+    if (!historyQuery.data?.length || !groupQuery.data) {
+      return historyQuery.data ?? [];
+    }
+    return enrichAuditEntries(historyQuery.data, buildGroupDisplayLookups(groupQuery.data));
+  }, [groupQuery.data, historyQuery.data]);
 
   useEffect(() => {
     if (!navigation.selectedGroupId && groups[0]?.id) {
@@ -36,14 +49,26 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
     }
   }, [groups, navigation]);
 
-  const activityAsAudit =
-    activityQuery.data?.map((activity) => ({
+  const enrichedActivity = useMemo(() => {
+    if (!activityQuery.data?.length) {
+      return [];
+    }
+    if (!groupQuery.data) {
+      return activityQuery.data;
+    }
+    return enrichActivityRows(activityQuery.data, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
+  }, [activityQuery.data, groupQuery.data]);
+
+  const activityAsAudit = useMemo(() => {
+    const lookups = groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined;
+    return enrichedActivity.map((activity) => ({
       id: activity.id,
-      actorName: undefined,
+      actorName: activity.actorId && lookups ? resolveActorDisplayName(activity.actorId, lookups) : undefined,
       summary: activity.title,
       reason: activity.body,
       createdAt: activity.occurredAt
-    })) ?? [];
+    }));
+  }, [enrichedActivity, groupQuery.data]);
 
   return (
     <Screen>
@@ -63,10 +88,10 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
       <View style={styles.section}>
         <SectionHeader title="Expense version history" />
         {navigation.selectedExpenseId ? (
-          historyQuery.data?.length ? (
+          expenseHistoryEntries.length ? (
             <DataSurface>
               <View style={styles.railWrap}>
-                <AuditRail entries={historyQuery.data} />
+                <AuditRail entries={expenseHistoryEntries} />
               </View>
             </DataSurface>
           ) : (
@@ -85,8 +110,8 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
               <AuditRail entries={activityAsAudit} />
             </View>
           </DataSurface>
-        ) : activityQuery.data?.length ? (
-          <DataSurface>{activityQuery.data.map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
+        ) : enrichedActivity.length ? (
+          <DataSurface>{enrichedActivity.map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
         ) : (
           <EmptyState title="No group events" body="Expense creates, edits, voids, proof uploads, and settlements will appear here." />
         )}

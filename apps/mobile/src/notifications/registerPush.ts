@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { apiClient } from "../api/client";
 
@@ -26,7 +27,7 @@ export async function registerPushIfPossible() {
     const token = await Notifications.getExpoPushTokenAsync();
     await apiClient.registerDeviceInstallation({
       platform: Platform.OS === "ios" ? "ios" : "android",
-      appVersion: "development",
+      appVersion: Constants.expoConfig?.version ?? "0.1.0",
       pushToken: token.data
     });
     return { status: "registered" as const, pushToken: token.data };

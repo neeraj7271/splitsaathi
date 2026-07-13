@@ -18,4 +18,9 @@ export class AuthResponseDto {
 
   @ApiProperty({ type: AuthTokensDto })
   tokens!: AuthTokensDto;
+
+  @ApiProperty({
+    description: 'True when the user still needs profile name and consent setup after OTP.'
+  })
+  needsOnboarding!: boolean;
 }
