@@ -20,23 +20,29 @@ echo "==> Starting Postgres + MinIO"
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 
 echo "==> Waiting for Postgres"
-for i in {1..30}; do
+ready=0
+for _ in $(seq 1 60); do
   if docker exec splitsaathi_postgres pg_isready -U splitsaathi >/dev/null 2>&1; then
+    ready=1
     break
   fi
   sleep 1
 done
+if [[ "$ready" -ne 1 ]]; then
+  echo "Postgres did not become ready in time."
+  docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs postgres | tail -50
+  exit 1
+fi
+
+echo "==> Installing deps + building (needed before migrations)"
+bash deploy/build.sh
 
 echo "==> Running migrations"
-# Prefer DATABASE_URL already in the environment; otherwise pull from apps/api/.env
 if [[ -z "${DATABASE_URL:-}" ]]; then
   DATABASE_URL="$(grep -E '^DATABASE_URL=' apps/api/.env | head -1 | cut -d= -f2-)"
   export DATABASE_URL
 fi
 npm run migration:run
-
-echo "==> Building"
-bash deploy/build.sh
 
 echo "==> Starting / restarting API with PM2"
 if pm2 describe splitsaathi-api >/dev/null 2>&1; then
@@ -49,4 +55,4 @@ pm2 save
 echo ""
 echo "API should be on 127.0.0.1:3000 (nginx fronts it on :80)."
 echo "Health: curl -s http://127.0.0.1:3000/v1/health/live"
-echo "Public: curl -s http://YOUR_VM_IP/v1/health/live"
+echo "Public: curl -s http://65.20.81.44/v1/health/live"

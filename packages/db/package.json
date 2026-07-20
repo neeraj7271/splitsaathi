@@ -14,6 +14,7 @@
   "dependencies": {
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.20"
+    "typeorm": "^0.3.20",
+    "typeorm-ts-node-commonjs": "^0.3.20"
   }
 }
