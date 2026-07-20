@@ -42,7 +42,7 @@ export interface Membership {
   participantId: string;
   userId?: string;
   role: MembershipRole;
-  status: "active" | "inactive_locked" | "removed_zero_balance" | "transferred_obligation";
+  status: "active" | "locked_for_exit" | "inactive" | "inactive_locked" | "removed_zero_balance" | "transferred_obligation";
   balanceMinor?: number;
 }
 

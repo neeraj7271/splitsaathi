@@ -10,6 +10,6 @@ describe('GreedySettlementOptimizer', () => {
 
     expect(suggestions).toHaveLength(2);
     expect(suggestions.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(500);
-    expect(suggestions.every((row) => row.explanation.includes('because'))).toBe(true);
+    expect(suggestions.every((row) => row.explanation.includes('to settle'))).toBe(true);
   });
 });

@@ -185,7 +185,12 @@ export class GroupsService {
       this.participants.find({ where: { groupId }, order: { createdAt: 'ASC' } }),
       this.memberships.find({ where: { groupId }, order: { createdAt: 'ASC' } })
     ]);
-    return GroupResponseDto.fromEntities(group, participants, memberships);
+    const membership = memberships.find((row) => row.userId === userId);
+    const participantId = membership?.participantId ?? undefined;
+    const netBalanceMinor = participantId
+      ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
+      : 0;
+    return GroupResponseDto.fromEntities(group, participants, memberships, netBalanceMinor);
   }
 
   async createInvite(userId: string, groupId: string, dto: CreateInviteDto): Promise<InviteResponseDto> {
@@ -371,6 +376,37 @@ export class GroupsService {
         type: 'membership_exit_locked',
         title: 'Group access changed',
         body: 'Your membership is locked for exit until balances are resolved.',
+        data: { groupId, membershipId: saved.id }
+      });
+    }
+
+    return MembershipResponseDto.fromEntity(saved);
+  }
+
+  async unlockMembershipForExit(
+    userId: string,
+    groupId: string,
+    membershipId: string
+  ): Promise<MembershipResponseDto> {
+    await this.assertPermission(userId, groupId, 'membership.exit.lock');
+    const membership = await this.findMembershipInGroupOrThrow(groupId, membershipId);
+
+    if (membership.status !== 'locked_for_exit') {
+      return MembershipResponseDto.fromEntity(membership);
+    }
+
+    membership.status = 'active';
+    membership.lockedAt = null;
+    membership.exitLockReason = null;
+    const saved = await this.memberships.save(membership);
+
+    if (saved.userId) {
+      await this.notificationsService.create({
+        userId: saved.userId,
+        groupId,
+        type: 'membership_exit_unlocked',
+        title: 'Group access restored',
+        body: 'Your membership exit lock was removed.',
         data: { groupId, membershipId: saved.id }
       });
     }

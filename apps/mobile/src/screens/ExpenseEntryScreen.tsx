@@ -16,6 +16,7 @@ import { ParticipantPicker } from "../components/ParticipantPicker";
 import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
+import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { SplitType } from "../types/domain";
@@ -64,6 +65,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [lineLabel, setLineLabel] = useState("");
   const [lineAmount, setLineAmount] = useState("");
   const [adjustments, setAdjustments] = useState<DraftAdjustment[]>([]);
+  const [showAdjustments, setShowAdjustments] = useState(false);
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("gst_cgst");
   const [message, setMessage] = useState<string>();
@@ -88,7 +90,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     }
   }, [participants, selectedPayers.length, selectedShares.length]);
 
-  const totalMinor = splitType === "itemized" ? itemizedTotalMinor(lineItems, adjustments) : parseAmountToMinor(amount);
+  const activeAdjustments = showAdjustments ? adjustments : [];
+  const totalMinor = splitType === "itemized" ? itemizedTotalMinor(lineItems, activeAdjustments) : parseAmountToMinor(amount);
   const payerTotalMinor = selectedPayers.reduce((total, payerId) => {
     if (selectedPayers.length === 1) {
       return total + totalMinor;
@@ -96,8 +99,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     return total + parseAmountToMinor(payerAmounts[payerId] ?? "");
   }, 0);
   const computedShares = useMemo(
-    () => computeShares(totalMinor, selectedShares, splitType, shareAmounts, shareWeights, lineItems, adjustments),
-    [adjustments, lineItems, selectedShares, shareAmounts, shareWeights, splitType, totalMinor]
+    () => computeShares(totalMinor, selectedShares, splitType, shareAmounts, shareWeights, lineItems, activeAdjustments),
+    [activeAdjustments, lineItems, selectedShares, shareAmounts, shareWeights, splitType, totalMinor]
   );
   const shareTotalMinor = Object.values(computedShares.allocations).reduce((total, value) => total + value, 0);
   const payerDifference = payerTotalMinor - totalMinor;
@@ -188,7 +191,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       shareAmounts,
       shareWeights,
       lineItems,
-      adjustments
+      adjustments: activeAdjustments
     });
 
     try {
@@ -196,7 +199,9 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["expenses", selectedGroupId] }),
         queryClient.invalidateQueries({ queryKey: ["balances", selectedGroupId] }),
-        queryClient.invalidateQueries({ queryKey: ["groupActivity", selectedGroupId] })
+        queryClient.invalidateQueries({ queryKey: ["groupActivity", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["groups"] })
       ]);
       setMessage("Expense posted to the ledger.");
       setDescription("");
@@ -347,29 +352,35 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
           ) : null}
 
           <View style={styles.section}>
-            <SectionHeader title="Adjustments and rounding" />
-            <DataSurface>
-              <View style={styles.formBlock}>
-                <SegmentedControl
-                  value={adjustmentType}
-                  options={[
-                    { label: "GST", value: "gst_cgst" },
-                    { label: "Service", value: "service_charge" },
-                    { label: "Tip", value: "tip" },
-                    { label: "Discount", value: "discount" }
-                  ]}
-                  onChange={setAdjustmentType}
-                />
-                <InputField label="Adjustment amount" value={adjustmentAmount} onChangeText={setAdjustmentAmount} keyboardType="decimal-pad" amount />
-                <Button label="Add adjustment" variant="secondary" onPress={addAdjustment} disabled={!adjustmentAmount.trim()} />
-              </View>
-              {adjustments.map((adjustment, index) => (
-                <View key={`${adjustment.adjustmentType}-${index}`} style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
-                  <ThemedText variant="bodyMedium">{adjustment.label}</ThemedText>
-                  <ThemedText variant="amount">{formatMoney(parseAmountToMinor(adjustment.amount))}</ThemedText>
+            <SettingsToggleRow
+              label="Adjustments and rounding"
+              value={showAdjustments}
+              onValueChange={setShowAdjustments}
+            />
+            {showAdjustments ? (
+              <DataSurface>
+                <View style={styles.formBlock}>
+                  <SegmentedControl
+                    value={adjustmentType}
+                    options={[
+                      { label: "GST", value: "gst_cgst" },
+                      { label: "Service", value: "service_charge" },
+                      { label: "Tip", value: "tip" },
+                      { label: "Discount", value: "discount" }
+                    ]}
+                    onChange={setAdjustmentType}
+                  />
+                  <InputField label="Adjustment amount" value={adjustmentAmount} onChangeText={setAdjustmentAmount} keyboardType="decimal-pad" amount />
+                  <Button label="Add adjustment" variant="secondary" onPress={addAdjustment} disabled={!adjustmentAmount.trim()} />
                 </View>
-              ))}
-            </DataSurface>
+                {adjustments.map((adjustment, index) => (
+                  <View key={`${adjustment.adjustmentType}-${index}`} style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
+                    <ThemedText variant="bodyMedium">{adjustment.label}</ThemedText>
+                    <ThemedText variant="amount">{formatMoney(parseAmountToMinor(adjustment.amount))}</ThemedText>
+                  </View>
+                ))}
+              </DataSurface>
+            ) : null}
 
             <DataSurface>
               <View style={styles.reviewBlock}>

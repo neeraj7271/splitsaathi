@@ -1,6 +1,5 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
 import { apiClient } from "../api/client";
 
 type NotificationPermissionShape = {
@@ -9,8 +8,8 @@ type NotificationPermissionShape = {
   ios?: { status?: number };
 };
 
-function allowsNotifications(permission: NotificationPermissionShape) {
-  return Boolean(permission.granted) || permission.status === "granted" || permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+function isExpoGo() {
+  return Constants.appOwnership === "expo";
 }
 
 export async function registerPushIfPossible() {
@@ -18,8 +17,27 @@ export async function registerPushIfPossible() {
     return { status: "skipped" as const, reason: "push_not_supported_on_web_preview" };
   }
 
+  // Remote push was removed from Expo Go on Android in SDK 53+.
+  // Skip entirely in Expo Go so onboarding does not surface a hard error.
+  if (isExpoGo()) {
+    return { status: "skipped" as const, reason: "push_not_supported_in_expo_go" };
+  }
+
+  // Lazy-load so Expo Go never evaluates the expo-notifications native path.
+  const Notifications = await import("expo-notifications");
+
+  function allowsNotifications(permission: NotificationPermissionShape) {
+    return (
+      Boolean(permission.granted) ||
+      permission.status === "granted" ||
+      permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+    );
+  }
+
   const permissions = await Notifications.getPermissionsAsync();
-  const granted = allowsNotifications(permissions as NotificationPermissionShape) ? permissions : await Notifications.requestPermissionsAsync();
+  const granted = allowsNotifications(permissions as NotificationPermissionShape)
+    ? permissions
+    : await Notifications.requestPermissionsAsync();
   if (!allowsNotifications(granted as NotificationPermissionShape)) {
     return { status: "skipped" as const, reason: "permission_denied" };
   }

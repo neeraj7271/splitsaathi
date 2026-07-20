@@ -16,82 +16,109 @@ interface Props {
 }
 
 const SCREEN_W = Dimensions.get("window").width;
-const CHART_W = SCREEN_W - 48; // 24px margin each side
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-// ─── Donut chart (category breakdown) ───────────────────────────────────────
-
-const DONUT_R = 72;
-const DONUT_STROKE = 22;
-const DONUT_CX = CHART_W / 2;
-const DONUT_CY = DONUT_R + DONUT_STROKE + 8;
+const CHART_W = Math.max(280, SCREEN_W - 48);
 
 function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-function describeArc(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
-  const start = polarToXY(cx, cy, r, startDeg);
-  const end = polarToXY(cx, cy, r, endDeg);
-  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+function describeDonutSlice(cx: number, cy: number, outerR: number, innerR: number, startDeg: number, endDeg: number) {
+  const sweep = Math.max(0.01, endDeg - startDeg);
+  const largeArc = sweep > 180 ? 1 : 0;
+  const outerStart = polarToXY(cx, cy, outerR, startDeg);
+  const outerEnd = polarToXY(cx, cy, outerR, startDeg + sweep);
+  const innerStart = polarToXY(cx, cy, innerR, startDeg + sweep);
+  const innerEnd = polarToXY(cx, cy, innerR, startDeg);
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerStart.x} ${innerStart.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerEnd.x} ${innerEnd.y}`,
+    "Z"
+  ].join(" ");
 }
 
-function DonutChart({ slices, palette, total, currencyCode }: { slices: { label: string; total: number }[]; palette: readonly string[]; total: number; currencyCode: string }) {
-  const svgH = DONUT_CY + DONUT_R + DONUT_STROKE + 12;
-  const paths: { d: string; color: string }[] = [];
+function DonutChart({
+  slices,
+  total,
+  currencyCode,
+  ink,
+  muted
+}: {
+  slices: { label: string; value: number; color: string }[];
+  total: number;
+  currencyCode: string;
+  ink: string;
+  muted: string;
+}) {
+  const cx = CHART_W / 2;
+  const cy = 108;
+  const outerR = 78;
+  const innerR = 48;
   let cursor = 0;
-  for (let i = 0; i < slices.length; i++) {
-    const sweep = (slices[i].total / total) * 360;
-    const endDeg = cursor + sweep;
-    paths.push({ d: describeArc(DONUT_CX, DONUT_CY, DONUT_R, cursor, Math.min(endDeg, cursor + sweep - 0.5)), color: palette[i % palette.length] });
-    cursor = endDeg;
-  }
+  const paths = slices.map((slice) => {
+    const sweep = total > 0 ? (slice.value / total) * 360 : 0;
+    const start = cursor;
+    cursor += sweep;
+    return { d: describeDonutSlice(cx, cy, outerR, innerR, start, cursor), color: slice.color };
+  });
 
   return (
-    <Svg width={CHART_W} height={svgH}>
-      <G>
-        {paths.map((p, i) => (
-          <Path key={i} d={p.d} stroke={p.color} strokeWidth={DONUT_STROKE} fill="none" strokeLinecap="butt" />
-        ))}
-      </G>
-      <SvgText x={DONUT_CX} y={DONUT_CY - 10} textAnchor="middle" fontSize={11} fill="#888">
+    <Svg width={CHART_W} height={216}>
+      <Circle cx={cx} cy={cy} r={outerR} fill="none" stroke={muted} strokeWidth={1} opacity={0.25} />
+      {paths.map((path, index) => (
+        <Path key={index} d={path.d} fill={path.color} />
+      ))}
+      <SvgText x={cx} y={cy - 8} textAnchor="middle" fontSize={11} fill={muted}>
         Total
       </SvgText>
-      <SvgText x={DONUT_CX} y={DONUT_CY + 10} textAnchor="middle" fontSize={14} fontWeight="bold" fill="#eee">
+      <SvgText x={cx} y={cy + 14} textAnchor="middle" fontSize={15} fontWeight="700" fill={ink}>
         {formatMoney(total, currencyCode)}
       </SvgText>
     </Svg>
   );
 }
 
-// ─── Bar chart (monthly) ────────────────────────────────────────────────────
-
-const BAR_H = 140;
-const BAR_BOTTOM_MARGIN = 24;
-
-function BarChart({ months, currencyCode, barColor }: { months: { month: string; total: number }[]; currencyCode: string; barColor: string }) {
-  if (!months.length) return null;
-  const maxTotal = Math.max(...months.map((m) => m.total));
-  const barW = Math.min(36, (CHART_W - 16) / months.length - 8);
-  const gap = (CHART_W - barW * months.length) / (months.length + 1);
-  const svgH = BAR_H + BAR_BOTTOM_MARGIN + 4;
+function BarChart({
+  rows,
+  barColor,
+  muted,
+  ink,
+  valueKey
+}: {
+  rows: { label: string; value: number }[];
+  barColor: string;
+  muted: string;
+  ink: string;
+  valueKey?: string;
+}) {
+  if (!rows.length) {
+    return null;
+  }
+  const max = Math.max(...rows.map((row) => Math.abs(row.value)), 1);
+  const chartH = 150;
+  const bottom = 28;
+  const barW = Math.min(34, (CHART_W - 24) / rows.length - 10);
+  const gap = (CHART_W - barW * rows.length) / (rows.length + 1);
 
   return (
-    <Svg width={CHART_W} height={svgH}>
-      {months.map((m, i) => {
-        const pct = maxTotal > 0 ? m.total / maxTotal : 0;
-        const barHeight = Math.max(4, pct * (BAR_H - 20));
-        const x = gap + i * (barW + gap);
-        const y = BAR_H - barHeight;
+    <Svg width={CHART_W} height={chartH + bottom + 8}>
+      {rows.map((row, index) => {
+        const height = Math.max(4, (Math.abs(row.value) / max) * (chartH - 18));
+        const x = gap + index * (barW + gap);
+        const y = chartH - height;
         return (
-          <G key={m.month}>
-            <Rect x={x} y={y} width={barW} height={barHeight} rx={4} fill={barColor} opacity={0.85 - i * 0.05} />
-            <SvgText x={x + barW / 2} y={BAR_H + 14} textAnchor="middle" fontSize={9} fill="#888">
-              {m.month}
+          <G key={`${row.label}-${index}`}>
+            <Rect x={x} y={y} width={barW} height={height} rx={6} fill={barColor} opacity={0.9} />
+            <SvgText x={x + barW / 2} y={chartH + 18} textAnchor="middle" fontSize={10} fill={muted}>
+              {row.label}
             </SvgText>
+            {valueKey ? (
+              <SvgText x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize={9} fill={ink}>
+                {Math.round(row.value / 100)}
+              </SvgText>
+            ) : null}
           </G>
         );
       })}
@@ -99,46 +126,81 @@ function BarChart({ months, currencyCode, barColor }: { months: { month: string;
   );
 }
 
-// ─── Legend ─────────────────────────────────────────────────────────────────
-
-function Legend({ slices, palette, total, currencyCode }: { slices: { label: string; total: number }[]; palette: readonly string[]; total: number; currencyCode: string }) {
+function Legend({
+  slices,
+  total,
+  currencyCode
+}: {
+  slices: { label: string; value: number; color: string }[];
+  total: number;
+  currencyCode: string;
+}) {
   return (
     <View style={styles.legend}>
-      {slices.map((s, i) => (
-        <View key={s.label} style={styles.legendRow}>
-          <View style={[styles.legendDot, { backgroundColor: palette[i % palette.length] }]} />
+      {slices.map((slice) => (
+        <View key={slice.label} style={styles.legendRow}>
+          <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
           <View style={styles.legendLabelBlock}>
-            <ThemedText variant="bodySm">{s.label}</ThemedText>
+            <ThemedText variant="bodySm">{slice.label}</ThemedText>
             <ThemedText variant="bodySm" tone="muted">
-              {((s.total / total) * 100).toFixed(0)}%
+              {total > 0 ? `${((slice.value / total) * 100).toFixed(0)}%` : "0%"}
             </ThemedText>
           </View>
-          <ThemedText variant="amountSm">{formatMoney(s.total, currencyCode)}</ThemedText>
+          <ThemedText variant="amountSm">{formatMoney(slice.value, currencyCode)}</ThemedText>
         </View>
       ))}
     </View>
   );
 }
 
-// ─── Main export ─────────────────────────────────────────────────────────────
-
 export function SpendingCharts({ currencyCode, monthly, contributions, settlementMethods, netPositions }: Props) {
   const theme = useTheme();
   const palette = theme.chartPalette;
 
-  const categorySlices = useMemo(
-    () => contributions.map((item) => ({ label: item.displayName, total: Number(item.amountMinor) })).filter((item) => item.total > 0),
-    [contributions]
+  const contributionSlices = useMemo(
+    () =>
+      contributions
+        .map((item, index) => ({
+          label: item.displayName,
+          value: Number(item.amountMinor),
+          color: palette[index % palette.length]
+        }))
+        .filter((item) => item.value > 0),
+    [contributions, palette]
   );
+
   const monthlyData = useMemo(
     () =>
       monthly.map((item) => ({
-        month: new Date(`${item.month}-01T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
-        total: Number(item.amountMinor)
+        label: new Date(`${item.month}-01T00:00:00Z`).toLocaleDateString("en-IN", { month: "short" }),
+        value: Number(item.amountMinor)
       })),
     [monthly]
   );
-  const grandTotal = useMemo(() => categorySlices.reduce((s, c) => s + c.total, 0), [categorySlices]);
+
+  const methodSlices = useMemo(
+    () =>
+      settlementMethods
+        .map((item, index) => ({
+          label: `${item.method.toUpperCase()} · ${item.count}`,
+          value: Number(item.amountMinor),
+          color: palette[index % palette.length]
+        }))
+        .filter((item) => item.value > 0),
+    [settlementMethods, palette]
+  );
+
+  const netRows = useMemo(
+    () =>
+      netPositions.map((item) => ({
+        label: item.displayName.length > 8 ? `${item.displayName.slice(0, 7)}…` : item.displayName,
+        value: Number(item.amountMinor)
+      })),
+    [netPositions]
+  );
+
+  const contributionTotal = useMemo(() => contributionSlices.reduce((sum, item) => sum + item.value, 0), [contributionSlices]);
+  const methodTotal = useMemo(() => methodSlices.reduce((sum, item) => sum + item.value, 0), [methodSlices]);
 
   if (!monthly.length && !contributions.length && !settlementMethods.length && !netPositions.length) {
     return (
@@ -152,50 +214,67 @@ export function SpendingCharts({ currencyCode, monthly, contributions, settlemen
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
-      {/* Category donut */}
-      <ThemedText variant="section" style={styles.chartTitle}>
-        Contributions by member
-      </ThemedText>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-        <DonutChart slices={categorySlices} palette={palette} total={grandTotal} currencyCode={currencyCode} />
-        <Legend slices={categorySlices} palette={palette} total={grandTotal} currencyCode={currencyCode} />
-      </View>
-
-      {/* Monthly bar chart */}
-      {monthlyData.length > 1 ? (
+      {contributionSlices.length ? (
         <>
           <ThemedText variant="section" style={styles.chartTitle}>
-            Monthly Spending
+            Contributions by member
           </ThemedText>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            <BarChart months={monthlyData} currencyCode={currencyCode} barColor={palette[0]} />
+            <DonutChart
+              slices={contributionSlices}
+              total={contributionTotal}
+              currencyCode={currencyCode}
+              ink={theme.colors.ink}
+              muted={theme.colors.inkMuted}
+            />
+            <Legend slices={contributionSlices} total={contributionTotal} currencyCode={currencyCode} />
           </View>
         </>
       ) : null}
-      {settlementMethods.length ? (
+
+      {monthlyData.length > 1 ? (
+        <>
+          <ThemedText variant="section" style={styles.chartTitle}>
+            Monthly spending
+          </ThemedText>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <BarChart rows={monthlyData} barColor={palette[0]} muted={theme.colors.inkMuted} ink={theme.colors.ink} />
+          </View>
+        </>
+      ) : null}
+
+      {methodSlices.length ? (
         <>
           <ThemedText variant="section" style={styles.chartTitle}>
             Settlements by method
           </ThemedText>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            {settlementMethods.map((item) => (
-              <View key={item.method} style={styles.legendRow}>
-                <ThemedText variant="bodySm" style={styles.legendLabelBlock}>{item.method.toUpperCase()} · {item.count} payments</ThemedText>
-                <ThemedText variant="amountSm">{formatMoney(Number(item.amountMinor), currencyCode)}</ThemedText>
-              </View>
-            ))}
+            <DonutChart
+              slices={methodSlices}
+              total={methodTotal}
+              currencyCode={currencyCode}
+              ink={theme.colors.ink}
+              muted={theme.colors.inkMuted}
+            />
+            <Legend slices={methodSlices} total={methodTotal} currencyCode={currencyCode} />
           </View>
         </>
       ) : null}
-      {netPositions.length ? (
+
+      {netRows.length ? (
         <>
           <ThemedText variant="section" style={styles.chartTitle}>
             Net positions
           </ThemedText>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <BarChart rows={netRows} barColor={palette[1]} muted={theme.colors.inkMuted} ink={theme.colors.ink} />
+          </View>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface, marginTop: 8 }]}>
             {netPositions.map((item) => (
               <View key={`${item.participantId}-${item.currencyCode}`} style={styles.legendRow}>
-                <ThemedText variant="bodySm" style={styles.legendLabelBlock}>{item.displayName}</ThemedText>
+                <ThemedText variant="bodySm" style={styles.legendLabelBlock}>
+                  {item.displayName}
+                </ThemedText>
                 <ThemedText variant="amountSm">{formatMoney(Number(item.amountMinor), item.currencyCode)}</ThemedText>
               </View>
             ))}
@@ -214,5 +293,5 @@ const styles = StyleSheet.create({
   legend: { marginTop: 12, gap: 8 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabelBlock: { flex: 1, flexDirection: "row", gap: 6, alignItems: "center" },
+  legendLabelBlock: { flex: 1, flexDirection: "row", gap: 6, alignItems: "center", flexWrap: "wrap" }
 });

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { BalanceProjector } from './balance.projector';
 
 /**
@@ -6,6 +6,7 @@ import { BalanceProjector } from './balance.projector';
  * Import this in any module that needs to read balances without depending
  * on the full FinancialLedgerModule (which would create circular deps).
  */
+@Global()
 @Module({
   providers: [BalanceProjector],
   exports: [BalanceProjector]

@@ -449,7 +449,14 @@ export class SplitSaathiApiClient {
   }
 
   async lockMemberExit(groupId: string, membershipId: string) {
-    return this.request<GroupDetail>(`/v1/groups/${groupId}/memberships/${membershipId}/lock-exit`, {
+    return this.request(`/v1/groups/${groupId}/memberships/${membershipId}/lock-exit`, {
+      method: "POST",
+      body: {}
+    });
+  }
+
+  async unlockMemberExit(groupId: string, membershipId: string) {
+    return this.request(`/v1/groups/${groupId}/memberships/${membershipId}/unlock-exit`, {
       method: "POST",
       body: {}
     });
@@ -824,6 +831,13 @@ export class SplitSaathiApiClient {
     }
     if (options.idempotencyKey) {
       headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+    // Dev tunnel interstitials
+    if (this.baseUrl.includes("loca.lt") || this.baseUrl.includes("localtunnel.me")) {
+      headers["bypass-tunnel-reminder"] = "true";
+    }
+    if (this.baseUrl.includes("ngrok")) {
+      headers["ngrok-skip-browser-warning"] = "true";
     }
     if (!options.skipAuth) {
       const accessToken = await getAccessToken();

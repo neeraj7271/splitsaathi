@@ -111,7 +111,16 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
             </View>
           </DataSurface>
         ) : enrichedActivity.length ? (
-          <DataSurface>{enrichedActivity.map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
+          <DataSurface>
+            {enrichedActivity.map((item) => (
+              <ActivityRow
+                key={item.id}
+                item={item}
+                groupName={groupQuery.data?.name}
+                groupImageUrl={groupQuery.data?.imageUrl}
+              />
+            ))}
+          </DataSurface>
         ) : (
           <EmptyState title="No group events" body="Expense creates, edits, voids, proof uploads, and settlements will appear here." />
         )}

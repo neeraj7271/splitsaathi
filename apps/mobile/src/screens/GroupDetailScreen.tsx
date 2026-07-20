@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Alert, Pressable, Share, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, LinkSimple, LockKey, UserPlus } from "phosphor-react-native";
+import { Archive, LinkSimple, LockKey, LockKeyOpen, UserPlus } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
@@ -44,6 +44,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const [reportDays, setReportDays] = useState<30 | 90 | 180>(90);
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
+  const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const selectedGroupId = navigation.selectedGroupId ?? groupsQuery.data?.[0]?.id;
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
@@ -125,6 +126,10 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     mutationFn: (membershipId: string) => apiClient.lockMemberExit(selectedGroupId as string, membershipId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] })
   });
+  const unlockExit = useMutation({
+    mutationFn: (membershipId: string) => apiClient.unlockMemberExit(selectedGroupId as string, membershipId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] })
+  });
 
   const addContacts = useMutation({
     mutationFn: async (contacts: SyncedContact[]) => {
@@ -169,6 +174,19 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     }
     return enrichBalanceRows(balancesQuery.data, buildGroupDisplayLookups(group));
   }, [balancesQuery.data, group]);
+  const myNetPositionMinor = useMemo(() => {
+    if (!group) {
+      return 0;
+    }
+    const myParticipantId = group.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.participantId;
+    if (myParticipantId && balancesQuery.data) {
+      const row = enrichedBalances.find(
+        (balance) => balance.participantId === myParticipantId && balance.currencyCode === (group.baseCurrencyCode || balance.currencyCode)
+      );
+      return row?.balanceMinor ?? 0;
+    }
+    return group.netBalanceMinor ?? 0;
+  }, [balancesQuery.data, enrichedBalances, group, profileQuery.data?.id]);
   const enrichedActivity = useMemo(() => {
     if (!group || !activityQuery.data?.length) {
       return activityQuery.data ?? [];
@@ -207,8 +225,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                 <ThemedText variant="caption" tone="muted" align="right">
                   Net position
                 </ThemedText>
-                <ThemedText variant="amount" tone={(group.netBalanceMinor ?? 0) >= 0 ? "receive" : "owe"} align="right">
-                  {formatSignedMoney(group.netBalanceMinor, group.baseCurrencyCode)}
+                <ThemedText variant="amount" tone={myNetPositionMinor >= 0 ? "receive" : "owe"} align="right">
+                  {formatSignedMoney(myNetPositionMinor, group.baseCurrencyCode)}
                 </ThemedText>
               </View>
             </View>
@@ -234,7 +252,15 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             <View style={styles.section}>
               <SectionHeader title="Activity" action={<Button label="Audit" variant="ghost" onPress={() => navigation.go("audit")} />} />
               {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
-              {enrichedActivity.length ? <DataSurface>{enrichedActivity.map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface> : <EmptyState title="No activity" body="Expense creates, edits, proofs, and settlements will appear here." />}
+              {enrichedActivity.length ? (
+                <DataSurface>
+                  {enrichedActivity.map((item) => (
+                    <ActivityRow key={item.id} item={item} groupName={group.name} groupImageUrl={group.imageUrl} />
+                  ))}
+                </DataSurface>
+              ) : (
+                <EmptyState title="No activity" body="Expense creates, edits, proofs, and settlements will appear here." />
+              )}
             </View>
           ) : null}
 
@@ -353,6 +379,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               archivePending={archiveGroup.isPending}
               roleChange={(membershipId, role) => roleChange.mutate({ membershipId, role })}
               lockExit={(membershipId) => lockExit.mutate(membershipId)}
+              unlockExit={(membershipId) => unlockExit.mutate(membershipId)}
               onAddFromContacts={() => void openContactPicker()}
               contactError={contactError}
             />
@@ -428,6 +455,7 @@ function PeopleManagement({
   archivePending,
   roleChange,
   lockExit,
+  unlockExit,
   onAddFromContacts,
   contactError
 }: {
@@ -445,6 +473,7 @@ function PeopleManagement({
   archivePending: boolean;
   roleChange: (membershipId: string, role: MembershipRole) => void;
   lockExit: (membershipId: string) => void;
+  unlockExit: (membershipId: string) => void;
   onAddFromContacts: () => void;
   contactError?: string | null;
 }) {
@@ -457,6 +486,7 @@ function PeopleManagement({
       <DataSurface>
         {group.memberships.map((membership) => {
           const displayName = resolveParticipantDisplayName(membership.participantId, lookups) ?? "Unknown participant";
+          const isLocked = membership.status === "locked_for_exit" || membership.status === "inactive_locked";
           return (
             <View key={membership.id} style={[styles.personRow, { borderBottomColor: theme.colors.hairline }]}>
               <View style={styles.titleBlock}>
@@ -473,9 +503,22 @@ function PeopleManagement({
                     </ThemedText>
                   </Pressable>
                 ))}
-                {membership.status === "active" ? (
-                  <Pressable onPress={() => lockExit(membership.id)} style={[styles.iconButton, { borderColor: theme.colors.hairline }]}>
+                {membership.role !== "owner" && membership.status === "active" ? (
+                  <Pressable
+                    onPress={() => lockExit(membership.id)}
+                    accessibilityLabel={`Lock exit for ${displayName}`}
+                    style={[styles.iconButton, { borderColor: theme.colors.hairline }]}
+                  >
                     <LockKey size={16} color={theme.colors.inkMuted} weight="duotone" />
+                  </Pressable>
+                ) : null}
+                {membership.role !== "owner" && isLocked ? (
+                  <Pressable
+                    onPress={() => unlockExit(membership.id)}
+                    accessibilityLabel={`Unlock exit for ${displayName}`}
+                    style={[styles.iconButton, { borderColor: theme.colors.confirmed }]}
+                  >
+                    <LockKeyOpen size={16} color={theme.colors.confirmed} weight="duotone" />
                   </Pressable>
                 ) : null}
               </View>

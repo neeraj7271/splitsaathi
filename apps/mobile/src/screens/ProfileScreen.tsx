@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "phosphor-react-native";
+import { ArrowLeft, ImageSquare, Trash } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
+import { ActionSheet } from "../components/ActionSheet";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
@@ -29,6 +30,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
 
   useEffect(() => {
     if (profileQuery.data?.displayName) {
@@ -70,8 +72,24 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
     }
   });
 
+  const removeAvatar = useMutation({
+    mutationFn: () => apiClient.updateMe({ avatarAttachmentId: null }),
+    onSuccess: async (profile) => {
+      setLocalAvatarUri(null);
+      if (profile) {
+        await clearAuthenticatedImageCache(profile.avatarUrl);
+        queryClient.setQueryData(["me"], profile);
+        queryClient.invalidateQueries({ queryKey: ["me"] });
+      }
+    },
+    onError: (error: Error) => {
+      setAvatarError(error.message);
+    }
+  });
+
   const profile = profileQuery.data;
   const hasChanges = displayName.trim() !== savedDisplayName || upiVpa.trim() !== savedUpiVpa;
+  const hasAvatar = Boolean(localAvatarUri || profile?.avatarUrl);
 
   async function pickAndUploadAvatar() {
     const file = await pickAndCompressAvatar();
@@ -80,13 +98,6 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
     }
     setLocalAvatarUri(file.uri);
     uploadAvatar.mutate(file);
-  }
-
-  function promptAvatarSource() {
-    Alert.alert("Profile picture", "Choose a photo from your gallery", [
-      { text: "Choose photo", onPress: () => void pickAndUploadAvatar() },
-      { text: "Cancel", style: "cancel" }
-    ]);
   }
 
   return (
@@ -113,8 +124,8 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             localUri={localAvatarUri}
             size={72}
             editable
-            loading={uploadAvatar.isPending}
-            onPress={promptAvatarSource}
+            loading={uploadAvatar.isPending || removeAvatar.isPending}
+            onPress={() => setAvatarSheetVisible(true)}
           />
           <View style={styles.identity}>
             <ThemedText variant="title">{profile?.displayName ?? "Your profile"}</ThemedText>
@@ -133,7 +144,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
       {avatarError ? (
         <View style={styles.retryBlock}>
           <InlineNotice title="Avatar upload failed" body={avatarError} tone="owe" />
-          <Button label="Retry upload" variant="secondary" onPress={promptAvatarSource} />
+          <Button label="Retry upload" variant="secondary" onPress={() => setAvatarSheetVisible(true)} />
         </View>
       ) : null}
 
@@ -181,6 +192,35 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
       <Button label="Log out" variant="destructive" onPress={() => navigation.signOut()} />
 
       <Button label="Back to home" variant="ghost" onPress={() => navigation.go("home")} />
+
+      <ActionSheet
+        visible={avatarSheetVisible}
+        title="Profile picture"
+        message="Update how you appear across groups."
+        onClose={() => setAvatarSheetVisible(false)}
+        actions={[
+          {
+            key: "gallery",
+            label: "Choose from gallery",
+            subtitle: "Pick an existing photo",
+            icon: <ImageSquare size={20} color={theme.colors.confirmed} weight="duotone" />,
+            tone: "confirmed",
+            onPress: () => void pickAndUploadAvatar()
+          },
+          ...(hasAvatar
+            ? [
+                {
+                  key: "remove",
+                  label: "Remove photo",
+                  subtitle: "Use your initials instead",
+                  icon: <Trash size={20} color={theme.colors.owe} weight="duotone" />,
+                  tone: "destructive" as const,
+                  onPress: () => removeAvatar.mutate()
+                }
+              ]
+            : [])
+        ]}
+      />
     </Screen>
   );
 }

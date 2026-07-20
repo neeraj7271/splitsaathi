@@ -45,7 +45,7 @@ export class ReportsService {
          AND (latest_expenses.payload->>'expenseDate')::date >= $2::date
          AND (latest_expenses.payload->>'expenseDate')::date < $3::date
        GROUP BY group_row.group_type
-       ORDER BY "amountMinor"::bigint DESC`,
+       ORDER BY 2 DESC`,
       [userId, range.from, range.toExclusive.slice(0, 10)]
     );
   }
@@ -87,12 +87,12 @@ export class ReportsService {
               COALESCE(SUM((payer.value->>'amountMinor')::bigint), 0)::text AS "amountMinor"
        FROM latest_expenses
        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(payload->'payers', '[]'::jsonb)) payer(value)
-       JOIN participants participant ON participant.id = payer.value->>'participantId'
+       JOIN participants participant ON participant.id = (payer.value->>'participantId')::uuid
        WHERE event_type <> 'ExpenseVoided'
          AND (payload->>'expenseDate')::date >= $2::date
          AND (payload->>'expenseDate')::date < $3::date
        GROUP BY participant.id, participant.display_name
-       ORDER BY "amountMinor"::bigint DESC`,
+       ORDER BY 3 DESC`,
       [groupId, range.from, range.toExclusive.slice(0, 10)]
     );
   }
@@ -113,7 +113,7 @@ export class ReportsService {
        FROM intents
        WHERE occurred_at >= $2::timestamptz AND occurred_at < $3::timestamptz
        GROUP BY method
-       ORDER BY "amountMinor"::bigint DESC`,
+       ORDER BY 2 DESC`,
       [groupId, range.fromExclusive, range.toExclusive]
     );
   }
@@ -130,7 +130,7 @@ export class ReportsService {
          AND event.occurred_at >= $2::timestamptz AND event.occurred_at < $3::timestamptz
        GROUP BY posting.participant_id, participant.display_name, posting.currency_code
        HAVING SUM(posting.signed_amount_minor) <> 0
-       ORDER BY "amountMinor"::bigint DESC`,
+       ORDER BY 4 DESC`,
       [groupId, range.fromExclusive, range.toExclusive]
     );
   }

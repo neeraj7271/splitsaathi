@@ -137,6 +137,16 @@ export class GroupsController {
     return this.groupsService.lockMembershipForExit(currentUser.userId, groupId, membershipId, dto);
   }
 
+  @Post(':groupId/memberships/:membershipId/unlock-exit')
+  @ApiOkResponse({ type: MembershipResponseDto })
+  unlockExit(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('groupId') groupId: string,
+    @Param('membershipId') membershipId: string
+  ): Promise<MembershipResponseDto> {
+    return this.groupsService.unlockMembershipForExit(currentUser.userId, groupId, membershipId);
+  }
+
   @Post(':groupId/obligation-transfers')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiAcceptedResponse({ type: ObligationTransferResponseDto })

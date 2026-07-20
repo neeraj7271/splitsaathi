@@ -2,12 +2,12 @@ import React, { useEffect, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
-import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { Bell, Check, EnvelopeSimple, Key, LinkSimple, Phone, ShieldCheck, UsersThree } from "phosphor-react-native";
 import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client";
+import { GoogleSignInButton, isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
 import { markLoggedInBefore, hasLoggedInBefore } from "../auth/loginStore";
 import { Button } from "../components/Button";
 import { InlineNotice } from "../components/InlineNotice";
@@ -76,10 +76,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     notifications: true,
     proofStorage: true
   });
-  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const [googleRequest, googleResponse, promptGoogle] = Google.useIdTokenAuthRequest({
-    webClientId: googleClientId
-  });
+  const googleConfigured = isGoogleSignInConfigured();
 
   const startOtp = useMutation({
     mutationFn: (formattedPhone: string) => apiClient.startOtp(formattedPhone),
@@ -126,13 +123,6 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       setStep("profile");
     }
   });
-
-  useEffect(() => {
-    const idToken = googleResponse?.type === "success" ? googleResponse.authentication?.idToken : undefined;
-    if (idToken) {
-      loginWithGoogle.mutate(idToken);
-    }
-  }, [googleResponse]);
 
   const startEmailSignup = useMutation({
     mutationFn: () => apiClient.startEmailSignup(email.trim(), password, displayName.trim() || undefined),
@@ -293,13 +283,13 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               <Button label="Start with phone" onPress={() => setStep("phone")} />
               <Button label="Create account with email" variant="secondary" onPress={() => setStep("emailSignup")} />
               <Button label="Sign in with email" variant="secondary" onPress={() => setStep("emailLogin")} />
-              <Button
-                label="Continue with Google"
-                variant="secondary"
-                onPress={() => void promptGoogle()}
-                disabled={!googleClientId || !googleRequest || loginWithGoogle.isPending}
-              />
-              {loginWithGoogle.error ? <InlineNotice title="Google sign-in failed" body={loginWithGoogle.error.message} tone="owe" /> : null}
+              {googleConfigured ? (
+                <GoogleSignInButton
+                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+                  pending={loginWithGoogle.isPending}
+                  errorMessage={loginWithGoogle.error?.message}
+                />
+              ) : null}
               <Button label="Join with invite" variant="secondary" onPress={() => setStep("join")} />
             </View>
           </>

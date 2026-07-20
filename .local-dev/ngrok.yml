@@ -1,0 +1,10 @@
+version: "3"
+agent:
+  authtoken_from_env: false
+tunnels:
+  metro:
+    proto: http
+    addr: 8081
+  api:
+    proto: http
+    addr: 3000

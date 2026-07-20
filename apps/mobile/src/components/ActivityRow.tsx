@@ -7,16 +7,33 @@ import { ActivityRowDto, SettlementState } from "../types/domain";
 import { formatSignedMoney } from "../utils/money";
 import { StatusPill } from "./StatusPill";
 import { ThemedText } from "./ThemedText";
+import { UserAvatar } from "./UserAvatar";
 
-export function ActivityRow({ item }: { item: ActivityRowDto }) {
+export function ActivityRow({
+  item,
+  groupName,
+  groupImageUrl
+}: {
+  item: ActivityRowDto;
+  groupName?: string;
+  groupImageUrl?: string | null;
+}) {
   const theme = useTheme();
   const amountTone = (item.amountMinor ?? 0) >= 0 ? "receive" : "owe";
+  const avatarLabel = groupName?.trim() || formatActivityTitle(item.title);
 
   return (
-    <View style={[styles.row, { borderBottomColor: theme.colors.hairline, paddingVertical: theme.spacing.rowVertical }]}>
-      <View style={[styles.avatar, { backgroundColor: theme.colors.surfaceRaised }]}>
-        <ThemedText variant="caption">{formatActivityTitle(item.title).slice(0, 1).toUpperCase()}</ThemedText>
-      </View>
+    <View
+      style={[
+        styles.row,
+        {
+          borderBottomColor: theme.colors.hairline,
+          paddingVertical: theme.spacing.rowVertical,
+          paddingHorizontal: 14
+        }
+      ]}
+    >
+      <UserAvatar displayName={avatarLabel} avatarUrl={groupImageUrl} size={40} />
       <View style={styles.middle}>
         <ThemedText variant="bodyMedium">{formatActivityTitle(item.title)}</ThemedText>
         <ThemedText variant="bodySm" tone="muted" numberOfLines={2}>
@@ -42,13 +59,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     borderBottomWidth: 1
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center"
   },
   middle: {
     flex: 1,

@@ -227,14 +227,18 @@ export function enrichSettlementSuggestions(suggestions: SettlementSuggestion[],
   return suggestions.map((suggestion) => {
     const payerName = resolveParticipantDisplayName(suggestion.payerParticipantId, lookups) ?? suggestion.payerName ?? "Unknown payer";
     const payeeName = resolveParticipantDisplayName(suggestion.payeeParticipantId, lookups) ?? suggestion.payeeName ?? "Unknown payee";
-    const usesRawIds =
-      suggestion.explanation.includes(suggestion.payerParticipantId) || suggestion.explanation.includes(suggestion.payeeParticipantId);
+    const explanation = suggestion.explanation
+      .split(suggestion.payerParticipantId)
+      .join(payerName)
+      .split(suggestion.payeeParticipantId)
+      .join(payeeName)
+      .replace(/because one owes the group and the other is owed\.?/gi, "to settle shared group expenses.");
 
     return {
       ...suggestion,
       payerName,
       payeeName,
-      explanation: usesRawIds ? `${payerName} pays ${payeeName} because one owes the group and the other is owed.` : suggestion.explanation
+      explanation
     };
   });
 }

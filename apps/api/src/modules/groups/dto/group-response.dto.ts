@@ -106,10 +106,14 @@ export class GroupResponseDto {
   @ApiProperty({ type: MembershipResponseDto, isArray: true })
   memberships!: MembershipResponseDto[];
 
+  @ApiPropertyOptional({ description: "Current user's net balance in this group (positive = owed money, negative = owes money)" })
+  netBalanceMinor?: number;
+
   static fromEntities(
     group: GroupEntity,
     participants: ParticipantEntity[],
-    memberships: GroupMembershipEntity[]
+    memberships: GroupMembershipEntity[],
+    netBalanceMinor = 0
   ): GroupResponseDto {
     return {
       id: group.id,
@@ -124,7 +128,8 @@ export class GroupResponseDto {
       imageUrl: group.imageAttachmentId ? `/v1/attachments/${group.imageAttachmentId}/content` : null,
       archivedAt: toIso(group.archivedAt),
       participants: participants.map(ParticipantResponseDto.fromEntity),
-      memberships: memberships.map(MembershipResponseDto.fromEntity)
+      memberships: memberships.map(MembershipResponseDto.fromEntity),
+      netBalanceMinor
     };
   }
 }

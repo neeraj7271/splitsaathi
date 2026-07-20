@@ -196,8 +196,9 @@ const sharedProviders: Provider[] = [
   },
   {
     provide: SettlementSuggestionService,
-    inject: [BalanceProjector],
-    useFactory: (balances: BalanceProjector) => new SettlementSuggestionService(balances)
+    inject: [BalanceProjector, ExpenseProjector],
+    useFactory: (balances: BalanceProjector, expenses: ExpenseProjector) =>
+      new SettlementSuggestionService(balances, expenses)
   },
   {
     provide: SettlementCommandService,

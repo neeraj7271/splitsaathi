@@ -130,7 +130,16 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
         <SectionHeader title="Recent activity" />
         {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
         {enrichedActivity.length ? (
-          <DataSurface>{enrichedActivity.slice(0, 6).map((item) => <ActivityRow key={item.id} item={item} />)}</DataSurface>
+          <DataSurface>
+            {enrichedActivity.slice(0, 6).map((item) => (
+              <ActivityRow
+                key={item.id}
+                item={item}
+                groupName={groupQuery.data?.name}
+                groupImageUrl={groupQuery.data?.imageUrl}
+              />
+            ))}
+          </DataSurface>
         ) : (
           <EmptyState title="No ledger activity yet" body="Accepted expenses, proofs, edits, and settlements will appear here." />
         )}
