@@ -1,10 +1,15 @@
 import 'reflect-metadata';
+import { resolve } from 'node:path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { ApiConfigService } from './config/api-config.service';
+import { loadEnvFile } from './config/load-env-file';
 import { setupSwagger } from './swagger/setup-swagger';
+
+// Load apps/api/.env when present (PM2/systemd can also inject env).
+loadEnvFile(resolve(__dirname, '../.env'));
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -41,7 +46,8 @@ async function bootstrap(): Promise<void> {
 
   setupSwagger(app);
 
-  await app.listen(config.env.PORT, '0.0.0.0');
+  const host = config.env.HOST;
+  await app.listen(config.env.PORT, host);
 }
 
 void bootstrap();

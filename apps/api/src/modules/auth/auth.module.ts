@@ -43,7 +43,11 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
       provide: OTP_PROVIDER,
       inject: [ApiConfigService, DevOtpProvider, TwilioVerifyOtpProvider],
       useFactory: (config: ApiConfigService, dev: DevOtpProvider, twilio: TwilioVerifyOtpProvider) => {
-        if (config.env.NODE_ENV === 'production' && config.env.OTP_PROVIDER_DRIVER === 'dev') {
+        if (
+          config.env.NODE_ENV === 'production' &&
+          config.env.OTP_PROVIDER_DRIVER === 'dev' &&
+          !config.env.ALLOW_INSECURE_DEV_PROVIDERS
+        ) {
           throw new Error('OTP_PROVIDER_DRIVER=dev is not allowed in production.');
         }
         return config.env.OTP_PROVIDER_DRIVER === 'twilio_verify' ? twilio : dev;
@@ -53,7 +57,11 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
       provide: EMAIL_PROVIDER,
       inject: [ApiConfigService, DevEmailProvider, ResendEmailProvider],
       useFactory: (config: ApiConfigService, dev: DevEmailProvider, resend: ResendEmailProvider) => {
-        if (config.env.NODE_ENV === 'production' && config.env.EMAIL_PROVIDER_DRIVER === 'dev') {
+        if (
+          config.env.NODE_ENV === 'production' &&
+          config.env.EMAIL_PROVIDER_DRIVER === 'dev' &&
+          !config.env.ALLOW_INSECURE_DEV_PROVIDERS
+        ) {
           throw new Error('EMAIL_PROVIDER_DRIVER=dev is not allowed in production.');
         }
         return config.env.EMAIL_PROVIDER_DRIVER === 'resend' ? resend : dev;

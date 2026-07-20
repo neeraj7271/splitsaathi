@@ -32,7 +32,11 @@ import { ExpoPushProvider } from './providers/expo-push.provider';
       provide: NOTIFICATION_PROVIDER,
       inject: [ApiConfigService, DevNotificationProvider, ExpoPushProvider],
       useFactory: (config: ApiConfigService, dev: DevNotificationProvider, expo: ExpoPushProvider) => {
-        if (config.env.NODE_ENV === 'production' && config.env.NOTIFICATION_PROVIDER_DRIVER === 'dev') {
+        if (
+          config.env.NODE_ENV === 'production' &&
+          config.env.NOTIFICATION_PROVIDER_DRIVER === 'dev' &&
+          !config.env.ALLOW_INSECURE_DEV_PROVIDERS
+        ) {
           throw new Error('NOTIFICATION_PROVIDER_DRIVER=dev is not allowed in production.');
         }
         return config.env.NOTIFICATION_PROVIDER_DRIVER === 'expo' ? expo : dev;

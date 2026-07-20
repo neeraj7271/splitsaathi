@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
   TEST_DATABASE_URL: z.string().min(1).optional(),
@@ -12,6 +13,8 @@ export const envSchema = z.object({
   APP_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
   MOBILE_API_URL: z.string().url().default('http://localhost:3000'),
   LOCAL_OBJECT_STORAGE_DIR: z.string().min(1).optional(),
+  /** Early VM / staging only. Must be false (or unset) before real user data. */
+  ALLOW_INSECURE_DEV_PROVIDERS: z.coerce.boolean().default(false),
   OTP_PROVIDER_DRIVER: z.enum(['dev', 'twilio_verify']).default('dev'),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),

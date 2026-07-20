@@ -15,7 +15,9 @@
     "migration:run": "npm run migration:run -w @splitsaathi/db",
     "setup:db": "powershell -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
     "dev:api": "npm run start:dev -w @splitsaathi/api",
-    "dev:mobile": "npm run start -w @splitsaathi/mobile"
+    "dev:mobile": "npm run start -w @splitsaathi/mobile",
+    "deploy:build": "bash deploy/build.sh",
+    "deploy:start": "bash deploy/start.sh"
   },
   "devDependencies": {
     "@babel/helper-optimise-call-expression": "^7.29.7",

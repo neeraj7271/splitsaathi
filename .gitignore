@@ -3,8 +3,12 @@ dist
 .expo
 .env
 .env.*
+!deploy/env.example
 coverage
 *.log
 apps/mobile/.expo
 apps/mobile/web-build
 tmp
+deploy/logs
+deploy/.env
+deploy/api.env

@@ -1,0 +1,59 @@
+# Postgres + MinIO (S3-compatible object storage), bound to localhost only.
+# Usage (from repo root on the VM):
+#   cd deploy && docker compose --env-file .env up -d
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: splitsaathi_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-splitsaathi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-splitsaathi}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - splitsaathi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-splitsaathi} -d ${POSTGRES_DB:-splitsaathi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: splitsaathi_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - splitsaathi_minio:/data
+
+  # One-shot: create the attachments bucket if missing  minio-init:
+    image: minio/mc:latest
+    container_name: splitsaathi_minio_init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/$${S3_BUCKET:-splitsaathi};
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in deploy/.env}
+      S3_BUCKET: ${S3_BUCKET:-splitsaathi}
+    restart: "no"
+
+volumes:
+  splitsaathi_pgdata:
+  splitsaathi_minio:

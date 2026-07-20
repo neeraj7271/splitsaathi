@@ -125,7 +125,11 @@ const sharedProviders: Provider[] = [
       local: LocalObjectStorageProvider,
       s3: S3ObjectStorageProvider
     ) => {
-      if (config.env.NODE_ENV === 'production' && config.env.OBJECT_STORAGE_DRIVER === 'local') {
+      if (
+        config.env.NODE_ENV === 'production' &&
+        config.env.OBJECT_STORAGE_DRIVER === 'local' &&
+        !config.env.ALLOW_INSECURE_DEV_PROVIDERS
+      ) {
         throw new Error('OBJECT_STORAGE_DRIVER=local is not allowed in production.');
       }
       return config.env.OBJECT_STORAGE_DRIVER === 's3' ? s3 : local;
@@ -137,12 +141,7 @@ const sharedProviders: Provider[] = [
   {
     provide: UPI_INTENT_PROVIDER,
     inject: [ApiConfigService, DevUpiIntentProvider],
-    useFactory: (config: ApiConfigService, dev: DevUpiIntentProvider) => {
-      if (config.env.NODE_ENV === 'production' && config.env.UPI_INTENT_PROVIDER_DRIVER === 'dev') {
-        return dev;
-      }
-      return dev;
-    }
+    useFactory: (_config: ApiConfigService, dev: DevUpiIntentProvider) => dev
   },
   {
     provide: PAYMENT_GATEWAY_PROVIDER,
@@ -152,7 +151,11 @@ const sharedProviders: Provider[] = [
       manual: ManualPaymentGateway,
       razorpay: RazorpayPaymentGatewayProvider
     ) => {
-      if (config.env.NODE_ENV === 'production' && config.env.PAYMENT_GATEWAY_DRIVER === 'manual') {
+      if (
+        config.env.NODE_ENV === 'production' &&
+        config.env.PAYMENT_GATEWAY_DRIVER === 'manual' &&
+        !config.env.ALLOW_INSECURE_DEV_PROVIDERS
+      ) {
         throw new Error('PAYMENT_GATEWAY_DRIVER=manual is not allowed in production.');
       }
       return config.env.PAYMENT_GATEWAY_DRIVER === 'razorpay' ? razorpay : manual;
