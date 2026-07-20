@@ -1,6 +1,6 @@
 # Postgres + MinIO (S3-compatible object storage), bound to localhost only.
 # Usage (from repo root on the VM):
-#   cd deploy && docker compose --env-file .env up -d
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 
 services:
   postgres:
@@ -35,7 +35,8 @@ services:
     volumes:
       - splitsaathi_minio:/data
 
-  # One-shot: create the attachments bucket if missing  minio-init:
+  # One-shot: create the attachments bucket if missing
+  minio-init:
     image: minio/mc:latest
     container_name: splitsaathi_minio_init
     depends_on:
