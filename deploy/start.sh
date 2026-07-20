@@ -1,58 +1,43 @@
 #!/usr/bin/env bash
-# Start/restart infra + API on the Ubuntu VM. Run from monorepo root.
+# Start/restart full stack in Docker (Postgres + MinIO + API). Run from monorepo root.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if [[ ! -f deploy/.env ]]; then
-  echo "Missing deploy/.env — copy from deploy/env.example and fill secrets."
+  echo "Missing deploy/.env"
   exit 1
 fi
-if [[ ! -f apps/api/.env ]]; then
-  echo "Missing apps/api/.env — copy from deploy/env.example and fill secrets."
+if [[ ! -f deploy/api.docker.env ]]; then
+  echo "Missing deploy/api.docker.env — copy from deploy/env.example / create with docker hostnames."
   exit 1
 fi
 
-mkdir -p deploy/logs
+COMPOSE=(docker compose --env-file deploy/.env -f deploy/docker-compose.yml)
 
-echo "==> Starting Postgres + MinIO"
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
+echo "==> Building + starting Postgres, MinIO, API"
+"${COMPOSE[@]}" up -d --build
 
-echo "==> Waiting for Postgres"
-ready=0
+echo "==> Waiting for API health"
+ok=0
 for _ in $(seq 1 60); do
-  if docker exec splitsaathi_postgres pg_isready -U splitsaathi >/dev/null 2>&1; then
-    ready=1
+  if curl -sf http://127.0.0.1:3000/v1/health/live >/dev/null 2>&1; then
+    ok=1
     break
   fi
-  sleep 1
+  sleep 2
 done
-if [[ "$ready" -ne 1 ]]; then
-  echo "Postgres did not become ready in time."
-  docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs postgres | tail -50
+
+if [[ "$ok" -ne 1 ]]; then
+  echo "API did not become healthy. Recent logs:"
+  "${COMPOSE[@]}" logs --tail=80 api
   exit 1
 fi
 
-echo "==> Installing deps + building (needed before migrations)"
-bash deploy/build.sh
-
-echo "==> Running migrations"
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  DATABASE_URL="$(grep -E '^DATABASE_URL=' apps/api/.env | head -1 | cut -d= -f2-)"
-  export DATABASE_URL
-fi
-npm run migration:run
-
-echo "==> Starting / restarting API with PM2"
-if pm2 describe splitsaathi-api >/dev/null 2>&1; then
-  pm2 restart deploy/ecosystem.config.cjs --update-env
-else
-  pm2 start deploy/ecosystem.config.cjs
-fi
-pm2 save
-
 echo ""
-echo "API should be on 127.0.0.1:3000 (nginx fronts it on :80)."
-echo "Health: curl -s http://127.0.0.1:3000/v1/health/live"
+"${COMPOSE[@]}" ps
+echo ""
+echo "API is on 127.0.0.1:3000 (nginx should proxy public :80/:443 here)."
+echo "Health: curl -s http://127.0.0.1:3000/v1/health/ready"
 echo "Public: curl -s http://65.20.81.44/v1/health/live"

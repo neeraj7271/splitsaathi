@@ -1,6 +1,6 @@
-# Postgres + MinIO (S3-compatible object storage), bound to localhost only.
-# Usage (from repo root on the VM):
-#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
+# Postgres + MinIO + NestJS API — only nginx on the host needs to be public.
+# From monorepo root:
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 
 services:
   postgres:
@@ -12,7 +12,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
       POSTGRES_DB: ${POSTGRES_DB:-splitsaathi}
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host port 5433 avoids clashing with system Postgres on many VMs
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - splitsaathi_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +28,7 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in deploy/.env}
     ports:
       - "127.0.0.1:9000:9000"
@@ -35,7 +36,6 @@ services:
     volumes:
       - splitsaathi_minio:/data
 
-  # One-shot: create the attachments bucket if missing
   minio-init:
     image: minio/mc:latest
     container_name: splitsaathi_minio_init
@@ -50,10 +50,40 @@ services:
       exit 0;
       "
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in deploy/.env}
       S3_BUCKET: ${S3_BUCKET:-splitsaathi}
     restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: splitsaathi-api:latest
+    container_name: splitsaathi_api
+    restart: unless-stopped
+    env_file:
+      - api.docker.env
+    ports:
+      # Bound to localhost only — nginx proxies public traffic here
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
 volumes:
   splitsaathi_pgdata:

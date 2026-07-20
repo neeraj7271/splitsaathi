@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.expo
+**/.expo
+apps/mobile/android
+apps/mobile/ios
+apps/mobile/.expo
+deploy/logs
+*.log
+coverage
+.tmp
+.local-dev
+research-dossier.md
+technical-architecture-plan.md
+BUILD_PROGRESS.md

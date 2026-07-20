@@ -12,3 +12,4 @@ tmp
 deploy/logs
 deploy/.env
 deploy/api.env
+deploy/api.docker.env
