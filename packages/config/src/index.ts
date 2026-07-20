@@ -1,5 +1,25 @@
 import { z } from 'zod';
 
+/** Env-safe boolean: "false"/"0"/"no" → false (z.coerce.boolean treats "false" as true). */
+const envBoolean = z.preprocess((value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no', 'off', ''].includes(normalized)) {
+      return false;
+    }
+  }
+  return value;
+}, z.boolean());
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().min(1).default('0.0.0.0'),
@@ -14,7 +34,7 @@ export const envSchema = z.object({
   MOBILE_API_URL: z.string().url().default('http://localhost:3000'),
   LOCAL_OBJECT_STORAGE_DIR: z.string().min(1).optional(),
   /** Early VM / staging only. Must be false (or unset) before real user data. */
-  ALLOW_INSECURE_DEV_PROVIDERS: z.coerce.boolean().default(false),
+  ALLOW_INSECURE_DEV_PROVIDERS: envBoolean.default(false),
   OTP_PROVIDER_DRIVER: z.enum(['dev', 'twilio_verify']).default('dev'),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
@@ -38,14 +58,14 @@ export const envSchema = z.object({
   S3_BUCKET: z.string().min(1).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
-  S3_USE_SSL: z.coerce.boolean().default(true),
+  S3_USE_SSL: envBoolean.default(true),
   BANK_IMPORT_PROVIDER_DRIVER: z.enum(['csv', 'setu_aa']).default('csv'),
   SETU_AA_BASE_URL: z.string().url().optional(),
   SETU_AA_CLIENT_ID: z.string().min(1).optional(),
   SETU_AA_CLIENT_SECRET: z.string().min(1).optional(),
   FX_PROVIDER_DRIVER: z.enum(['frankfurter', 'static']).default('frankfurter'),
   FRANKFURTER_BASE_URL: z.string().url().default('https://api.frankfurter.dev/v1'),
-  METRICS_ENABLED: z.coerce.boolean().default(true)
+  METRICS_ENABLED: envBoolean.default(true)
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

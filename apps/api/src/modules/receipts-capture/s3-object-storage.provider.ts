@@ -58,10 +58,16 @@ export class S3ObjectStorageProvider implements ObjectStoragePort {
       throw new Error('S3_ENDPOINT, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY are required when OBJECT_STORAGE_DRIVER=s3.');
     }
     const url = endpoint.startsWith('http') ? new URL(endpoint) : new URL(`https://${endpoint}`);
+    const useSSL =
+      url.protocol === 'http:'
+        ? false
+        : url.protocol === 'https:'
+          ? true
+          : this.config.env.S3_USE_SSL;
     return new Client({
       endPoint: url.hostname,
-      port: url.port ? Number(url.port) : undefined,
-      useSSL: this.config.env.S3_USE_SSL,
+      port: url.port ? Number(url.port) : useSSL ? 443 : 80,
+      useSSL,
       accessKey,
       secretKey,
       region: this.config.env.S3_REGION

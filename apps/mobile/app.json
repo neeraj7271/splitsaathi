@@ -11,11 +11,12 @@
       "bundleIdentifier": "in.splitsaathi.mobile"
     },
     "android": {
-      "package": "in.splitsaathi.mobile"
+      "package": "in.splitsaathi.mobile",
+      "usesCleartextTraffic": true
     },
     "extra": {
       "router": {
-        "origin": "https://duckbill-these-elusive.ngrok-free.dev"
+        "origin": "http://65.20.81.44"
       }
     },
     "plugins": [
