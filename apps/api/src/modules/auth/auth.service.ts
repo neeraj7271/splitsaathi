@@ -12,7 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { OAuth2Client } from 'google-auth-library';
 import { randomBytes, randomInt } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { ApiConfigService } from '../../config/api-config.service';
 import { UserResponseDto } from '../users/dto/user-response.dto';
@@ -73,7 +73,7 @@ export class AuthService {
   ) {}
 
   async startOtp(dto: StartOtpDto): Promise<StartOtpResponseDto> {
-    const phoneE164 = dto.phoneE164.trim();
+    const phoneE164 = normalizePhoneE164(dto.phoneE164);
     const expiresAt = new Date(Date.now() + OTP_CHALLENGE_TTL_MINUTES * 60 * 1000);
     const challenge = this.challenges.create({
       phoneE164,
@@ -278,11 +278,22 @@ export class AuthService {
   }
 
   private async findOrCreateUserForPhone(phoneE164: string, displayName?: string): Promise<UserEntity> {
+    const normalized = normalizePhoneE164(phoneE164);
+    const candidates = phoneLookupCandidates(normalized);
     const identity = await this.identities.findOne({
-      where: { provider: 'phone', identifier: phoneE164 }
+      where: {
+        provider: 'phone',
+        identifier: In(candidates)
+      }
     });
 
     if (identity) {
+      // Canonicalize stored identifier if an older format was used.
+      if (identity.identifier !== normalized) {
+        identity.identifier = normalized;
+        identity.verifiedAt = new Date();
+        await this.identities.save(identity);
+      }
       const user = await this.usersService.findByIdOrThrow(identity.userId);
       if (displayName && user.displayName !== displayName) {
         return this.usersService.updateDisplayName(user, displayName);
@@ -291,14 +302,14 @@ export class AuthService {
     }
 
     const user = await this.usersService.createUser({
-      displayName: displayName ?? this.defaultDisplayName(phoneE164),
+      displayName: displayName ?? this.defaultDisplayName(normalized),
       defaultCurrencyCode: 'INR'
     });
     await this.identities.save(
       this.identities.create({
         userId: user.id,
         provider: 'phone',
-        identifier: phoneE164,
+        identifier: normalized,
         verifiedAt: new Date()
       })
     );
@@ -456,4 +467,43 @@ export class AuthService {
   private addDays(date: Date, days: number): Date {
     return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
   }
+}
+
+/** Canonical Indian-friendly E.164 normalizer for SplitSaathi phone login. */
+export function normalizePhoneE164(input: string): string {
+  const trimmed = input.trim().replace(/[\s()-]/g, '');
+  if (!trimmed) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('+')) {
+    return `+${trimmed.slice(1).replace(/\D/g, '')}`;
+  }
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return `+91${digits.slice(1)}`;
+  }
+  return digits ? `+${digits}` : trimmed;
+}
+
+function phoneLookupCandidates(normalized: string): string[] {
+  const digits = normalized.replace(/\D/g, '');
+  const candidates = new Set<string>([normalized]);
+  if (digits) {
+    candidates.add(`+${digits}`);
+    if (digits.length === 12 && digits.startsWith('91')) {
+      candidates.add(digits.slice(2));
+      candidates.add(`+91${digits.slice(2)}`);
+    }
+    if (digits.length === 10) {
+      candidates.add(digits);
+      candidates.add(`+91${digits}`);
+    }
+  }
+  return [...candidates];
 }

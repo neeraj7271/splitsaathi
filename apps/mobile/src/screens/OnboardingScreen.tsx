@@ -46,11 +46,24 @@ function shouldSkipOnboarding(response: { needsOnboarding?: boolean; user: { dis
 }
 
 function formatPhoneE164(phone: string) {
-  const trimmed = phone.trim();
-  if (!trimmed.startsWith("+")) {
-    return `+91${trimmed}`;
+  const trimmed = phone.trim().replace(/[\s()-]/g, '');
+  if (!trimmed) {
+    return trimmed;
   }
-  return trimmed;
+  if (trimmed.startsWith("+")) {
+    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return `+91${digits.slice(1)}`;
+  }
+  return digits ? `+${digits}` : trimmed;
 }
 
 export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
