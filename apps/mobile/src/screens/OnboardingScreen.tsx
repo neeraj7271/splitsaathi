@@ -9,6 +9,8 @@ import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
 import { GoogleSignInButton, isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
 import { markLoggedInBefore, hasLoggedInBefore } from "../auth/loginStore";
+import { AuthIconButton } from "../components/AuthIconButton";
+import { BrandLogo } from "../components/BrandLogo";
 import { Button } from "../components/Button";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
@@ -23,6 +25,7 @@ type OnboardingStep =
   | "welcome"
   | "phone"
   | "otp"
+  | "emailGate"
   | "emailSignup"
   | "emailVerify"
   | "emailLogin"
@@ -222,7 +225,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       .then((loggedInBefore) => {
         if (loggedInBefore) {
           setReturningUser(true);
-          setStep("phone");
+          // Stay on welcome — phone is the default primary path there.
         }
       })
       .catch(() => undefined);
@@ -270,29 +273,58 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       <View style={[styles.panel, { paddingHorizontal: theme.spacing.screen, gap: theme.spacing.sectionGap }]}>
         {step === "welcome" ? (
           <>
-            <View style={styles.heroCopy}>
-              <ThemedText variant="displayLg" style={{ color: onGradient }}>
-                SplitSaathi
-              </ThemedText>
-              <ThemedText variant="body" style={{ color: onGradient, opacity: 0.82 }}>
-                A shared ledger for flats, trips, and UPI settlements where proof and confirmation stay visible.
+            <View style={styles.heroBrand}>
+              <View style={[styles.brandCard, { backgroundColor: "#FFFFFF", borderRadius: theme.radius.lg }]}>
+                <BrandLogo variant="lockup" size={148} />
+              </View>
+              <ThemedText variant="body" style={{ color: onGradient, opacity: 0.88, textAlign: "center" }}>
+                {returningUser
+                  ? "Welcome back. Sign in with your phone, or use email / Google."
+                  : "Split expenses with proof-backed UPI settlements for flats, trips, and groups."}
               </ThemedText>
             </View>
-            <View style={styles.stack}>
-              <InlineNotice title="Your choice of sign-in" body="Use phone OTP or email and password. Contacts are optional and can be skipped." tone="confirmed" />
-              <Button label="Start with phone" onPress={() => setStep("phone")} />
-              <Button label="Create account with email" variant="secondary" onPress={() => setStep("emailSignup")} />
-              <Button label="Sign in with email" variant="secondary" onPress={() => setStep("emailLogin")} />
-              {googleConfigured ? (
-                <GoogleSignInButton
-                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
-                  pending={loginWithGoogle.isPending}
-                  errorMessage={loginWithGoogle.error?.message}
-                />
-              ) : null}
-              <Button label="Join with invite" variant="secondary" onPress={() => setStep("join")} />
+            <View style={[styles.welcomeCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.lg }]}>
+              <View style={styles.welcomePhoneHeader}>
+                <Phone size={20} color={theme.colors.confirmed} weight="duotone" />
+                <ThemedText variant="bodyMedium">{returningUser ? "Sign in with phone" : "Continue with phone"}</ThemedText>
+              </View>
+              <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+              {startOtp.error ? <InlineNotice title="OTP could not start" body={startOtp.error.message} tone="owe" /> : null}
+              <Button label="Send OTP" onPress={sendOtp} loading={startOtp.isPending} disabled={phone.length < 8} />
+
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
+                <ThemedText variant="caption" tone="muted">
+                  or continue with
+                </ThemedText>
+                <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
+              </View>
+
+              <View style={styles.iconRow}>
+                <AuthIconButton method="email" label="Email" onPress={() => setStep("emailGate")} />
+                {googleConfigured ? (
+                  <GoogleSignInButton
+                    variant="icon"
+                    onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+                    pending={loginWithGoogle.isPending}
+                  />
+                ) : (
+                  <AuthIconButton method="google" label="Google" onPress={() => undefined} disabled />
+                )}
+              </View>
+              {loginWithGoogle.error ? <InlineNotice title="Google sign-in failed" body={loginWithGoogle.error.message} tone="owe" /> : null}
+
+              <Button label="Join with invite" variant="ghost" onPress={() => setStep("join")} />
             </View>
           </>
+        ) : null}
+
+        {step === "emailGate" ? (
+          <AuthPanel title="Continue with email" body="Create a new account or sign in with your verified email and password." icon={<EnvelopeSimple size={24} color={theme.colors.confirmed} weight="duotone" />}>
+            <Button label="Create account" onPress={() => setStep("emailSignup")} />
+            <Button label="Sign in" variant="secondary" onPress={() => setStep("emailLogin")} />
+            <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
+          </AuthPanel>
         ) : null}
 
         {step === "phone" ? (
@@ -479,6 +511,14 @@ function AuthPanel({ title, body, icon, children }: { title: string; body: strin
 
   return (
     <View style={[styles.authPanel, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.lg, padding: theme.spacing.cardPadding }]}>
+      <View style={styles.authBrand}>
+        <View style={styles.authMarkClip}>
+          <BrandLogo variant="mark" size={36} />
+        </View>
+        <View style={styles.authWordmarkChip}>
+          <BrandLogo variant="wordmark" size={16} />
+        </View>
+      </View>
       <View style={styles.authHeader}>
         <View style={[styles.iconCircle, { backgroundColor: theme.colors.surfaceRaised }]}>{icon}</View>
         <View style={styles.headerText}>
@@ -543,12 +583,65 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 20
   },
+  heroBrand: {
+    gap: 16,
+    paddingBottom: 12,
+    alignItems: "center"
+  },
+  brandCard: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center"
+  },
+  welcomeCard: {
+    gap: 14,
+    borderWidth: 1,
+    padding: 16
+  },
+  welcomePhoneHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 4
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth
+  },
+  iconRow: {
+    flexDirection: "row",
+    gap: 12
+  },
   stack: {
     gap: 12
   },
   authPanel: {
     gap: 18,
     borderWidth: 1
+  },
+  authBrand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  authMarkClip: {
+    borderRadius: 10,
+    overflow: "hidden"
+  },
+  authWordmarkChip: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#E4E7EF"
   },
   authHeader: {
     flexDirection: "row",

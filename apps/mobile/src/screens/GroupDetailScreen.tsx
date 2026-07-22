@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Alert, Pressable, Share, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, LinkSimple, LockKey, LockKeyOpen, UserPlus } from "phosphor-react-native";
+import { ImageSquare, LinkSimple, LockKey, LockKeyOpen, UserPlus } from "phosphor-react-native";
+import * as ImagePicker from "expo-image-picker";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
@@ -26,6 +27,7 @@ import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, resolveParticipantDisplayName } from "../utils/displayNames";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
+import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 
 type GroupTab = "activity" | "balances" | "expenses" | "charts" | "people";
 
@@ -118,6 +120,49 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
       queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
     }
   });
+  const updateGroupImage = useMutation({
+    mutationFn: async (action: "change" | "remove") => {
+      if (!selectedGroupId) {
+        throw new Error("No group selected.");
+      }
+      if (action === "remove") {
+        return apiClient.updateGroup(selectedGroupId, { imageAttachmentId: null });
+      }
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error("Allow photo access to change the group logo.");
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: true,
+        aspect: [1, 1]
+      });
+      if (picked.canceled || !picked.assets[0]) {
+        return null;
+      }
+      const asset = picked.assets[0];
+      const uploaded = await apiClient.uploadAttachment(
+        {
+          uri: asset.uri,
+          name: asset.fileName ?? "group-image.jpg",
+          type: asset.mimeType ?? "image/jpeg"
+        },
+        "group_image"
+      );
+      return apiClient.updateGroup(selectedGroupId, { imageAttachmentId: uploaded.id });
+    },
+    onSuccess: async (group) => {
+      if (!group) {
+        return;
+      }
+      if (group.imageUrl) {
+        await clearAuthenticatedImageCache(group.imageUrl);
+      }
+      queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+    }
+  });
   const roleChange = useMutation({
     mutationFn: ({ membershipId, role }: { membershipId: string; role: MembershipRole }) => apiClient.updateMembershipRole(selectedGroupId as string, membershipId, role),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] })
@@ -168,6 +213,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   }
 
   const group = groupQuery.data;
+  const myMembership = group?.memberships.find((membership) => membership.userId === profileQuery.data?.id);
+  const canEditGroup = myMembership?.role === "owner" || myMembership?.role === "admin";
   const enrichedBalances = useMemo(() => {
     if (!group || !balancesQuery.data) {
       return [];
@@ -197,12 +244,33 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   return (
     <Screen>
       <View style={styles.header}>
-        <UserAvatar displayName={group?.name ?? "Group"} avatarUrl={group?.imageUrl} size={48} />
+        <Pressable
+          disabled={!canEditGroup || updateGroupImage.isPending}
+          onPress={() => {
+            if (!canEditGroup) {
+              return;
+            }
+            Alert.alert("Group logo", undefined, [
+              { text: "Change photo", onPress: () => updateGroupImage.mutate("change") },
+              ...(group?.imageUrl
+                ? [{ text: "Remove photo", style: "destructive" as const, onPress: () => updateGroupImage.mutate("remove") }]
+                : []),
+              { text: "Cancel", style: "cancel" }
+            ]);
+          }}
+        >
+          <UserAvatar displayName={group?.name ?? "Group"} avatarUrl={group?.imageUrl} size={48} />
+        </Pressable>
         <View style={styles.titleBlock}>
           <ThemedText variant="caption" tone="muted">
             Group ledger
           </ThemedText>
           <ThemedText variant="title">{group?.name ?? "Select group"}</ThemedText>
+          {canEditGroup ? (
+            <ThemedText variant="caption" tone="muted">
+              Tap logo to change
+            </ThemedText>
+          ) : null}
         </View>
         {group?.state === "archived" ? <StatusPill state="expired" /> : null}
       </View>
@@ -366,6 +434,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
           {tab === "people" ? (
             <PeopleManagement
               group={group}
+              canEditGroup={canEditGroup}
               inviteUrl={inviteUrl}
               newParticipantName={newParticipantName}
               newParticipantPhone={newParticipantPhone}
@@ -377,6 +446,10 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               createInvitePending={createInvite.isPending}
               archiveGroup={() => archiveGroup.mutate()}
               archivePending={archiveGroup.isPending}
+              updateGroupImagePending={updateGroupImage.isPending}
+              updateGroupImageError={updateGroupImage.error instanceof Error ? updateGroupImage.error.message : null}
+              onChangeGroupImage={() => updateGroupImage.mutate("change")}
+              onRemoveGroupImage={() => updateGroupImage.mutate("remove")}
               roleChange={(membershipId, role) => roleChange.mutate({ membershipId, role })}
               lockExit={(membershipId) => lockExit.mutate(membershipId)}
               unlockExit={(membershipId) => unlockExit.mutate(membershipId)}
@@ -442,6 +515,7 @@ function ExpenseExplanationSection({
 
 function PeopleManagement({
   group,
+  canEditGroup,
   inviteUrl,
   newParticipantName,
   newParticipantPhone,
@@ -453,6 +527,10 @@ function PeopleManagement({
   createInvitePending,
   archiveGroup,
   archivePending,
+  updateGroupImagePending,
+  updateGroupImageError,
+  onChangeGroupImage,
+  onRemoveGroupImage,
   roleChange,
   lockExit,
   unlockExit,
@@ -460,6 +538,7 @@ function PeopleManagement({
   contactError
 }: {
   group: GroupDetail;
+  canEditGroup: boolean;
   inviteUrl?: string;
   newParticipantName: string;
   newParticipantPhone: string;
@@ -471,6 +550,10 @@ function PeopleManagement({
   createInvitePending: boolean;
   archiveGroup: () => void;
   archivePending: boolean;
+  updateGroupImagePending: boolean;
+  updateGroupImageError: string | null;
+  onChangeGroupImage: () => void;
+  onRemoveGroupImage: () => void;
   roleChange: (membershipId: string, role: MembershipRole) => void;
   lockExit: (membershipId: string) => void;
   unlockExit: (membershipId: string) => void;
@@ -483,6 +566,33 @@ function PeopleManagement({
   return (
     <View style={styles.section}>
       <SectionHeader title="People and roles" />
+
+      {canEditGroup ? (
+        <DataSurface>
+          <View style={styles.formBlock}>
+            <View style={styles.formHeader}>
+              <ImageSquare size={20} color={theme.colors.inkMuted} weight="duotone" />
+              <ThemedText variant="bodyMedium">Group logo</ThemedText>
+            </View>
+            <View style={styles.logoRow}>
+              <UserAvatar displayName={group.name} avatarUrl={group.imageUrl} size={64} />
+              <View style={styles.logoActions}>
+                <Button
+                  label={group.imageUrl ? "Change logo" : "Add logo"}
+                  variant="secondary"
+                  onPress={onChangeGroupImage}
+                  loading={updateGroupImagePending}
+                />
+                {group.imageUrl ? (
+                  <Button label="Remove logo" variant="ghost" onPress={onRemoveGroupImage} disabled={updateGroupImagePending} />
+                ) : null}
+              </View>
+            </View>
+            {updateGroupImageError ? <InlineNotice title="Logo update failed" body={updateGroupImageError} tone="owe" /> : null}
+          </View>
+        </DataSurface>
+      ) : null}
+
       <DataSurface>
         {group.memberships.map((membership) => {
           const displayName = resolveParticipantDisplayName(membership.participantId, lookups) ?? "Unknown participant";
@@ -666,6 +776,15 @@ const styles = StyleSheet.create({
   formHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8
+  },
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14
+  },
+  logoActions: {
+    flex: 1,
     gap: 8
   },
   inviteBlock: {

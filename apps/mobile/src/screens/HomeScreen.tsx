@@ -6,6 +6,7 @@ import { CloudArrowUp, FileCsv, Receipt, Repeat, Scales } from "phosphor-react-n
 import { apiClient } from "../api/client";
 import { ActivityRow } from "../components/ActivityRow";
 import { BalanceHeroCard } from "../components/BalanceHeroCard";
+import { BrandLogo } from "../components/BrandLogo";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
@@ -59,11 +60,16 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   return (
     <Screen>
       <View style={styles.header}>
-        <View>
-          <ThemedText variant="caption" tone="muted">
-            SplitSaathi
-          </ThemedText>
-          <ThemedText variant="title">{profileQuery.data?.displayName ?? "Current & Calm"}</ThemedText>
+        <View style={styles.headerBrand}>
+          <View style={styles.headerMarkClip}>
+            <BrandLogo variant="mark" size={40} />
+          </View>
+          <View style={styles.headerCopy}>
+            <View style={styles.wordmarkChip}>
+              <BrandLogo variant="wordmark" size={18} />
+            </View>
+            <ThemedText variant="title">{profileQuery.data?.displayName ?? "Current & Calm"}</ThemedText>
+          </View>
         </View>
         <View style={styles.headerRight}>
           {pendingProofs ? <StatusPill state="proof_submitted" /> : null}
@@ -152,7 +158,29 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    gap: 12
+  },
+  headerBrand: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  headerMarkClip: {
+    borderRadius: 10,
+    overflow: "hidden"
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 4,
+    alignItems: "flex-start"
+  },
+  wordmarkChip: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3
   },
   headerRight: {
     flexDirection: "row",

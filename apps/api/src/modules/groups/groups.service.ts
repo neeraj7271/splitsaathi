@@ -18,6 +18,7 @@ import { ClaimInviteDto } from './dto/claim-invite.dto';
 import { ChangeMembershipRoleDto } from './dto/change-membership-role.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
+import { UpdateGroupDto } from './dto/update-group.dto';
 import {
   GroupResponseDto,
   GroupSummaryResponseDto,
@@ -191,6 +192,29 @@ export class GroupsService {
       ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
       : 0;
     return GroupResponseDto.fromEntities(group, participants, memberships, netBalanceMinor);
+  }
+
+  async updateGroup(userId: string, groupId: string, dto: UpdateGroupDto): Promise<GroupResponseDto> {
+    await this.assertPermission(userId, groupId, 'group.update');
+    const group = await this.findGroupOrThrow(groupId);
+
+    if (dto.name === undefined && dto.imageAttachmentId === undefined) {
+      return this.getGroupForUser(userId, groupId);
+    }
+
+    if (dto.name !== undefined) {
+      group.name = dto.name.trim();
+    }
+
+    if (dto.imageAttachmentId !== undefined) {
+      if (dto.imageAttachmentId) {
+        await this.assertGroupImageAttachment(userId, dto.imageAttachmentId);
+      }
+      group.imageAttachmentId = dto.imageAttachmentId;
+    }
+
+    await this.groups.save(group);
+    return this.getGroupForUser(userId, groupId);
   }
 
   async createInvite(userId: string, groupId: string, dto: CreateInviteDto): Promise<InviteResponseDto> {

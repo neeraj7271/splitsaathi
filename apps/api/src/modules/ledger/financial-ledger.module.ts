@@ -45,6 +45,7 @@ import { RecurringController, RecurringExpenseService, RecurringProjector, Remin
 import { ReportsController } from '../reports/reports.controller';
 import { ReportsService } from '../reports/reports.service';
 import {
+  CashfreePaymentGatewayProvider,
   DevUpiIntentProvider,
   ManualPaymentGateway,
   PAYMENT_GATEWAY_PROVIDER,
@@ -137,6 +138,7 @@ const sharedProviders: Provider[] = [
   },
   DevUpiIntentProvider,
   ManualPaymentGateway,
+  CashfreePaymentGatewayProvider,
   RazorpayPaymentGatewayProvider,
   {
     provide: UPI_INTENT_PROVIDER,
@@ -145,10 +147,11 @@ const sharedProviders: Provider[] = [
   },
   {
     provide: PAYMENT_GATEWAY_PROVIDER,
-    inject: [ApiConfigService, ManualPaymentGateway, RazorpayPaymentGatewayProvider],
+    inject: [ApiConfigService, ManualPaymentGateway, CashfreePaymentGatewayProvider, RazorpayPaymentGatewayProvider],
     useFactory: (
       config: ApiConfigService,
       manual: ManualPaymentGateway,
+      cashfree: CashfreePaymentGatewayProvider,
       razorpay: RazorpayPaymentGatewayProvider
     ) => {
       if (
@@ -158,7 +161,13 @@ const sharedProviders: Provider[] = [
       ) {
         throw new Error('PAYMENT_GATEWAY_DRIVER=manual is not allowed in production.');
       }
-      return config.env.PAYMENT_GATEWAY_DRIVER === 'razorpay' ? razorpay : manual;
+      if (config.env.PAYMENT_GATEWAY_DRIVER === 'cashfree') {
+        return cashfree;
+      }
+      if (config.env.PAYMENT_GATEWAY_DRIVER === 'razorpay') {
+        return razorpay;
+      }
+      return manual;
     }
   },
   {

@@ -14,6 +14,7 @@ import { S3ObjectStorageProvider } from '../../src/modules/receipts-capture/s3-o
 import { parseReceiptLineItems } from '../../src/modules/receipts-capture/tesseract-ocr.provider';
 import { DevUpiIntentProvider, ManualPaymentGateway } from '../../src/modules/settlements/manual-upi.providers';
 import { RazorpayPaymentGatewayProvider } from '../../src/modules/settlements/razorpay-payment-gateway.provider';
+import { CashfreePaymentGatewayProvider } from '../../src/modules/settlements/cashfree-payment-gateway.provider';
 
 describe('provider port contracts', () => {
   it('DevOtpProvider starts and verifies a deterministic development challenge', async () => {
@@ -181,6 +182,48 @@ describe('provider port contracts', () => {
       utr: 'UTR123456'
     });
     expect(() => provider.verifyWebhook({ rawBody, signature: 'bad' })).toThrow(/signature/);
+  });
+
+  it('CashfreePaymentGatewayProvider verifies signatures and normalizes payment callbacks', () => {
+    const rawBody = JSON.stringify({
+      type: 'PAYMENT_SUCCESS_WEBHOOK',
+      data: {
+        order: {
+          order_id: 'order_SS_1',
+          order_amount: 50,
+          order_currency: 'INR',
+          order_tags: {
+            settlementIntentId: 'settlement-1',
+            ledgerReference: 'SS-REF-1'
+          }
+        },
+        payment: {
+          cf_payment_id: '1453002795',
+          payment_status: 'SUCCESS',
+          payment_amount: 50,
+          payment_currency: 'INR',
+          bank_reference: 'UTR123456'
+        }
+      }
+    });
+    const timestamp = '1617695238078';
+    const signature = createHmac('sha256', 'cf-secret')
+      .update(timestamp + rawBody)
+      .digest('base64');
+    const provider = new CashfreePaymentGatewayProvider({
+      env: { CASHFREE_SECRET_KEY: 'cf-secret' }
+    } as any);
+
+    expect(provider.verifyWebhook({ rawBody, signature, timestamp })).toMatchObject({
+      providerReference: 'SS-REF-1',
+      settlementIntentId: 'settlement-1',
+      status: 'succeeded',
+      amountMinor: 5000,
+      currencyCode: 'INR',
+      utr: 'UTR123456'
+    });
+    expect(() => provider.verifyWebhook({ rawBody, signature: 'bad', timestamp })).toThrow(/signature/);
+    expect(() => provider.verifyWebhook({ rawBody, signature })).toThrow(/timestamp/);
   });
 
   it('SetuAccountAggregatorProvider creates consent sessions and normalizes bank transactions', async () => {

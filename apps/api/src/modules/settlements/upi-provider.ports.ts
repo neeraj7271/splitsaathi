@@ -39,6 +39,8 @@ export interface PaymentGatewayPort {
 export interface PaymentGatewayWebhookInput {
   rawBody: string;
   signature?: string;
+  /** Cashfree: value of x-webhook-timestamp (joined with rawBody for HMAC). */
+  timestamp?: string;
 }
 
 export const UPI_INTENT_PROVIDER = 'UPI_INTENT_PROVIDER';

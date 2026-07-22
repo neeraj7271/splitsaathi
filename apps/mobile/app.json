@@ -6,13 +6,24 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "in.splitsaathi.mobile"
+      "bundleIdentifier": "in.splitsaathi.mobile",
+      "icon": "./assets/icon.png"
     },
     "android": {
       "package": "in.splitsaathi.mobile",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      }
     },
     "extra": {
       "router": {

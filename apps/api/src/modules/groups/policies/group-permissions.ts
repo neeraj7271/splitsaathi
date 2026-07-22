@@ -2,6 +2,7 @@ import { MembershipRole } from '@splitsaathi/contracts';
 
 export const GroupPermissions = [
   'group.read',
+  'group.update',
   'group.invite.create',
   'participant.create',
   'membership.role.update',
@@ -21,6 +22,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<MembershipRole, GroupPermission[]>
   owner: [...GroupPermissions],
   admin: [
     'group.read',
+    'group.update',
     'group.invite.create',
     'participant.create',
     'membership.role.update',

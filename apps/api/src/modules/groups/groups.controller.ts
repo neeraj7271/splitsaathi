@@ -25,6 +25,7 @@ import { ClaimInviteDto } from './dto/claim-invite.dto';
 import { ChangeMembershipRoleDto } from './dto/change-membership-role.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
+import { UpdateGroupDto } from './dto/update-group.dto';
 import {
   GroupResponseDto,
   GroupSummaryResponseDto,
@@ -66,6 +67,16 @@ export class GroupsController {
     @Param('groupId') groupId: string
   ): Promise<GroupResponseDto> {
     return this.groupsService.getGroupForUser(currentUser.userId, groupId);
+  }
+
+  @Patch(':groupId')
+  @ApiOkResponse({ type: GroupResponseDto })
+  updateGroup(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('groupId') groupId: string,
+    @Body() dto: UpdateGroupDto
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.updateGroup(currentUser.userId, groupId, dto);
   }
 
   @Post(':groupId/invites')

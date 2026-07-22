@@ -66,8 +66,9 @@ Defined variables:
 | `LOCAL_OBJECT_STORAGE_DIR` | Local filesystem root for attachment bytes. | Defaults to `.local-storage` under the API process cwd if unset. |
 | `OTP_PROVIDER_DRIVER` | OTP adapter selector: `dev` or `twilio_verify`. | Production must use `twilio_verify` with Twilio credentials. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | Twilio Verify adapter credentials. | Required when `OTP_PROVIDER_DRIVER=twilio_verify`. |
-| `PAYMENT_GATEWAY_DRIVER` | Payment callback adapter selector: `manual` or `razorpay`. | Production must not use `manual` if callback reconciliation is enabled. |
-| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Razorpay/test-mode payment gateway settings. | Webhook secret is required for `/v1/payments/razorpay/webhook`. |
+| `PAYMENT_GATEWAY_DRIVER` | Payment callback adapter: `manual`, `cashfree`, or `razorpay`. | Prefer `cashfree` for PSP reconciliation. |
+| `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY`, `CASHFREE_ENV` | Cashfree Payment Gateway credentials (`sandbox` \| `production`). | Webhook: `POST /v1/payments/cashfree/webhook`. |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Legacy Razorpay settings (optional). | Only if `PAYMENT_GATEWAY_DRIVER=razorpay`. |
 | `NOTIFICATION_PROVIDER_DRIVER`, `EXPO_PUSH_ACCESS_TOKEN` | Notification delivery selector and optional Expo Push access token. | Expo device tokens are registered by the mobile app. |
 | `OCR_PROVIDER_DRIVER` | OCR adapter selector: `noop` or `tesseract`. | `tesseract` runs local OCR without provider credentials. |
 | `OBJECT_STORAGE_DRIVER` | Attachment storage selector: `local` or `s3`. | `local` is blocked in production; use S3-compatible storage. |

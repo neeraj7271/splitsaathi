@@ -5,8 +5,12 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
+    "start:lan": "expo start --lan",
+    "start:tunnel": "expo start --tunnel",
     "android": "expo run:android",
+    "android:device": "expo run:android --device",
     "ios": "expo run:ios",
+    "apk:release": "cd android && ./gradlew assembleRelease",
     "test": "jest --passWithNoTests",
     "test:e2e": "echo \"E2E scaffold only. Configure Detox or Maestro device runners before enabling.\""
   },

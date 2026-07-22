@@ -5,6 +5,7 @@ import { ArrowLeft, ImageSquare, Trash } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
+import { BrandLogo } from "../components/BrandLogo";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
@@ -191,6 +192,15 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
 
       <Button label="Log out" variant="destructive" onPress={() => navigation.signOut()} />
 
+      <View style={styles.brandFooter}>
+        <View style={styles.brandMarkClip}>
+          <BrandLogo variant="mark" size={28} />
+        </View>
+        <View style={styles.brandWordmarkChip}>
+          <BrandLogo variant="wordmark" size={16} />
+        </View>
+      </View>
+
       <Button label="Back to home" variant="ghost" onPress={() => navigation.go("home")} />
 
       <ActionSheet
@@ -261,5 +271,22 @@ const styles = StyleSheet.create({
   },
   retryBlock: {
     gap: 10
+  },
+  brandFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 8
+  },
+  brandMarkClip: {
+    borderRadius: 8,
+    overflow: "hidden"
+  },
+  brandWordmarkChip: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4
   }
 });

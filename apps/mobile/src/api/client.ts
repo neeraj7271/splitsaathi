@@ -404,6 +404,18 @@ export class SplitSaathiApiClient {
     });
   }
 
+  async updateGroup(
+    groupId: string,
+    payload: { name?: string; imageAttachmentId?: string | null },
+    idempotencyKey = createIdempotencyKey("group.update")
+  ) {
+    return this.request<GroupDetail>(`/v1/groups/${groupId}`, {
+      method: "PATCH",
+      body: payload,
+      idempotencyKey
+    });
+  }
+
   async createInvite(groupId: string) {
     const invite = await this.request<{ id: string; joinUrl: string; token: string }>(`/v1/groups/${groupId}/invites`, {
       method: "POST",

@@ -8,6 +8,7 @@ import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from "@expo-google-
 import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 
 import { BottomTabs } from "./src/components/BottomTabs";
+import { BrandLogo } from "./src/components/BrandLogo";
 import { ThemedText } from "./src/components/ThemedText";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
@@ -125,9 +126,12 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   if (!fontsLoaded || !booted) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.colors.canvas }]}>
+        <View style={styles.loadingBrand}>
+          <BrandLogo variant="lockup" size={168} />
+        </View>
         <ActivityIndicator color={theme.colors.confirmed} />
         <ThemedText variant="caption" tone="muted">
-          Loading SplitSaathi
+          Loading your ledger
         </ThemedText>
       </View>
     );
@@ -186,5 +190,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 12
+  },
+  loadingBrand: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 8
   }
 });

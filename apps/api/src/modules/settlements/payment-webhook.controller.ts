@@ -14,6 +14,27 @@ export class PaymentWebhookController {
   ) {}
 
   @Public()
+  @Post('cashfree/webhook')
+  async cashfreeWebhook(
+    @Req() request: Request & { rawBody?: string },
+    @Headers('x-webhook-signature') signature: string | undefined,
+    @Headers('x-webhook-timestamp') timestamp: string | undefined,
+    @Body() body: unknown
+  ) {
+    if (!this.gateway.verifyWebhook) {
+      throw new Error('Configured payment gateway does not support webhooks.');
+    }
+    const rawBody = request.rawBody ?? JSON.stringify(body);
+    const status = this.gateway.verifyWebhook({ rawBody, signature, timestamp });
+    return this.settlements.recordGatewayPayment({
+      idempotencyKey: `cashfree:webhook:${status.providerReference}:${status.utr ?? 'no-utr'}`,
+      actorId: 'payment-gateway:cashfree',
+      status
+    });
+  }
+
+  /** @deprecated Prefer Cashfree. Kept for environments still on Razorpay. */
+  @Public()
   @Post('razorpay/webhook')
   async razorpayWebhook(
     @Req() request: Request & { rawBody?: string },

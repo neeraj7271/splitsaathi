@@ -3,6 +3,7 @@ export * from './settlement.projector';
 export * from './settlement-suggestion.service';
 export * from './upi-provider.ports';
 export * from './manual-upi.providers';
+export * from './cashfree-payment-gateway.provider';
 export * from './razorpay-payment-gateway.provider';
 export * from './settlement-command.service';
 export * from './settlements.controller';

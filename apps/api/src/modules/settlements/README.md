@@ -19,4 +19,4 @@ Exception states are also first-class:
 
 ## UPI strategy
 
-MVP settlement is payer-initiated. `UpiIntentProviderPort` generates a UPI URI/QR payload and `PaymentGatewayPort` is a provider abstraction for future PSP reconciliation. The included implementations are development/manual adapters and do not claim automatic bank confirmation.
+MVP settlement is payer-initiated. `UpiIntentProviderPort` generates a UPI URI/QR payload and `PaymentGatewayPort` is a provider abstraction for PSP reconciliation. Implementations: `manual` (dev), `cashfree` (preferred), and legacy `razorpay`.
