@@ -36,7 +36,10 @@ async function bootstrap(): Promise<void> {
     credentials: true
   });
   app.setGlobalPrefix('v1', {
-    exclude: [{ path: 'join/:token', method: RequestMethod.GET }]
+    exclude: [
+      { path: 'join/:token', method: RequestMethod.GET },
+      { path: '.well-known/assetlinks.json', method: RequestMethod.GET }
+    ]
   });
   app.useGlobalPipes(
     new ValidationPipe({

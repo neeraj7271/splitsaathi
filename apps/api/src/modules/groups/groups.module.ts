@@ -14,6 +14,7 @@ import { GroupEntity } from './entities/group.entity';
 import { ParticipantEntity } from './entities/participant.entity';
 import { GroupsController } from './groups.controller';
 import { JoinLinkController } from './join-link.controller';
+import { WellKnownController } from './well-known.controller';
 import { GroupsService } from './groups.service';
 import { OBLIGATION_TRANSFER_PORT } from './ports/obligation-transfer.port';
 import { NoopObligationTransferProvider } from './providers/noop-obligation-transfer.provider';
@@ -34,7 +35,7 @@ import { NoopObligationTransferProvider } from './providers/noop-obligation-tran
       AttachmentEntity
     ])
   ],
-  controllers: [GroupsController, JoinLinkController],
+  controllers: [GroupsController, JoinLinkController, WellKnownController],
   providers: [
     GroupsService,
     JwtAuthGuard,

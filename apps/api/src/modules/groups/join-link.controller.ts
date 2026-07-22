@@ -2,16 +2,23 @@ import { Controller, Get, Header, NotFoundException, Param, Res } from '@nestjs/
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { ApiConfigService } from '../../config/api-config.service';
 import { GroupsService } from './groups.service';
 
 /**
  * Public invite landing page at /join/:token (outside /v1).
- * Uses the custom scheme (splitsaathi://) so sideloaded APKs open without Play Store.
+ * On Android, the primary CTA uses an https intent without a forced package so
+ * the system can show the Open with / Always / Just once tray when SplitSaathi
+ * is installed. Verified App Links (assetlinks.json) make WhatsApp/Chrome offer
+ * that tray before this page even loads.
  */
 @ApiExcludeController()
 @Controller('join')
 export class JoinLinkController {
-  constructor(private readonly groupsService: GroupsService) {}
+  constructor(
+    private readonly groupsService: GroupsService,
+    private readonly config: ApiConfigService
+  ) {}
 
   @Public()
   @Get(':token')
@@ -29,13 +36,27 @@ export class JoinLinkController {
       valid = false;
     }
 
-    // Custom scheme only — do NOT fall back to Play Store (app may be sideloaded).
+    const publicBase = this.config.env.APP_PUBLIC_URL.replace(/\/$/, '');
+    const httpsJoin = `${publicBase}/join/${encodeURIComponent(safeToken)}`;
+    const host = new URL(publicBase).host;
     const deepLink = `splitsaathi://join/${encodeURIComponent(safeToken)}`;
+    // No package= → Android shows chooser (SplitSaathi vs browser) with Always / Just once.
+    // No Play Store fallback.
+    const androidChooserIntent = `intent://${host}/join/${encodeURIComponent(
+      safeToken
+    )}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
 
     response
       .status(valid ? 200 : 404)
       .type('html')
-      .send(renderJoinPage({ deepLink, valid }));
+      .send(
+        renderJoinPage({
+          httpsJoin,
+          deepLink,
+          androidChooserIntent,
+          valid
+        })
+      );
   }
 }
 
@@ -48,11 +69,17 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function renderJoinPage(input: { deepLink: string; valid: boolean }): string {
-  const title = input.valid ? 'Open SplitSaathi' : 'Invite unavailable';
+function renderJoinPage(input: {
+  httpsJoin: string;
+  deepLink: string;
+  androidChooserIntent: string;
+  valid: boolean;
+}): string {
+  const title = input.valid ? 'Join on SplitSaathi' : 'Invite unavailable';
   const body = input.valid
-    ? 'Tap the button below to open the SplitSaathi app and join this group.'
+    ? 'If SplitSaathi is installed, Android will ask whether to open it — choose Always or Just once.'
     : 'This invite link is expired, used up, or invalid.';
+  const chooser = escapeHtml(input.androidChooserIntent);
   const deep = escapeHtml(input.deepLink);
 
   return `<!DOCTYPE html>
@@ -78,11 +105,14 @@ function renderJoinPage(input: { deepLink: string; valid: boolean }): string {
     h1 { margin: 0 0 8px; font-size: 1.45rem; letter-spacing: -0.02em; }
     p { margin: 0 0 20px; color: #A7B0C0; line-height: 1.45; }
     a.btn {
-      display: inline-block; text-decoration: none; color: #0B0E14; background: #7CFFB2;
-      font-weight: 700; padding: 14px 22px; border-radius: 999px; margin: 6px;
+      display: block; text-decoration: none; color: #0B0E14; background: #7CFFB2;
+      font-weight: 700; padding: 14px 22px; border-radius: 999px; margin: 10px 0;
       font-size: 1rem;
     }
-    .hint { margin-top: 18px; font-size: 0.85rem; color: #7B8494; line-height: 1.4; }
+    a.secondary {
+      color: #7CFFB2; background: transparent; border: 1px solid rgba(124,255,178,0.35);
+    }
+    .hint { margin-top: 14px; font-size: 0.85rem; color: #7B8494; line-height: 1.45; text-align: left; }
   </style>
 </head>
 <body>
@@ -91,18 +121,21 @@ function renderJoinPage(input: { deepLink: string; valid: boolean }): string {
     <p>${escapeHtml(body)}</p>
     ${
       input.valid
-        ? `<a class="btn" id="open-app" href="${deep}">Open SplitSaathi</a>
-           <p class="hint">Install the SplitSaathi APK first if you have not already. Chrome will ask to open the app — choose SplitSaathi.</p>
+        ? `<a class="btn" id="open-chooser" href="${chooser}">Open with SplitSaathi</a>
+           <a class="btn secondary" href="${deep}">Open app directly</a>
+           <p class="hint">
+             1. Tap <strong>Open with SplitSaathi</strong>.<br/>
+             2. In the bottom tray, pick <strong>SplitSaathi</strong>.<br/>
+             3. Choose <strong>Just once</strong> or <strong>Always</strong>.<br/>
+             Install the SplitSaathi APK first if the app is not listed.
+           </p>
            <script>
              (function () {
-               var deep = ${JSON.stringify(input.deepLink)};
-               // Soft attempt only — never redirect to Play Store.
-               window.setTimeout(function () {
-                 var iframe = document.createElement('iframe');
-                 iframe.style.display = 'none';
-                 iframe.src = deep;
-                 document.body.appendChild(iframe);
-               }, 400);
+               var ua = navigator.userAgent || '';
+               if (!/Android/i.test(ua)) return;
+               // Soft prompt once — system tray handles Always / Just once.
+               var target = ${JSON.stringify(input.androidChooserIntent)};
+               window.setTimeout(function () { window.location.href = target; }, 600);
              })();
            </script>`
         : `<p class="hint">Ask the group admin to send a fresh invite.</p>`
