@@ -37,7 +37,8 @@ export type GroupPermission =
   | 'member_invite'
   | 'member_role_change'
   | 'export'
-  | 'archive';
+  | 'archive'
+  | 'group.update';
 
 export type IdempotencyStatus = 'processing' | 'succeeded' | 'failed';
 export type PostingType =
