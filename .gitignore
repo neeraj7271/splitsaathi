@@ -13,6 +13,7 @@ deploy/logs
 deploy/.env
 deploy/api.env
 deploy/api.docker.env
+deploy/secrets/
 deploy/*.apk
 
 # Never commit Google OAuth client secret JSON downloads
