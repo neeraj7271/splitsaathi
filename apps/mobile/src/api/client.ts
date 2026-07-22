@@ -980,7 +980,9 @@ function toQuery(values: Record<string, string>) {
 
 export function extractInviteToken(tokenOrUrl: string) {
   const trimmed = tokenOrUrl.trim();
-  const match = trimmed.match(/\/join\/([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{12,})$/);
+  const match = trimmed.match(
+    /(?:splitsaathi:\/\/join\/|https?:\/\/[^/]+\/join\/|\/join\/)([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{12,})$/i
+  );
   const token = match?.[1] ?? match?.[2] ?? match?.[3];
   if (!token) {
     throw new Error("Invite token could not be read from the link or QR payload.");

@@ -2,23 +2,21 @@ import { Controller, Get, Header, NotFoundException, Param, Res } from '@nestjs/
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
-import { ApiConfigService } from '../../config/api-config.service';
 import { GroupsService } from './groups.service';
 
 /**
  * Public invite landing page at /join/:token (outside /v1).
- * On Android, the primary CTA uses an https intent without a forced package so
- * the system can show the Open with / Always / Just once tray when SplitSaathi
- * is installed. Verified App Links (assetlinks.json) make WhatsApp/Chrome offer
- * that tray before this page even loads.
+ *
+ * Opens the sideloaded APK via custom scheme + package-targeted intent.
+ * Do NOT auto-redirect to https intents (that reopens Chrome and flickers).
+ * Android "Always / Just once" appears after App Links are verified via
+ * /.well-known/assetlinks.json when the user taps the https invite from
+ * WhatsApp/Messages — not from an in-page redirect loop.
  */
 @ApiExcludeController()
 @Controller('join')
 export class JoinLinkController {
-  constructor(
-    private readonly groupsService: GroupsService,
-    private readonly config: ApiConfigService
-  ) {}
+  constructor(private readonly groupsService: GroupsService) {}
 
   @Public()
   @Get(':token')
@@ -36,27 +34,16 @@ export class JoinLinkController {
       valid = false;
     }
 
-    const publicBase = this.config.env.APP_PUBLIC_URL.replace(/\/$/, '');
-    const httpsJoin = `${publicBase}/join/${encodeURIComponent(safeToken)}`;
-    const host = new URL(publicBase).host;
     const deepLink = `splitsaathi://join/${encodeURIComponent(safeToken)}`;
-    // No package= → Android shows chooser (SplitSaathi vs browser) with Always / Just once.
-    // No Play Store fallback.
-    const androidChooserIntent = `intent://${host}/join/${encodeURIComponent(
+    // package= forces the installed SplitSaathi APK (no Play Store, no Chrome loop).
+    const openAppIntent = `intent://join/${encodeURIComponent(
       safeToken
-    )}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+    )}#Intent;scheme=splitsaathi;package=in.splitsaathi.mobile;end`;
 
     response
       .status(valid ? 200 : 404)
       .type('html')
-      .send(
-        renderJoinPage({
-          httpsJoin,
-          deepLink,
-          androidChooserIntent,
-          valid
-        })
-      );
+      .send(renderJoinPage({ deepLink, openAppIntent, valid }));
   }
 }
 
@@ -69,17 +56,12 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function renderJoinPage(input: {
-  httpsJoin: string;
-  deepLink: string;
-  androidChooserIntent: string;
-  valid: boolean;
-}): string {
+function renderJoinPage(input: { deepLink: string; openAppIntent: string; valid: boolean }): string {
   const title = input.valid ? 'Join on SplitSaathi' : 'Invite unavailable';
   const body = input.valid
-    ? 'If SplitSaathi is installed, Android will ask whether to open it — choose Always or Just once.'
+    ? 'SplitSaathi is installed on this phone — tap the button to open the invite in the app.'
     : 'This invite link is expired, used up, or invalid.';
-  const chooser = escapeHtml(input.androidChooserIntent);
+  const intent = escapeHtml(input.openAppIntent);
   const deep = escapeHtml(input.deepLink);
 
   return `<!DOCTYPE html>
@@ -94,25 +76,25 @@ function renderJoinPage(input: {
     body {
       margin: 0; min-height: 100vh; display: grid; place-items: center;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: radial-gradient(1200px 600px at 50% -10%, #1b2433 0%, #0B0E14 55%);
+      background: #0B0E14;
       color: #F4F6FA; padding: 24px;
     }
     .card {
       width: min(420px, 100%); background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px;
-      text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      text-align: center;
     }
     h1 { margin: 0 0 8px; font-size: 1.45rem; letter-spacing: -0.02em; }
     p { margin: 0 0 20px; color: #A7B0C0; line-height: 1.45; }
     a.btn {
       display: block; text-decoration: none; color: #0B0E14; background: #7CFFB2;
-      font-weight: 700; padding: 14px 22px; border-radius: 999px; margin: 10px 0;
-      font-size: 1rem;
+      font-weight: 700; padding: 16px 22px; border-radius: 999px; margin: 10px 0;
+      font-size: 1.05rem;
     }
     a.secondary {
       color: #7CFFB2; background: transparent; border: 1px solid rgba(124,255,178,0.35);
     }
-    .hint { margin-top: 14px; font-size: 0.85rem; color: #7B8494; line-height: 1.45; text-align: left; }
+    .hint { margin-top: 16px; font-size: 0.85rem; color: #7B8494; line-height: 1.45; text-align: left; }
   </style>
 </head>
 <body>
@@ -121,23 +103,12 @@ function renderJoinPage(input: {
     <p>${escapeHtml(body)}</p>
     ${
       input.valid
-        ? `<a class="btn" id="open-chooser" href="${chooser}">Open with SplitSaathi</a>
-           <a class="btn secondary" href="${deep}">Open app directly</a>
+        ? `<a class="btn" href="${intent}">Open SplitSaathi</a>
+           <a class="btn secondary" href="${deep}">Try alternate open</a>
            <p class="hint">
-             1. Tap <strong>Open with SplitSaathi</strong>.<br/>
-             2. In the bottom tray, pick <strong>SplitSaathi</strong>.<br/>
-             3. Choose <strong>Just once</strong> or <strong>Always</strong>.<br/>
-             Install the SplitSaathi APK first if the app is not listed.
-           </p>
-           <script>
-             (function () {
-               var ua = navigator.userAgent || '';
-               if (!/Android/i.test(ua)) return;
-               // Soft prompt once — system tray handles Always / Just once.
-               var target = ${JSON.stringify(input.androidChooserIntent)};
-               window.setTimeout(function () { window.location.href = target; }, 600);
-             })();
-           </script>`
+             If nothing happens, install the SplitSaathi APK, then return here and tap Open again.
+             Chrome may show a prompt — choose SplitSaathi.
+           </p>`
         : `<p class="hint">Ask the group admin to send a fresh invite.</p>`
     }
   </main>

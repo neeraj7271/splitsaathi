@@ -280,7 +280,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
   useEffect(() => {
     const applyUrl = (url?: string | null) => {
-      if (url && /\/join\/|groups\/invites\//.test(url)) {
+      if (url && /splitsaathi:\/\/join\/|\/join\/|groups\/invites\//i.test(url)) {
         setInviteLink(url);
         setStep("join");
       }
