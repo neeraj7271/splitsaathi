@@ -27,6 +27,7 @@ import { ExpenseExplanation, GroupDetail, MembershipRole } from "../types/domain
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, resolveParticipantDisplayName } from "../utils/displayNames";
+import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 
@@ -78,11 +79,12 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     enabled: Boolean(selectedGroupId)
   });
   const activityQuery = useInfiniteQuery({
-    queryKey: ["groupActivity", selectedGroupId, "feed"],
+    queryKey: ["groupActivity", selectedGroupId, "ledger"],
     queryFn: ({ pageParam }) =>
       apiClient.getGroupActivity(selectedGroupId as string, {
         limit: ACTIVITY_PAGE_SIZE,
-        cursor: pageParam
+        cursor: pageParam,
+        feed: "ledger"
       }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
@@ -279,7 +281,10 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const isOwner = myMembership?.role === "owner";
   const canEditGroup = isOwner || myMembership?.role === "admin";
   const activityItems = useMemo(
-    () => activityQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    () =>
+      (activityQuery.data?.pages.flatMap((page) => page.items) ?? []).filter((row) =>
+        isLedgerActivityEvent(row.activityType)
+      ),
     [activityQuery.data]
   );
   const enrichedBalances = useMemo(() => {
@@ -445,7 +450,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                   ) : null}
                 </>
               ) : (
-                <EmptyState title="No activity" body="Expense creates, edits, proofs, and settlements will appear here." />
+                <EmptyState title="No activity" body="Recorded expenses and completed payments will appear here. UPI steps stay on Settle." />
               )}
             </View>
           ) : null}
@@ -741,21 +746,20 @@ function PeopleManagement({
       {canEditGroup ? (
         <DataSurface>
           <View style={styles.formBlock}>
-            <View style={styles.formHeader}>
-              <ImageSquare size={20} color={theme.colors.inkMuted} weight="duotone" />
-              <ThemedText variant="bodyMedium">Group logo</ThemedText>
-            </View>
             <View style={styles.logoRow}>
-              <Pressable onPress={onOpenLogoSheet} disabled={updateGroupImagePending}>
-                <UserAvatar displayName={group.name} avatarUrl={group.imageUrl} size={64} />
-              </Pressable>
+              <UserAvatar
+                displayName={group.name}
+                avatarUrl={group.imageUrl}
+                size={72}
+                editable
+                loading={updateGroupImagePending}
+                onPress={onOpenLogoSheet}
+              />
               <View style={styles.logoActions}>
-                <Button
-                  label={group.imageUrl ? "Change logo" : "Add logo"}
-                  variant="secondary"
-                  onPress={onOpenLogoSheet}
-                  loading={updateGroupImagePending}
-                />
+                <ThemedText variant="bodyMedium">Group logo</ThemedText>
+                <ThemedText variant="bodySm" tone="muted">
+                  {group.imageUrl ? "Tap to change or remove" : "Tap the camera to add a logo"}
+                </ThemedText>
               </View>
             </View>
             {updateGroupImageError ? <InlineNotice title="Logo update failed" body={updateGroupImageError} tone="owe" /> : null}

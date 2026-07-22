@@ -21,8 +21,8 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const activityQuery = useQuery({
-    queryKey: ["groupActivity", selectedGroupId, { limit: 50 }],
-    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: 50 }),
+    queryKey: ["groupActivity", selectedGroupId, { limit: 50, feed: "all" }],
+    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: 50, feed: "all" }),
     enabled: Boolean(selectedGroupId)
   });
   const groupQuery = useQuery({

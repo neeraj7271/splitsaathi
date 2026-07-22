@@ -141,7 +141,7 @@ export type CaptureSource =
 
 export type NotificationTone = 'neutral' | 'urgent' | 'system';
 export type NotificationChannel = 'push' | 'email' | 'in_app';
-export type NotificationDeliveryStatus = 'queued' | 'sent' | 'failed' | 'suppressed';
+export type NotificationDeliveryStatus = 'queued' | 'sent' | 'failed' | 'suppressed' | 'skipped';
 export type ReminderScheduleType = 'settlement_day' | 'recurring_expense' | 'stale_proof';
 
 export type ImportSource = 'splitwise_csv' | 'splitwise_json';

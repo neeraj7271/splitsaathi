@@ -69,6 +69,7 @@ export class NotificationsService {
       await this.deliveries.save(
         this.deliveries.create({
           notificationId: notification.id,
+          channel: 'push',
           provider: 'skipped',
           status: 'skipped',
           providerMessageId: null,
@@ -93,6 +94,7 @@ export class NotificationsService {
     await this.deliveries.save(
       this.deliveries.create({
         notificationId: notification.id,
+        channel: 'push',
         provider: result.provider,
         status: result.status,
         providerMessageId: result.providerMessageId ?? null,

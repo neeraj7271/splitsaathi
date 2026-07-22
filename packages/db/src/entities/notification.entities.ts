@@ -55,7 +55,7 @@ export class NotificationDeliveryEntity {
   @Column({ name: 'notification_id', type: 'uuid' })
   notificationId!: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', default: 'push' })
   channel!: NotificationChannel;
 
   @Column({ type: 'text' })
@@ -70,8 +70,20 @@ export class NotificationDeliveryEntity {
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null;
 
+  @Column({ name: 'provider_message_id', type: 'text', nullable: true })
+  providerMessageId!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  error!: string | null;
+
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
   sentAt!: Date | null;
+
+  @Column({ name: 'delivered_at', type: 'timestamptz', nullable: true })
+  deliveredAt!: Date | null;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
 }
 
 @Entity({ name: 'reminder_schedules' })

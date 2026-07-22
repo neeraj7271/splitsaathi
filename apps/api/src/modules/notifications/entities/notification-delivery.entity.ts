@@ -8,6 +8,9 @@ export class NotificationDeliveryEntity {
   @Column({ name: 'notification_id', type: 'uuid' })
   notificationId!: string;
 
+  @Column({ type: 'varchar', length: 24, default: 'push' })
+  channel!: 'push' | 'email' | 'in_app';
+
   @Column({ type: 'varchar', length: 60 })
   provider!: string;
 

@@ -599,11 +599,15 @@ export class SplitSaathiApiClient {
     return this.request<ExpenseExplanation>(`/v1/expenses/${expenseId}/explain`);
   }
 
-  async getGroupActivity(groupId: string, options?: { limit?: number; cursor?: number; q?: string }): Promise<GroupActivityPage> {
+  async getGroupActivity(
+    groupId: string,
+    options?: { limit?: number; cursor?: number; q?: string; feed?: "ledger" | "settlement" | "all" }
+  ): Promise<GroupActivityPage> {
     const params = new URLSearchParams();
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     if (options?.cursor !== undefined) params.set("cursor", String(options.cursor));
     if (options?.q) params.set("q", options.q);
+    if (options?.feed) params.set("feed", options.feed);
     const query = params.toString();
     const response = await this.request<
       | { items: Array<Record<string, any>>; nextCursor: number | null }
@@ -619,7 +623,10 @@ export class SplitSaathiApiClient {
   }
 
   /** Backward-compatible unwrap for callers that only need the activity rows. */
-  async listGroupActivityItems(groupId: string, options?: { limit?: number; cursor?: number; q?: string }) {
+  async listGroupActivityItems(
+    groupId: string,
+    options?: { limit?: number; cursor?: number; q?: string; feed?: "ledger" | "settlement" | "all" }
+  ) {
     const page = await this.getGroupActivity(groupId, options);
     return page.items;
   }

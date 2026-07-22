@@ -76,11 +76,32 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     [lookups, suggestionsQuery.data]
   );
 
+  // When the group changes, drop stale suggestion/intent/custom draft so amounts refresh.
   useEffect(() => {
-    if (suggestions[0] && !selectedSuggestion) {
-      setSelectedSuggestion(suggestions[0]);
+    setSelectedSuggestion(undefined);
+    setIntent(undefined);
+    setCustomAmount("");
+    setPayerParticipantId("");
+    setPayeeParticipantId("");
+    setPayeeVpa("");
+    setUtrText("");
+    setProofAttachment(undefined);
+    setReason("");
+    setHandoffError(undefined);
+  }, [selectedGroupId]);
+
+  useEffect(() => {
+    if (!suggestions.length) {
+      setSelectedSuggestion(undefined);
+      return;
     }
-  }, [selectedSuggestion, suggestions]);
+    setSelectedSuggestion((current) => {
+      if (current && suggestions.some((row) => row.id === current.id)) {
+        return current;
+      }
+      return suggestions[0];
+    });
+  }, [suggestions]);
 
   const invalidateSettlementBalances = (groupId: string) => {
     void queryClient.invalidateQueries({ queryKey: ["groups"] });

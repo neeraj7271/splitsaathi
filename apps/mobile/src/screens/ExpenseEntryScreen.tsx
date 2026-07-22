@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Paperclip, Plus, Scales } from "phosphor-react-native";
+import { CalendarBlank, Paperclip } from "phosphor-react-native";
 
 import { ApiError, apiClient, CreateExpenseRequest } from "../api/client";
 import { Button } from "../components/Button";
@@ -25,6 +25,7 @@ import { enqueueCommand } from "../offline/outbox";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 
 type AdjustmentType = "tax" | "gst_cgst" | "gst_sgst" | "service_charge" | "tip" | "discount" | "rounding";
+type PartyTab = "payers" | "beneficiaries";
 
 interface DraftLineItem {
   label: string;
@@ -68,8 +69,10 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("gst_cgst");
+  const [partyTab, setPartyTab] = useState<PartyTab>("payers");
   const [message, setMessage] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [receiptName, setReceiptName] = useState<string>();
 
   const participants = groupQuery.data?.participants ?? [];
   const participantNameById = useMemo(() => new Map(participants.map((participant) => [participant.id, participant.displayName])), [participants]);
@@ -153,6 +156,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       },
       "receipt"
     );
+    setReceiptName(asset.name);
     const draft = await apiClient.createReceiptDraft(selectedGroupId, attachment.id);
     const ocr = await apiClient.analyzeReceiptDraft(draft.id);
     if (ocr.items.length) {
@@ -242,13 +246,32 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
           <DataSurface>
             <View style={styles.formBlock}>
               <InputField label="Description" value={description} onChangeText={setDescription} placeholder="Groceries, rent, dinner" />
-              {splitType !== "itemized" ? <InputField label="Total amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" amount /> : null}
+              {splitType !== "itemized" ? (
+                <InputField label="Total amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" amount />
+              ) : null}
               <InputField label="Category optional" value={category} onChangeText={setCategory} />
-              <Button
-                label={`Expense date: ${expenseDate.toLocaleDateString("en-IN")}`}
-                variant="secondary"
-                onPress={() => setDatePickerVisible(true)}
-              />
+              <View style={styles.iconActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Expense date ${expenseDate.toLocaleDateString("en-IN")}`}
+                  onPress={() => setDatePickerVisible(true)}
+                  style={[styles.iconAction, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}
+                >
+                  <CalendarBlank size={20} color={theme.colors.ink} weight="duotone" />
+                  <ThemedText variant="bodySm">{expenseDate.toLocaleDateString("en-IN")}</ThemedText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Attach receipt or proof image"
+                  onPress={() => void attachReceipt()}
+                  style={[styles.iconAction, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}
+                >
+                  <Paperclip size={20} color={theme.colors.ink} weight="duotone" />
+                  <ThemedText variant="bodySm" numberOfLines={1}>
+                    {receiptName ? receiptName : "Receipt"}
+                  </ThemedText>
+                </Pressable>
+              </View>
               {datePickerVisible ? (
                 <DateTimePicker
                   value={expenseDate}
@@ -262,7 +285,6 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   }}
                 />
               ) : null}
-              <Button label="Attach receipt or proof image" variant="secondary" onPress={attachReceipt} />
             </View>
           </DataSurface>
 
@@ -277,55 +299,94 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
             onChange={setSplitType}
           />
 
-          <ParticipantPicker
-            title="Payers"
-            participants={participants}
-            selectedIds={selectedPayers}
-            onToggle={(participantId) =>
-              setSelectedPayers((current) => (current.includes(participantId) ? current.filter((id) => id !== participantId) : [...current, participantId]))
-            }
-          />
-          {selectedPayers.length > 1 ? (
-            <DataSurface>
-              {selectedPayers.map((payerId) => (
-                <View key={payerId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
-                  <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
-                  <InputField label="Paid amount" value={payerAmounts[payerId] ?? ""} onChangeText={(value) => setPayerAmounts((current) => ({ ...current, [payerId]: value }))} keyboardType="decimal-pad" amount style={styles.inlineInput} />
-                </View>
-              ))}
-            </DataSurface>
-          ) : null}
-
-          <ParticipantPicker
-            title="Beneficiaries"
-            participants={participants}
-            selectedIds={selectedShares}
-            onToggle={(participantId) =>
-              setSelectedShares((current) => (current.includes(participantId) ? current.filter((id) => id !== participantId) : [...current, participantId]))
-            }
+          <SegmentedControl
+            value={partyTab}
+            options={[
+              { label: "Payers", value: "payers" },
+              { label: "Beneficiaries", value: "beneficiaries" }
+            ]}
+            onChange={setPartyTab}
           />
 
-          {splitType === "exact" ? (
-            <DataSurface>
-              {selectedShares.map((shareId) => (
-                <View key={shareId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
-                  <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
-                  <InputField label="Share amount" value={shareAmounts[shareId] ?? ""} onChangeText={(value) => setShareAmounts((current) => ({ ...current, [shareId]: value }))} keyboardType="decimal-pad" amount style={styles.inlineInput} />
-                </View>
-              ))}
-            </DataSurface>
-          ) : null}
+          {partyTab === "payers" ? (
+            <>
+              <ParticipantPicker
+                title="Who paid?"
+                participants={participants}
+                selectedIds={selectedPayers}
+                onToggle={(participantId) =>
+                  setSelectedPayers((current) =>
+                    current.includes(participantId) ? current.filter((id) => id !== participantId) : [...current, participantId]
+                  )
+                }
+              />
+              {selectedPayers.length > 1 ? (
+                <DataSurface>
+                  {selectedPayers.map((payerId) => (
+                    <View key={payerId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
+                      <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
+                      <InputField
+                        label="Paid amount"
+                        value={payerAmounts[payerId] ?? ""}
+                        onChangeText={(value) => setPayerAmounts((current) => ({ ...current, [payerId]: value }))}
+                        keyboardType="decimal-pad"
+                        amount
+                        style={styles.inlineInput}
+                      />
+                    </View>
+                  ))}
+                </DataSurface>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <ParticipantPicker
+                title="Split between"
+                participants={participants}
+                selectedIds={selectedShares}
+                onToggle={(participantId) =>
+                  setSelectedShares((current) =>
+                    current.includes(participantId) ? current.filter((id) => id !== participantId) : [...current, participantId]
+                  )
+                }
+              />
 
-          {splitType === "weight" ? (
-            <DataSurface>
-              {selectedShares.map((shareId) => (
-                <View key={shareId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
-                  <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
-                  <InputField label="Weight" value={shareWeights[shareId] ?? "1"} onChangeText={(value) => setShareWeights((current) => ({ ...current, [shareId]: value }))} keyboardType="number-pad" style={styles.inlineInput} />
-                </View>
-              ))}
-            </DataSurface>
-          ) : null}
+              {splitType === "exact" ? (
+                <DataSurface>
+                  {selectedShares.map((shareId) => (
+                    <View key={shareId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
+                      <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
+                      <InputField
+                        label="Share amount"
+                        value={shareAmounts[shareId] ?? ""}
+                        onChangeText={(value) => setShareAmounts((current) => ({ ...current, [shareId]: value }))}
+                        keyboardType="decimal-pad"
+                        amount
+                        style={styles.inlineInput}
+                      />
+                    </View>
+                  ))}
+                </DataSurface>
+              ) : null}
+
+              {splitType === "weight" ? (
+                <DataSurface>
+                  {selectedShares.map((shareId) => (
+                    <View key={shareId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
+                      <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
+                      <InputField
+                        label="Weight"
+                        value={shareWeights[shareId] ?? "1"}
+                        onChangeText={(value) => setShareWeights((current) => ({ ...current, [shareId]: value }))}
+                        keyboardType="number-pad"
+                        style={styles.inlineInput}
+                      />
+                    </View>
+                  ))}
+                </DataSurface>
+              ) : null}
+            </>
+          )}
 
           {splitType === "itemized" ? (
             <View style={styles.section}>
@@ -334,7 +395,12 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                 <View style={styles.formBlock}>
                   <InputField label="Line item" value={lineLabel} onChangeText={setLineLabel} />
                   <InputField label="Line amount" value={lineAmount} onChangeText={setLineAmount} keyboardType="decimal-pad" amount />
-                  <Button label="Add line item for selected beneficiaries" variant="secondary" onPress={addLineItem} disabled={!lineLabel.trim() || !lineAmount.trim()} />
+                  <Button
+                    label="Add line item for selected beneficiaries"
+                    variant="secondary"
+                    onPress={addLineItem}
+                    disabled={!lineLabel.trim() || !lineAmount.trim()}
+                  />
                 </View>
                 {lineItems.map((lineItem, index) => (
                   <View key={`${lineItem.label}-${index}`} style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
@@ -352,25 +418,31 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
           ) : null}
 
           <View style={styles.section}>
-            <SettingsToggleRow
-              label="Adjustments and rounding"
-              value={showAdjustments}
-              onValueChange={setShowAdjustments}
-            />
+            <SettingsToggleRow label="Adjustments and rounding" value={showAdjustments} onValueChange={setShowAdjustments} />
             {showAdjustments ? (
               <DataSurface>
                 <View style={styles.formBlock}>
+                  <ThemedText variant="caption" tone="muted">
+                    Tax, tip, discount, or explicit rounding paisa. Equal/share splits also auto-distribute leftover paisa by largest remainder.
+                  </ThemedText>
                   <SegmentedControl
                     value={adjustmentType}
                     options={[
                       { label: "GST", value: "gst_cgst" },
                       { label: "Service", value: "service_charge" },
                       { label: "Tip", value: "tip" },
-                      { label: "Discount", value: "discount" }
+                      { label: "Discount", value: "discount" },
+                      { label: "Round", value: "rounding" }
                     ]}
                     onChange={setAdjustmentType}
                   />
-                  <InputField label="Adjustment amount" value={adjustmentAmount} onChangeText={setAdjustmentAmount} keyboardType="decimal-pad" amount />
+                  <InputField
+                    label={adjustmentType === "rounding" ? "Rounding amount (±)" : "Adjustment amount"}
+                    value={adjustmentAmount}
+                    onChangeText={setAdjustmentAmount}
+                    keyboardType="decimal-pad"
+                    amount
+                  />
                   <Button label="Add adjustment" variant="secondary" onPress={addAdjustment} disabled={!adjustmentAmount.trim()} />
                 </View>
                 {adjustments.map((adjustment, index) => (
@@ -379,56 +451,80 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                     <ThemedText variant="amount">{formatMoney(parseAmountToMinor(adjustment.amount))}</ThemedText>
                   </View>
                 ))}
+                {computedShares.residualMinor > 0 ? (
+                  <View style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
+                    <ThemedText variant="bodySm" tone="muted">
+                      Auto rounding effect
+                    </ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">
+                      {computedShares.residualMinor}p by largest remainder
+                    </ThemedText>
+                  </View>
+                ) : null}
               </DataSurface>
             ) : null}
 
             <DataSurface>
               <View style={styles.reviewBlock}>
-                {/* ── Total ── */}
                 <View style={styles.reviewRow}>
                   <ThemedText variant="section">Total</ThemedText>
                   <ThemedText variant="amount">{formatMoney(totalMinor)}</ThemedText>
                 </View>
 
-                {/* ── Payers breakdown ── */}
-                <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>Paid by</ThemedText>
+                <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>
+                  Paid by
+                </ThemedText>
                 {selectedPayers.map((payerId) => {
                   const paid = selectedPayers.length === 1 ? totalMinor : parseAmountToMinor(payerAmounts[payerId] ?? "");
                   return (
                     <View key={payerId} style={styles.reviewRow}>
                       <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
-                      <ThemedText variant="amount" tone={paid > 0 ? "ink" : "muted"}>{formatMoney(paid)}</ThemedText>
+                      <ThemedText variant="amount" tone={paid > 0 ? "ink" : "muted"}>
+                        {formatMoney(paid)}
+                      </ThemedText>
                     </View>
                   );
                 })}
                 {payerDifference !== 0 ? (
                   <View style={styles.reviewRow}>
-                    <ThemedText variant="bodySm" tone="owe">Payer gap</ThemedText>
-                    <ThemedText variant="amountSm" tone="owe">{payerDifference > 0 ? "+" : "-"}{formatMoney(Math.abs(payerDifference))}</ThemedText>
+                    <ThemedText variant="bodySm" tone="owe">
+                      Payer gap
+                    </ThemedText>
+                    <ThemedText variant="amountSm" tone="owe">
+                      {payerDifference > 0 ? "+" : "-"}
+                      {formatMoney(Math.abs(payerDifference))}
+                    </ThemedText>
                   </View>
                 ) : null}
 
                 <View style={[styles.divider, { backgroundColor: theme.colors.hairline }]} />
 
-                {/* ── Shares breakdown ── */}
-                <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>Split between</ThemedText>
+                <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>
+                  Split between
+                </ThemedText>
                 {selectedShares.map((shareId) => {
                   const share = computedShares.allocations[shareId] ?? 0;
                   return (
                     <View key={shareId} style={styles.reviewRow}>
                       <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
-                      <ThemedText variant="amount" tone={share > 0 ? "ink" : "muted"}>{formatMoney(share)}</ThemedText>
+                      <ThemedText variant="amount" tone={share > 0 ? "ink" : "muted"}>
+                        {formatMoney(share)}
+                      </ThemedText>
                     </View>
                   );
                 })}
                 {shareDifference !== 0 ? (
                   <View style={styles.reviewRow}>
-                    <ThemedText variant="bodySm" tone="owe">Share gap</ThemedText>
-                    <ThemedText variant="amountSm" tone="owe">{shareDifference > 0 ? "+" : "-"}{formatMoney(Math.abs(shareDifference))}</ThemedText>
+                    <ThemedText variant="bodySm" tone="owe">
+                      Share gap
+                    </ThemedText>
+                    <ThemedText variant="amountSm" tone="owe">
+                      {shareDifference > 0 ? "+" : "-"}
+                      {formatMoney(Math.abs(shareDifference))}
+                    </ThemedText>
                   </View>
                 ) : null}
 
-                {/* ── Status bar ── */}
                 <View style={[styles.statusBar, { backgroundColor: balanced ? theme.colors.confirmed : theme.colors.owe, borderRadius: theme.radius.full }]} />
                 {computedShares.residualMinor > 0 ? (
                   <ThemedText variant="bodySm" tone="muted">
@@ -439,8 +535,16 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
             </DataSurface>
           </View>
 
-          {message ? <InlineNotice title="Expense status" body={message} tone={message.includes("queued") ? "pending" : message.includes("failed") ? "owe" : "confirmed"} /> : null}
-          {!description.trim() ? <InlineNotice title="Description required" body="Enter a description for this expense before posting." tone="info" /> : null}
+          {message ? (
+            <InlineNotice
+              title="Expense status"
+              body={message}
+              tone={message.includes("queued") ? "pending" : message.includes("failed") ? "owe" : "confirmed"}
+            />
+          ) : null}
+          {!description.trim() ? (
+            <InlineNotice title="Description required" body="Enter a description for this expense before posting." tone="info" />
+          ) : null}
           {description.trim() && !balanced ? (
             <InlineNotice
               title="Amounts don't balance"
@@ -615,31 +719,45 @@ const styles = StyleSheet.create({
     flexShrink: 0
   },
   formBlock: {
-    gap: 12,
-    padding: 14
+    gap: 10,
+    padding: 12
+  },
+  iconActions: {
+    flexDirection: "row",
+    gap: 8
+  },
+  iconAction: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 12
   },
   section: {
-    gap: 12
+    gap: 10
   },
   amountRow: {
-    gap: 12,
-    padding: 14,
+    gap: 10,
+    padding: 12,
     borderBottomWidth: 1
   },
   inlineInput: {
-    minHeight: 48
+    minHeight: 44
   },
   dataRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 14,
+    padding: 12,
     borderTopWidth: 1,
     gap: 12
   },
   reviewBlock: {
     gap: 8,
-    padding: 14
+    padding: 12
   },
   reviewRow: {
     flexDirection: "row",

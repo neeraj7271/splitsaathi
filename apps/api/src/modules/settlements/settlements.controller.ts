@@ -330,53 +330,72 @@ export class SettlementsController {
     if (!this.notifications || !this.groups) {
       return;
     }
-    const payeeUserId = await this.groups.resolveUserIdForParticipant(
-      intent.groupId,
-      intent.payeeParticipantId
-    );
-    if (!payeeUserId) {
-      return;
-    }
-    await this.notifications.create({
-      userId: payeeUserId,
-      groupId: intent.groupId,
-      type: 'settlement_confirmation_requested',
-      title: 'Confirm payment',
-      body: `Please confirm a payment of ${intent.amountMinor} ${intent.currencyCode}.`,
-      data: {
-        settlementIntentId: intent.settlementIntentId,
-        amountMinor: intent.amountMinor,
-        currencyCode: intent.currencyCode,
-        payerParticipantId: intent.payerParticipantId,
-        payeeParticipantId: intent.payeeParticipantId
+    try {
+      const payeeUserId = await this.groups.resolveUserIdForParticipant(
+        intent.groupId,
+        intent.payeeParticipantId
+      );
+      if (!payeeUserId) {
+        return;
       }
-    });
+      const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
+      await this.notifications.create({
+        userId: payeeUserId,
+        groupId: intent.groupId,
+        type: 'settlement_confirmation_requested',
+        title: 'Confirm payment',
+        body: `Please confirm a payment of ${amountLabel}.`,
+        data: {
+          settlementIntentId: intent.settlementIntentId,
+          amountMinor: intent.amountMinor,
+          currencyCode: intent.currencyCode,
+          payerParticipantId: intent.payerParticipantId,
+          payeeParticipantId: intent.payeeParticipantId
+        }
+      });
+    } catch (error) {
+      // Never block UPI handoff / settlement on notification delivery failures.
+      console.error('[settlements] confirm-request notification failed', error);
+    }
   }
 
   private async notifySettlementConfirmed(intent: SettlementIntentRow): Promise<void> {
     if (!this.notifications || !this.groups) {
       return;
     }
-    const payerUserId = await this.groups.resolveUserIdForParticipant(
-      intent.groupId,
-      intent.payerParticipantId
-    );
-    if (!payerUserId) {
-      return;
-    }
-    await this.notifications.create({
-      userId: payerUserId,
-      groupId: intent.groupId,
-      type: 'settlement_confirmed',
-      title: 'Payment confirmed',
-      body: `Your payment of ${intent.amountMinor} ${intent.currencyCode} was confirmed.`,
-      data: {
-        settlementIntentId: intent.settlementIntentId,
-        amountMinor: intent.amountMinor,
-        currencyCode: intent.currencyCode,
-        payerParticipantId: intent.payerParticipantId,
-        payeeParticipantId: intent.payeeParticipantId
+    try {
+      const payerUserId = await this.groups.resolveUserIdForParticipant(
+        intent.groupId,
+        intent.payerParticipantId
+      );
+      if (!payerUserId) {
+        return;
       }
-    });
+      const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
+      await this.notifications.create({
+        userId: payerUserId,
+        groupId: intent.groupId,
+        type: 'settlement_confirmed',
+        title: 'Payment confirmed',
+        body: `Your payment of ${amountLabel} was confirmed.`,
+        data: {
+          settlementIntentId: intent.settlementIntentId,
+          amountMinor: intent.amountMinor,
+          currencyCode: intent.currencyCode,
+          payerParticipantId: intent.payerParticipantId,
+          payeeParticipantId: intent.payeeParticipantId
+        }
+      });
+    } catch (error) {
+      console.error('[settlements] confirmed notification failed', error);
+    }
   }
+}
+
+function formatInrMinor(amountMinor: number, currencyCode: string): string {
+  const major = (amountMinor / 100).toFixed(2);
+  if (currencyCode === 'INR') {
+    return `₹${major}`;
+  }
+  return `${major} ${currencyCode}`;
 }

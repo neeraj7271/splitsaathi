@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
+import { writeCachedBiometricPrefs } from "../auth/biometricPrefsCache";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
@@ -41,6 +42,10 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
       queryClient.setQueryData(["preferences"], preferences);
       setBiometricEnabled(preferences.biometricAuthEnabled);
       setTimeoutSeconds(preferences.sessionTimeoutSeconds);
+      void writeCachedBiometricPrefs({
+        biometricAuthEnabled: preferences.biometricAuthEnabled,
+        sessionTimeoutSeconds: preferences.sessionTimeoutSeconds
+      });
     }
   });
 

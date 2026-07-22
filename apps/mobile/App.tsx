@@ -12,6 +12,7 @@ import { AnimatedBrandLoader } from "./src/components/AnimatedBrandLoader";
 import { BiometricGate } from "./src/components/BiometricGate";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
+import { clearCachedBiometricPrefs } from "./src/auth/biometricPrefsCache";
 import { restoreSession } from "./src/auth/session";
 import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
@@ -187,6 +188,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
           .logout()
           .catch(() => undefined)
           .finally(() => {
+            void clearCachedBiometricPrefs();
             setAuthenticated(false);
             setRoute("home");
             setSelectedGroupId(undefined);

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, LinkSimple, UserPlus } from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -237,12 +237,29 @@ function CreateGroupTab({
 
   return (
     <View style={styles.section}>
-      <InputField label="Group name" value={name} onChangeText={setName} placeholder="Flat 3B rent and groceries" />
       <View style={styles.imagePicker}>
-        {groupImage ? <Image source={{ uri: groupImage.uri }} style={styles.groupImage} /> : null}
-        <Button label={groupImage ? "Change group image" : "Add group image"} variant="secondary" onPress={() => void selectGroupImage()} />
-        {groupImage ? <Button label="Remove image" variant="ghost" onPress={() => setGroupImage(null)} /> : null}
+        <UserAvatar
+          displayName={name.trim() || "Group"}
+          localUri={groupImage?.uri}
+          size={80}
+          editable
+          onPress={() => void selectGroupImage()}
+        />
+        <View style={styles.imagePickerCopy}>
+          <ThemedText variant="bodyMedium">{groupImage ? "Group logo" : "Add group logo"}</ThemedText>
+          <ThemedText variant="bodySm" tone="muted">
+            {groupImage ? "Tap the photo to change it" : "Optional · tap the camera icon"}
+          </ThemedText>
+          {groupImage ? (
+            <Pressable onPress={() => setGroupImage(null)} accessibilityRole="button" accessibilityLabel="Remove group logo">
+              <ThemedText variant="caption" tone="disputed">
+                Remove
+              </ThemedText>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
+      <InputField label="Group name" value={name} onChangeText={setName} placeholder="Flat 3B rent and groceries" />
       <ThemedText variant="bodyMedium">Choose a group type</ThemedText>
       <ThemedText variant="bodySm" tone="muted">This helps organize your groups. You can change other details later.</ThemedText>
       <GroupTypePicker
@@ -456,13 +473,13 @@ const styles = StyleSheet.create({
     padding: 14
   },
   imagePicker: {
-    alignItems: "flex-start",
-    gap: 8
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14
   },
-  groupImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 36
+  imagePickerCopy: {
+    flex: 1,
+    gap: 4
   },
   formHeader: {
     flexDirection: "row",

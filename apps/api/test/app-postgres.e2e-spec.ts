@@ -153,8 +153,19 @@ describePostgres('AppModule with Postgres persistence', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.items.length).toBeGreaterThanOrEqual(4);
+        expect(body.items.length).toBeGreaterThanOrEqual(2);
+        expect(body.items.every((row: { type: string }) =>
+          ['ExpenseCreated', 'ExpenseAdjusted', 'ExpenseVoided', 'CashSettlementRecorded', 'SettlementConfirmed', 'SettlementLedgerPosted', 'SettlementReversed', 'SettlementRefunded'].includes(row.type)
+        )).toBe(true);
         expect(body.nextCursor === null || typeof body.nextCursor === 'number').toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/v1/groups/${group.body.id}/activity?feed=all`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.length).toBeGreaterThanOrEqual(4);
       });
   });
 

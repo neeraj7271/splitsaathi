@@ -14,7 +14,7 @@ function event(partial: Partial<DomainEvent> & Pick<DomainEvent, 'type' | 'aggre
 }
 
 describe('ActivityProjector', () => {
-  it('paginates activity and omits raw participant uuids from body copy', () => {
+  it('defaults to ledger feed (expenses + posted payments) and omits raw participant uuids', () => {
     const projector = new ActivityProjector();
     const payerId = '11111111-1111-4111-8111-111111111111';
     const shareId = '22222222-2222-4222-8222-222222222222';
@@ -57,23 +57,51 @@ describe('ActivityProjector', () => {
         }
       })
     );
-
-    const page = projector.listGroupActivity('group-1', { limit: 1 });
-    expect(page.items).toHaveLength(1);
-    expect(page.nextCursor).toBe(2);
-    expect(page.items[0].type).toBe('SettlementIntentCreated');
-    expect(page.items[0].body).toContain('Settlement update');
-    expect(page.items[0].body).not.toContain(payerId);
-    expect(page.items[0].context).toEqual(
-      expect.objectContaining({
-        payerParticipantId: payerId,
-        payeeParticipantId: shareId
+    projector.apply(
+      event({
+        eventId: 'e3',
+        type: 'UpiAppOpened',
+        aggregateType: 'settlement_intent',
+        aggregateId: 'settlement-1',
+        groupId: 'group-1',
+        globalPosition: 3,
+        payload: {
+          settlementIntentId: 'settlement-1'
+        }
+      })
+    );
+    projector.apply(
+      event({
+        eventId: 'e4',
+        type: 'SettlementLedgerPosted',
+        aggregateType: 'settlement_intent',
+        aggregateId: 'settlement-1',
+        groupId: 'group-1',
+        globalPosition: 4,
+        payload: {
+          settlementIntentId: 'settlement-1',
+          payerParticipantId: payerId,
+          payeeParticipantId: shareId,
+          amountMinor: 500,
+          currencyCode: 'INR'
+        }
       })
     );
 
-    const expensePage = projector.listGroupActivity('group-1', { limit: 10, cursor: 2 });
-    expect(expensePage.items[0].body).toContain('paid by members');
-    expect(expensePage.items[0].body).toContain('split across members');
-    expect(expensePage.items[0].body).not.toContain(payerId);
+    const ledgerPage = projector.listGroupActivity('group-1', { limit: 10 });
+    expect(ledgerPage.items.map((row) => row.type)).toEqual(['SettlementLedgerPosted', 'ExpenseCreated']);
+    expect(ledgerPage.items[1].body).toContain('paid by members');
+    expect(ledgerPage.items[1].body).toContain('split across members');
+    expect(ledgerPage.items[1].body).not.toContain(payerId);
+
+    const allPage = projector.listGroupActivity('group-1', { feed: 'all', limit: 10 });
+    expect(allPage.items.map((row) => row.type)).toEqual([
+      'SettlementLedgerPosted',
+      'UpiAppOpened',
+      'SettlementIntentCreated',
+      'ExpenseCreated'
+    ]);
+    expect(allPage.items.find((row) => row.type === 'SettlementIntentCreated')?.body).toContain('Settlement update');
+    expect(allPage.items.find((row) => row.type === 'SettlementIntentCreated')?.body).not.toContain(payerId);
   });
 });

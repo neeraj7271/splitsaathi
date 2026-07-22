@@ -22,6 +22,7 @@ import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows } from "../utils/displayNames";
+import { isLedgerActivityEvent } from "../utils/activityFeed";
 
 const HOME_ACTIVITY_LIMIT = 20;
 
@@ -32,8 +33,9 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const activityQuery = useQuery({
-    queryKey: ["groupActivity", selectedGroupId, { limit: HOME_ACTIVITY_LIMIT }],
-    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: HOME_ACTIVITY_LIMIT }),
+    queryKey: ["groupActivity", selectedGroupId, { limit: HOME_ACTIVITY_LIMIT, feed: "ledger" }],
+    queryFn: () =>
+      apiClient.getGroupActivity(selectedGroupId as string, { limit: HOME_ACTIVITY_LIMIT, feed: "ledger" }),
     enabled: Boolean(selectedGroupId)
   });
   const groupQuery = useQuery({
@@ -41,7 +43,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
-  const activityItems = activityQuery.data?.items ?? [];
+  const activityItems = (activityQuery.data?.items ?? []).filter((row) => isLedgerActivityEvent(row.activityType));
   const enrichedActivity = useMemo(() => {
     if (!activityItems.length) {
       return [];
@@ -173,7 +175,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
             ) : null}
           </>
         ) : (
-          <EmptyState title="No ledger activity yet" body="Accepted expenses, proofs, edits, and settlements will appear here." />
+          <EmptyState title="No ledger activity yet" body="Recorded expenses and completed payments will appear here." />
         )}
       </View>
     </Screen>

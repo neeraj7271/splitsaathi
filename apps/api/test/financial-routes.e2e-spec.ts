@@ -208,6 +208,22 @@ describe('financial HTTP routes', () => {
               entityId: 'route-expense-1',
               amountMinor: 10000,
               currencyCode: 'INR'
+            })
+          ])
+        );
+        expect(body.items.every((row: { type: string }) => row.type !== 'SettlementIntentCreated')).toBe(true);
+        expect(body.items.every((row: { body: string }) => !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(row.body))).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .get('/v1/groups/route-group-1/activity?feed=all')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'ExpenseCreated',
+              entityId: 'route-expense-1'
             }),
             expect.objectContaining({
               type: 'SettlementIntentCreated',
@@ -220,7 +236,6 @@ describe('financial HTTP routes', () => {
             })
           ])
         );
-        expect(body.items.every((row: { body: string }) => !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(row.body))).toBe(true);
       });
 
     await request(app.getHttpServer())

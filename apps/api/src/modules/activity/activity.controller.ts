@@ -22,14 +22,18 @@ export class ActivityController {
     @Param('groupId') groupId: string,
     @Query('q') query?: string,
     @Query('limit') limitRaw?: string,
-    @Query('cursor') cursorRaw?: string
+    @Query('cursor') cursorRaw?: string,
+    @Query('feed') feedRaw?: string
   ) {
     await this.authorization.assertCan(currentUser.userId, groupId, 'read');
     const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
     const cursor = cursorRaw !== undefined ? Number(cursorRaw) : undefined;
+    const feed: 'ledger' | 'settlement' | 'all' =
+      feedRaw === 'all' || feedRaw === 'settlement' || feedRaw === 'ledger' ? feedRaw : 'ledger';
     const pageQuery = {
       limit: Number.isFinite(limit) ? limit : undefined,
-      cursor: Number.isFinite(cursor) ? cursor : undefined
+      cursor: Number.isFinite(cursor) ? cursor : undefined,
+      feed
     };
     return query
       ? this.activity.search(groupId, query, pageQuery)

@@ -27,7 +27,47 @@ export interface ActivityFeedPage {
 export interface ActivityFeedQuery {
   limit?: number;
   cursor?: number;
+  /** ledger = expenses + posted payments (home/group); all = include UPI pipeline; settlement = pipeline-focused */
+  feed?: 'ledger' | 'settlement' | 'all';
 }
+
+/** Home + group: recorded expenses and completed/posted payments only. */
+const LEDGER_ACTIVITY_TYPES = new Set([
+  'ExpenseCreated',
+  'ExpenseAdjusted',
+  'ExpenseVoided',
+  'CashSettlementRecorded',
+  'SettlementConfirmed',
+  'SettlementLedgerPosted',
+  'SettlementReversed',
+  'SettlementRefunded'
+]);
+
+const SETTLEMENT_PIPELINE_ACTIVITY_TYPES = new Set([
+  'SettlementIntentCreated',
+  'UpiIntentGenerated',
+  'UpiAppOpened',
+  'PaymentProofSubmitted',
+  'PaymentAutoMatched',
+  'ReceiverConfirmationRequested',
+  'SettlementRejected',
+  'SettlementDisputed',
+  'SettlementExpired',
+  'SettlementCancelled',
+  'DuplicatePaymentReferenceDetected',
+  'PartialPaymentDetected'
+]);
+
+function matchesFeed(eventType: string, feed: ActivityFeedQuery['feed'] = 'ledger'): boolean {
+  if (feed === 'all') {
+    return true;
+  }
+  if (feed === 'settlement') {
+    return SETTLEMENT_PIPELINE_ACTIVITY_TYPES.has(eventType) || LEDGER_ACTIVITY_TYPES.has(eventType);
+  }
+  return LEDGER_ACTIVITY_TYPES.has(eventType);
+}
+
 
 type ActivityCopy = Pick<ActivityFeedRow, 'title' | 'body' | 'amountMinor' | 'currencyCode' | 'entityType' | 'entityId' | 'status' | 'context'>;
 
@@ -215,16 +255,20 @@ export class ActivityProjector implements Projector {
   }
 
   listGroupActivity(groupId: string, query: ActivityFeedQuery = {}): ActivityFeedPage {
+    const feed = query.feed ?? 'ledger';
     const rows = this.rows
       .filter((row) => row.groupId === groupId)
+      .filter((row) => matchesFeed(row.type, feed))
       .sort((left, right) => right.globalPosition - left.globalPosition);
     return paginateRows(rows, query);
   }
 
   search(groupId: string, queryText: string, query: ActivityFeedQuery = {}): ActivityFeedPage {
+    const feed = query.feed ?? 'ledger';
     const normalized = queryText.trim().toLowerCase();
     const rows = this.rows
       .filter((row) => row.groupId === groupId)
+      .filter((row) => matchesFeed(row.type, feed))
       .sort((left, right) => right.globalPosition - left.globalPosition)
       .filter((row) => (!normalized ? true : row.searchText.includes(normalized)));
     return paginateRows(rows, query);
