@@ -6,7 +6,7 @@ import { GroupsService } from './groups.service';
 
 /**
  * Public invite landing page at /join/:token (outside /v1).
- * Opens the Android/iOS app via deep link; falls back to install guidance.
+ * Uses the custom scheme (splitsaathi://) so sideloaded APKs open without Play Store.
  */
 @ApiExcludeController()
 @Controller('join')
@@ -29,15 +29,13 @@ export class JoinLinkController {
       valid = false;
     }
 
+    // Custom scheme only — do NOT fall back to Play Store (app may be sideloaded).
     const deepLink = `splitsaathi://join/${encodeURIComponent(safeToken)}`;
-    const androidIntent = `intent://join/${encodeURIComponent(safeToken)}#Intent;scheme=splitsaathi;package=in.splitsaathi.mobile;S.browser_fallback_url=${encodeURIComponent(
-      'https://play.google.com/store/apps/details?id=in.splitsaathi.mobile'
-    )};end`;
 
     response
       .status(valid ? 200 : 404)
       .type('html')
-      .send(renderJoinPage({ deepLink, androidIntent, valid }));
+      .send(renderJoinPage({ deepLink, valid }));
   }
 }
 
@@ -50,17 +48,12 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function renderJoinPage(input: {
-  deepLink: string;
-  androidIntent: string;
-  valid: boolean;
-}): string {
+function renderJoinPage(input: { deepLink: string; valid: boolean }): string {
   const title = input.valid ? 'Open SplitSaathi' : 'Invite unavailable';
   const body = input.valid
-    ? 'Opening the SplitSaathi app so you can join this group.'
+    ? 'Tap the button below to open the SplitSaathi app and join this group.'
     : 'This invite link is expired, used up, or invalid.';
   const deep = escapeHtml(input.deepLink);
-  const intent = escapeHtml(input.androidIntent);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -86,24 +79,11 @@ function renderJoinPage(input: {
     p { margin: 0 0 20px; color: #A7B0C0; line-height: 1.45; }
     a.btn {
       display: inline-block; text-decoration: none; color: #0B0E14; background: #7CFFB2;
-      font-weight: 700; padding: 12px 18px; border-radius: 999px; margin: 6px;
+      font-weight: 700; padding: 14px 22px; border-radius: 999px; margin: 6px;
+      font-size: 1rem;
     }
-    a.secondary { color: #7CFFB2; background: transparent; border: 1px solid rgba(124,255,178,0.35); }
-    .hint { margin-top: 16px; font-size: 0.85rem; color: #7B8494; }
+    .hint { margin-top: 18px; font-size: 0.85rem; color: #7B8494; line-height: 1.4; }
   </style>
-  ${
-    input.valid
-      ? `<script>
-    (function () {
-      var deep = ${JSON.stringify(input.deepLink)};
-      var intent = ${JSON.stringify(input.androidIntent)};
-      var ua = navigator.userAgent || '';
-      var target = /Android/i.test(ua) ? intent : deep;
-      window.setTimeout(function () { window.location.href = target; }, 250);
-    })();
-  </script>`
-      : ''
-  }
 </head>
 <body>
   <main class="card">
@@ -111,9 +91,20 @@ function renderJoinPage(input: {
     <p>${escapeHtml(body)}</p>
     ${
       input.valid
-        ? `<a class="btn" href="${deep}">Open in app</a>
-           <a class="btn secondary" href="${intent}">Open on Android</a>
-           <p class="hint">If nothing opens, install SplitSaathi, then tap Open in app again.</p>`
+        ? `<a class="btn" id="open-app" href="${deep}">Open SplitSaathi</a>
+           <p class="hint">Install the SplitSaathi APK first if you have not already. Chrome will ask to open the app — choose SplitSaathi.</p>
+           <script>
+             (function () {
+               var deep = ${JSON.stringify(input.deepLink)};
+               // Soft attempt only — never redirect to Play Store.
+               window.setTimeout(function () {
+                 var iframe = document.createElement('iframe');
+                 iframe.style.display = 'none';
+                 iframe.src = deep;
+                 document.body.appendChild(iframe);
+               }, 400);
+             })();
+           </script>`
         : `<p class="hint">Ask the group admin to send a fresh invite.</p>`
     }
   </main>
