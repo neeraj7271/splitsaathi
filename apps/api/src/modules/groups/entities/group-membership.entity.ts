@@ -1,7 +1,13 @@
 import { MembershipRole } from '@splitsaathi/contracts';
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-export type MembershipStatus = 'active' | 'locked_for_exit' | 'inactive';
+export type MembershipStatus =
+  | 'active'
+  | 'locked_for_exit'
+  | 'inactive'
+  | 'removed_zero_balance'
+  | 'inactive_locked'
+  | 'transferred_obligation';
 
 @Entity({ name: 'group_memberships' })
 export class GroupMembershipEntity {

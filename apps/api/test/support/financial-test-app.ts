@@ -40,7 +40,7 @@ export function createFinancialTestApp() {
   const ledger = new LedgerService(eventStore, projectionRunner);
   const expenses = new ExpenseCommandService(ledger, expenseProjector);
   const balances = new BalanceQueryService(balanceProjector);
-  const settlementSuggestions = new SettlementSuggestionService(balanceProjector);
+  const settlementSuggestions = new SettlementSuggestionService(balanceProjector, expenseProjector);
   const settlements = new SettlementCommandService(ledger, settlementProjector);
   const imports = new SplitwiseImportService(ledger, importsExportsProjector, expenses);
   const exportsService = new CsvExportService(ledger, importsExportsProjector, expenseProjector, balanceProjector);

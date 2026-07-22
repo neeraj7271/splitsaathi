@@ -19,20 +19,36 @@ export interface ActivityFeedRow {
   globalPosition: number;
 }
 
+export interface ActivityFeedPage {
+  items: ActivityFeedRow[];
+  nextCursor: number | null;
+}
+
+export interface ActivityFeedQuery {
+  limit?: number;
+  cursor?: number;
+}
+
 type ActivityCopy = Pick<ActivityFeedRow, 'title' | 'body' | 'amountMinor' | 'currencyCode' | 'entityType' | 'entityId' | 'status' | 'context'>;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
-function asParticipantList(value: unknown): string {
+function asParticipantIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
-    return '';
+    return [];
   }
   return value
     .map((row) => asRecord(row).participantId)
-    .filter((id): id is string => typeof id === 'string')
-    .join(', ');
+    .filter((id): id is string => typeof id === 'string');
+}
+
+function humanizeEventType(type: string): string {
+  return type
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .trim();
 }
 
 function expenseCopy(event: DomainEvent, payload: Record<string, unknown>): ActivityCopy {
@@ -45,12 +61,16 @@ function expenseCopy(event: DomainEvent, payload: Record<string, unknown>): Acti
   const action =
     event.type === 'ExpenseCreated' ? 'added' : event.type === 'ExpenseAdjusted' ? 'updated' : 'voided';
   const reason = typeof payload.reason === 'string' ? payload.reason : undefined;
-  const payerIds = asParticipantList(payload.payers);
-  const participantIds = asParticipantList(payload.shares);
+  const payerIds = asParticipantIds(payload.payers);
+  const participantIds = asParticipantIds(payload.shares);
   const bodyParts = [
     total !== undefined ? `Total ${total} ${currencyCode ?? ''}`.trim() : undefined,
-    payerIds ? `paid by ${payerIds}` : undefined,
-    splitTypes.length ? `${splitTypes.join('/')} split across ${participantIds || 'participants'}` : undefined,
+    payerIds.length ? 'paid by members' : undefined,
+    splitTypes.length
+      ? `${splitTypes.join('/')} split across members`
+      : participantIds.length
+        ? 'split across members'
+        : undefined,
     reason ? `Reason: ${reason}` : undefined
   ].filter(Boolean);
   return {
@@ -64,8 +84,8 @@ function expenseCopy(event: DomainEvent, payload: Record<string, unknown>): Acti
     context: {
       description,
       splitTypes,
-      payerParticipantIds: payerIds ? payerIds.split(', ') : [],
-      shareParticipantIds: participantIds ? participantIds.split(', ') : [],
+      payerParticipantIds: payerIds,
+      shareParticipantIds: participantIds,
       reason
     }
   };
@@ -112,10 +132,13 @@ function settlementCopy(event: DomainEvent, payload: Record<string, unknown>): A
     SettlementCancelled: 'cancelled'
   };
   const reason = typeof payload.reason === 'string' ? payload.reason : undefined;
-  const route = payer && payee ? `${payer} → ${payee}` : undefined;
+  const amountNote =
+    amountMinor !== undefined ? `amountMinor ${amountMinor}${currencyCode ? ` ${currencyCode}` : ''}` : undefined;
   return {
     title: labels[event.type] ?? event.type,
-    body: [route, amountMinor !== undefined ? `${amountMinor} ${currencyCode ?? ''}`.trim() : undefined, method, reason].filter(Boolean).join(' · ') || 'Settlement activity.',
+    body: ['Settlement update', amountNote, method, reason, payer && payee ? 'A member paid another member' : undefined]
+      .filter(Boolean)
+      .join(' · '),
     amountMinor,
     currencyCode,
     entityType: 'settlement_intent',
@@ -125,20 +148,42 @@ function settlementCopy(event: DomainEvent, payload: Record<string, unknown>): A
   };
 }
 
+function isSettlementLikeEvent(type: string): boolean {
+  return (
+    type.startsWith('Settlement') ||
+    type.includes('Payment') ||
+    type.includes('Upi') ||
+    type.startsWith('Cash') ||
+    type.startsWith('Receiver')
+  );
+}
+
 function eventCopy(event: DomainEvent, payload = asRecord(event.payload)): ActivityCopy {
   if (event.type.startsWith('Expense')) {
     return expenseCopy(event, payload);
   }
-  if (event.type.startsWith('Settlement') || event.type.includes('Payment') || event.type.includes('Upi') || event.type.startsWith('Cash')) {
+  if (isSettlementLikeEvent(event.type)) {
     return settlementCopy(event, payload);
   }
   return {
     title: event.type,
-    body: `Record ${event.aggregateId}`,
+    body: humanizeEventType(event.type),
     entityType: event.aggregateType,
     entityId: event.aggregateId,
     context: payload
   };
+}
+
+function paginateRows(rows: ActivityFeedRow[], query: ActivityFeedQuery = {}): ActivityFeedPage {
+  const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+  const filtered =
+    query.cursor !== undefined
+      ? rows.filter((row) => row.globalPosition < query.cursor!)
+      : rows;
+  const items = filtered.slice(0, limit).map((row) => ({ ...row }));
+  const nextCursor =
+    filtered.length > limit ? items[items.length - 1]?.globalPosition ?? null : null;
+  return { items, nextCursor };
 }
 
 export class ActivityProjector implements Projector {
@@ -153,10 +198,9 @@ export class ActivityProjector implements Projector {
     if (event.type === 'SettlementIntentCreated') {
       this.settlementDetails.set(settlementId, { ...eventPayload });
     }
-    const payload =
-      event.type.startsWith('Settlement') || event.type.includes('Payment') || event.type.includes('Upi') || event.type.startsWith('Cash')
-        ? { ...this.settlementDetails.get(settlementId), ...eventPayload }
-        : eventPayload;
+    const payload = isSettlementLikeEvent(event.type)
+      ? { ...this.settlementDetails.get(settlementId), ...eventPayload }
+      : eventPayload;
     const copy = eventCopy(event, payload);
     this.rows.push({
       eventId: event.eventId,
@@ -170,19 +214,20 @@ export class ActivityProjector implements Projector {
     });
   }
 
-  listGroupActivity(groupId: string): ActivityFeedRow[] {
-    return this.rows
+  listGroupActivity(groupId: string, query: ActivityFeedQuery = {}): ActivityFeedPage {
+    const rows = this.rows
       .filter((row) => row.groupId === groupId)
-      .sort((left, right) => right.globalPosition - left.globalPosition)
-      .map((row) => ({ ...row }));
+      .sort((left, right) => right.globalPosition - left.globalPosition);
+    return paginateRows(rows, query);
   }
 
-  search(groupId: string, query: string): ActivityFeedRow[] {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return this.listGroupActivity(groupId);
-    }
-    return this.listGroupActivity(groupId).filter((row) => row.searchText.includes(normalized));
+  search(groupId: string, queryText: string, query: ActivityFeedQuery = {}): ActivityFeedPage {
+    const normalized = queryText.trim().toLowerCase();
+    const rows = this.rows
+      .filter((row) => row.groupId === groupId)
+      .sort((left, right) => right.globalPosition - left.globalPosition)
+      .filter((row) => (!normalized ? true : row.searchText.includes(normalized)));
+    return paginateRows(rows, query);
   }
 
   reset(): void {

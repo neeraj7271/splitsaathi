@@ -2,6 +2,21 @@
 
 Expo React Native client. Talks to the hosted API via `EXPO_PUBLIC_API_URL` in `apps/mobile/.env`.
 
+## Firebase / Google Services (Android)
+
+`app.json` does **not** set `android.googleServicesFile` by default. Expo prebuild fails if that path points at a missing file.
+
+Before a native Android build that needs FCM / Firebase:
+
+1. Place your Firebase `google-services.json` at `apps/mobile/google-services.json`
+2. Add to `app.json` under `expo.android`:
+
+```json
+"googleServicesFile": "./google-services.json"
+```
+
+Then run prebuild / `expo run:android` again.
+
 ## Brand assets
 
 Source files live in `public/assets/` and are mirrored under `assets/brand/` for the app:
@@ -30,7 +45,7 @@ npm run dev:mobile:tunnel
 
 Metro serves JS over the network. After code changes: shake device → **Reload** (or leave Fast Refresh on).
 
-**One-time:** install a **debug** build that can load Metro (release APKs embed JS and ignore Metro; Expo Go may not work with Skia):
+**One-time:** install a **debug** build that can load Metro (release APKs embed JS and ignore Metro):
 
 ```bash
 # USB device attached to this machine:

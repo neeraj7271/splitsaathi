@@ -27,6 +27,7 @@ import {
   OTP_CHALLENGE_TTL_MINUTES,
   OTP_MAX_ATTEMPTS,
   OTP_PROVIDER,
+  OTP_START_COOLDOWN_SECONDS,
   REFRESH_TOKEN_TTL_DAYS
 } from './auth.constants';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -74,6 +75,21 @@ export class AuthService {
 
   async startOtp(dto: StartOtpDto): Promise<StartOtpResponseDto> {
     const phoneE164 = normalizePhoneE164(dto.phoneE164);
+    const cooldownSince = new Date(Date.now() - OTP_START_COOLDOWN_SECONDS * 1000);
+    const latest = await this.challenges.findOne({
+      where: { phoneE164 },
+      order: { createdAt: 'DESC' }
+    });
+    if (latest && latest.createdAt.getTime() > cooldownSince.getTime()) {
+      const retryAfterSeconds = Math.ceil(
+        (latest.createdAt.getTime() + OTP_START_COOLDOWN_SECONDS * 1000 - Date.now()) / 1000
+      );
+      throw new HttpException(
+        `Please wait ${retryAfterSeconds} seconds before requesting another code.`,
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+
     const expiresAt = new Date(Date.now() + OTP_CHALLENGE_TTL_MINUTES * 60 * 1000);
     const challenge = this.challenges.create({
       phoneE164,
@@ -105,38 +121,63 @@ export class AuthService {
   }
 
   async verifyOtp(dto: VerifyOtpDto): Promise<AuthResponseDto> {
-    const challenge = await this.challenges.findOne({ where: { id: dto.challengeId } });
-    if (!challenge || challenge.status !== 'pending') {
-      throw new UnauthorizedException('OTP challenge is not valid.');
-    }
-    if (challenge.expiresAt.getTime() <= Date.now()) {
-      challenge.status = 'expired';
-      await this.challenges.save(challenge);
-      throw new UnauthorizedException('OTP challenge expired.');
-    }
-    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
-      throw new ForbiddenException('OTP challenge attempt limit exceeded.');
-    }
-
-    const valid = await this.otpProvider.verify({
-      providerChallengeId: challenge.providerChallengeId,
-      phoneE164: challenge.phoneE164,
-      code: dto.code
-    });
-
-    if (!valid) {
-      challenge.attempts += 1;
-      challenge.status = challenge.attempts >= OTP_MAX_ATTEMPTS ? 'failed' : 'pending';
-      await this.challenges.save(challenge);
-      throw new UnauthorizedException('OTP code is incorrect.');
-    }
-
-    challenge.status = 'verified';
-    challenge.verifiedAt = new Date();
-    await this.challenges.save(challenge);
-
+    const challenge = await this.verifyPhoneOtpChallenge(dto.challengeId, dto.code);
     const user = await this.findOrCreateUserForPhone(challenge.phoneE164, dto.displayName);
     return this.issueAuthResponse(user, undefined, await this.needsOnboarding(user.id));
+  }
+
+  /**
+   * Link a verified phone to an already-authenticated user (e.g. Google sign-in).
+   * Call `startOtp` first to send the code; this verifies it without creating a new user.
+   */
+  async linkPhoneVerify(userId: string, dto: VerifyOtpDto): Promise<AuthResponseDto> {
+    const challenge = await this.verifyPhoneOtpChallenge(dto.challengeId, dto.code);
+    const normalized = normalizePhoneE164(challenge.phoneE164);
+    const candidates = phoneLookupCandidates(normalized);
+
+    const existingForPhone = await this.identities.findOne({
+      where: {
+        provider: 'phone',
+        identifier: In(candidates)
+      }
+    });
+    if (existingForPhone && existingForPhone.userId !== userId) {
+      throw new ConflictException('This phone number is already linked to another account.');
+    }
+
+    const existingForUser = await this.identities.findOne({ where: { userId, provider: 'phone' } });
+    if (existingForUser) {
+      const samePhone = candidates.includes(existingForUser.identifier);
+      if (!samePhone) {
+        throw new ConflictException('This account already has a different phone number linked.');
+      }
+      existingForUser.identifier = normalized;
+      existingForUser.verifiedAt = new Date();
+      await this.identities.save(existingForUser);
+    } else if (existingForPhone) {
+      existingForPhone.identifier = normalized;
+      existingForPhone.verifiedAt = new Date();
+      await this.identities.save(existingForPhone);
+    } else {
+      await this.identities.save(
+        this.identities.create({
+          userId,
+          provider: 'phone',
+          identifier: normalized,
+          verifiedAt: new Date()
+        })
+      );
+    }
+
+    const user = await this.usersService.findByIdOrThrow(userId);
+    if (dto.displayName && user.displayName !== dto.displayName) {
+      return this.issueAuthResponse(
+        await this.usersService.updateDisplayName(user, dto.displayName),
+        undefined,
+        await this.needsOnboarding(userId)
+      );
+    }
+    return this.issueAuthResponse(user, undefined, await this.needsOnboarding(userId));
   }
 
   async loginWithGoogle(idToken: string): Promise<AuthResponseDto> {
@@ -389,6 +430,39 @@ export class AuthService {
     return challenge;
   }
 
+  private async verifyPhoneOtpChallenge(challengeId: string, code: string): Promise<OtpChallengeEntity> {
+    const challenge = await this.challenges.findOne({ where: { id: challengeId } });
+    if (!challenge || challenge.status !== 'pending') {
+      throw new UnauthorizedException('OTP challenge is not valid.');
+    }
+    if (challenge.expiresAt.getTime() <= Date.now()) {
+      challenge.status = 'expired';
+      await this.challenges.save(challenge);
+      throw new UnauthorizedException('OTP challenge expired.');
+    }
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+      throw new ForbiddenException('OTP challenge attempt limit exceeded.');
+    }
+
+    const valid = await this.otpProvider.verify({
+      providerChallengeId: challenge.providerChallengeId,
+      phoneE164: challenge.phoneE164,
+      code
+    });
+
+    if (!valid) {
+      challenge.attempts += 1;
+      challenge.status = challenge.attempts >= OTP_MAX_ATTEMPTS ? 'failed' : 'pending';
+      await this.challenges.save(challenge);
+      throw new UnauthorizedException('OTP code is incorrect.');
+    }
+
+    challenge.status = 'verified';
+    challenge.verifiedAt = new Date();
+    await this.challenges.save(challenge);
+    return challenge;
+  }
+
   private async needsOnboarding(userId: string): Promise<boolean> {
     const records = await this.consentsService.listForUser(userId);
     return !records.some((record) => record.source === 'onboarding');
@@ -410,10 +484,11 @@ export class AuthService {
       })
     );
 
+    const phoneE164 = await this.phoneForUser(user.id);
     const accessToken = await this.jwtService.signAsync(
       {
         sub: user.id,
-        phoneE164: await this.phoneForUser(user.id),
+        phoneE164,
         sid: refreshSession.id
       },
       {
@@ -431,7 +506,8 @@ export class AuthService {
         refreshToken,
         expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS
       },
-      needsOnboarding
+      needsOnboarding,
+      needsPhoneLink: !phoneE164
     };
   }
 

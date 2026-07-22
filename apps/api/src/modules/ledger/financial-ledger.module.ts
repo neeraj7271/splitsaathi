@@ -31,6 +31,7 @@ import {
   SplitwiseImportService
 } from '../imports-exports';
 import { OfflineCommandSyncService, OfflineSyncController } from '../offline-sync';
+import { NotificationsModule } from '../notifications/notifications.module';
 import {
   LocalObjectStorageProvider,
   NoopOcrProvider,
@@ -326,6 +327,7 @@ export class FinancialLedgerModule {
         JwtModule.register({}),
         BalanceProjectorModule,
         GroupsModule,
+        NotificationsModule,
         TypeOrmModule.forFeature([
           EventStoreEntity,
           LedgerPostingEntity,

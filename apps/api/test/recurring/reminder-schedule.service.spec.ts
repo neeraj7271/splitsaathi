@@ -23,4 +23,19 @@ describe('ReminderScheduleService', () => {
     ]);
     await expect(service.findDue(new Date('2026-07-10T10:00:00'))).resolves.toEqual([]);
   });
+
+  it('marks fired due keys so the same hour is not returned twice', async () => {
+    const service = new ReminderScheduleService();
+    await service.create({
+      groupId: 'group-reminder',
+      type: 'recurring_expense',
+      schedule: { dayOfMonth: 1, hour: 9 },
+      createdBy: 'user-a'
+    });
+
+    const dueAt = new Date('2026-08-01T09:00:00');
+    const first = await service.processDue(dueAt);
+    expect(first).toHaveLength(1);
+    await expect(service.findDue(dueAt)).resolves.toEqual([]);
+  });
 });

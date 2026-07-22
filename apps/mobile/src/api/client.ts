@@ -133,6 +133,16 @@ function mapExpense(row: Record<string, any>): ExpenseRow {
 }
 
 function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
+  const proofs = Array.isArray(row.proofs)
+    ? row.proofs.map((proof: Record<string, any>) => ({
+        id: proof.id ?? proof.proofId,
+        attachmentId: proof.attachmentId,
+        utr: proof.utr,
+        submittedAt: proof.submittedAt
+      }))
+    : undefined;
+  const proofAttachmentId =
+    proofs?.find((proof) => proof.attachmentId)?.attachmentId ?? row.attachmentId ?? row.proofAttachmentId;
   return {
     id: row.id ?? row.settlementIntentId,
     groupId: row.groupId,
@@ -146,9 +156,36 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     qrPayload: row.qrPayload,
     clientReference: row.clientReference ?? row.providerReference,
     expiresAt: row.expiresAt,
-    createdAt: row.createdAt
+    createdAt: row.createdAt,
+    proofs,
+    proofAttachmentId,
+    proofUrl: proofAttachmentId ? `/v1/attachments/${proofAttachmentId}/content` : undefined
   };
 }
+
+function mapActivityRow(row: Record<string, any>): ActivityRowDto {
+  return {
+    id: row.id ?? row.eventId,
+    groupId: row.groupId,
+    activityType: row.activityType ?? row.type,
+    title: row.title,
+    body: row.body,
+    actorId: row.actorId,
+    amountMinor: row.amountMinor,
+    currencyCode: row.currencyCode,
+    entityType: row.entityType ?? row.aggregateType,
+    entityId: row.entityId ?? row.aggregateId,
+    status: row.status,
+    context: row.context,
+    occurredAt: row.occurredAt,
+    globalPosition: row.globalPosition
+  };
+}
+
+export type GroupActivityPage = {
+  items: ActivityRowDto[];
+  nextCursor: number | null;
+};
 
 function mapRecurringSchedule(row: Record<string, any>): RecurringSchedule {
   const payerTotal = Array.isArray(row.template?.payers)
@@ -250,6 +287,14 @@ export class SplitSaathiApiClient {
     });
     await setTokens(response.tokens.accessToken, response.tokens.refreshToken);
     return response;
+  }
+
+  /** Attach phone to the current Google session after OTP (does not create a new user). */
+  async linkPhoneVerify(challengeId: string, code: string) {
+    return this.request<VerifyOtpResponse>("/v1/auth/phone/link/verify", {
+      method: "POST",
+      body: { challengeId, code }
+    });
   }
 
   async startPasswordReset(email: string) {
@@ -460,6 +505,27 @@ export class SplitSaathiApiClient {
     });
   }
 
+  async unarchiveGroup(groupId: string) {
+    return this.request<GroupDetail>(`/v1/groups/${groupId}/unarchive`, {
+      method: "POST",
+      body: {}
+    });
+  }
+
+  async leaveGroup(groupId: string) {
+    return this.request(`/v1/groups/${groupId}/leave`, {
+      method: "POST",
+      body: {}
+    });
+  }
+
+  async removeMember(groupId: string, membershipId: string) {
+    return this.request(`/v1/groups/${groupId}/memberships/${membershipId}/remove`, {
+      method: "POST",
+      body: {}
+    });
+  }
+
   async lockMemberExit(groupId: string, membershipId: string) {
     return this.request(`/v1/groups/${groupId}/memberships/${membershipId}/lock-exit`, {
       method: "POST",
@@ -533,23 +599,29 @@ export class SplitSaathiApiClient {
     return this.request<ExpenseExplanation>(`/v1/expenses/${expenseId}/explain`);
   }
 
-  async getGroupActivity(groupId: string) {
-    const rows = await this.request<Array<Record<string, any>>>(`/v1/groups/${groupId}/activity`);
-    return rows.map((row) => ({
-      id: row.id ?? row.eventId,
-      groupId: row.groupId,
-      activityType: row.activityType ?? row.type,
-      title: row.title,
-      body: row.body,
-      actorId: row.actorId,
-      amountMinor: row.amountMinor,
-      currencyCode: row.currencyCode,
-      entityType: row.entityType ?? row.aggregateType,
-      entityId: row.entityId ?? row.aggregateId,
-      status: row.status,
-      context: row.context,
-      occurredAt: row.occurredAt
-    }));
+  async getGroupActivity(groupId: string, options?: { limit?: number; cursor?: number; q?: string }): Promise<GroupActivityPage> {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.cursor !== undefined) params.set("cursor", String(options.cursor));
+    if (options?.q) params.set("q", options.q);
+    const query = params.toString();
+    const response = await this.request<
+      | { items: Array<Record<string, any>>; nextCursor: number | null }
+      | Array<Record<string, any>>
+    >(`/v1/groups/${groupId}/activity${query ? `?${query}` : ""}`);
+    if (Array.isArray(response)) {
+      return { items: response.map(mapActivityRow), nextCursor: null };
+    }
+    return {
+      items: (response.items ?? []).map(mapActivityRow),
+      nextCursor: response.nextCursor ?? null
+    };
+  }
+
+  /** Backward-compatible unwrap for callers that only need the activity rows. */
+  async listGroupActivityItems(groupId: string, options?: { limit?: number; cursor?: number; q?: string }) {
+    const page = await this.getGroupActivity(groupId, options);
+    return page.items;
   }
 
   async getBalances(groupId: string) {

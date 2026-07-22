@@ -1,30 +1,22 @@
-import React, { useEffect } from "react";
-import * as Google from "expo-auth-session/providers/google";
+import React, { useCallback, useEffect, useState } from "react";
+import { Platform } from "react-native";
+import {
+  GoogleSignin,
+  isErrorWithCode,
+  isSuccessResponse,
+  statusCodes
+} from "@react-native-google-signin/google-signin";
 
 import { AuthIconButton } from "../components/AuthIconButton";
 import { Button } from "../components/Button";
 import { InlineNotice } from "../components/InlineNotice";
 
-type GoogleClientIds = {
-  webClientId?: string;
-  androidClientId?: string;
-  iosClientId?: string;
-};
-
-function resolveGoogleClientIds(): GoogleClientIds | null {
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || webClientId;
-  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || webClientId;
-
-  if (!webClientId && !process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID && !process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID) {
-    return null;
-  }
-
-  return { webClientId, androidClientId, iosClientId };
+function resolveWebClientId(): string | null {
+  return process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || null;
 }
 
 export function isGoogleSignInConfigured() {
-  return resolveGoogleClientIds() !== null;
+  return Boolean(resolveWebClientId());
 }
 
 type Props = {
@@ -35,56 +27,84 @@ type Props = {
 };
 
 /**
- * Mounted only when Google client IDs exist. Isolates useIdTokenAuthRequest
- * so missing androidClientId cannot crash the whole onboarding screen.
+ * Native Google Sign-In (ID token → API /v1/auth/google).
+ * Requires a dev/release build with the Google Sign-In native module — not Expo Go.
  */
 export function GoogleSignInButton({ onIdToken, pending, errorMessage, variant = "button" }: Props) {
-  const clientIds = resolveGoogleClientIds();
-  if (!clientIds?.androidClientId && !clientIds?.webClientId) {
+  const webClientId = resolveWebClientId();
+  const [localError, setLocalError] = useState<string>();
+  const [configured, setConfigured] = useState(false);
+
+  useEffect(() => {
+    if (!webClientId) {
+      return;
+    }
+    try {
+      GoogleSignin.configure({
+        webClientId,
+        offlineAccess: false,
+        forceCodeForRefreshToken: false
+      });
+      setConfigured(true);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Google Sign-In could not be configured.");
+    }
+  }, [webClientId]);
+
+  const signIn = useCallback(async () => {
+    if (!webClientId || pending) {
+      return;
+    }
+    setLocalError(undefined);
+    try {
+      if (Platform.OS === "android") {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
+      const response = await GoogleSignin.signIn();
+      if (!isSuccessResponse(response)) {
+        return;
+      }
+      const tokens = await GoogleSignin.getTokens();
+      const idToken = tokens.idToken || response.data.idToken;
+      if (!idToken) {
+        setLocalError("Google did not return an ID token. Check Web client ID configuration.");
+        return;
+      }
+      onIdToken(idToken);
+    } catch (error) {
+      if (isErrorWithCode(error)) {
+        if (error.code === statusCodes.SIGN_IN_CANCELLED || error.code === statusCodes.IN_PROGRESS) {
+          return;
+        }
+        if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          setLocalError("Google Play Services is required for Google sign-in on this device.");
+          return;
+        }
+      }
+      setLocalError(error instanceof Error ? error.message : "Google sign-in failed.");
+    }
+  }, [webClientId, pending, onIdToken]);
+
+  if (!webClientId) {
     return null;
   }
 
-  return (
-    <GoogleSignInButtonInner
-      clientIds={clientIds}
-      onIdToken={onIdToken}
-      pending={pending}
-      errorMessage={errorMessage}
-      variant={variant}
-    />
-  );
-}
-
-function GoogleSignInButtonInner({
-  clientIds,
-  onIdToken,
-  pending,
-  errorMessage,
-  variant
-}: Props & { clientIds: GoogleClientIds }) {
-  const [googleRequest, googleResponse, promptGoogle] = Google.useIdTokenAuthRequest({
-    webClientId: clientIds.webClientId,
-    androidClientId: clientIds.androidClientId,
-    iosClientId: clientIds.iosClientId
-  });
-
-  useEffect(() => {
-    const idToken = googleResponse?.type === "success" ? googleResponse.authentication?.idToken : undefined;
-    if (idToken) {
-      onIdToken(idToken);
-    }
-  }, [googleResponse, onIdToken]);
-
-  const disabled = !googleRequest || pending;
+  const disabled = !configured || pending;
+  const shownError = localError || errorMessage;
 
   if (variant === "icon") {
-    return <AuthIconButton method="google" label="Google" onPress={() => void promptGoogle()} disabled={disabled} />;
+    return (
+      <>
+        <AuthIconButton method="google" label="Google" onPress={() => void signIn()} disabled={disabled} />
+        {shownError ? <InlineNotice title="Google sign-in failed" body={shownError} tone="owe" /> : null}
+      </>
+    );
   }
 
   return (
     <>
-      <Button label="Continue with Google" variant="secondary" onPress={() => void promptGoogle()} disabled={disabled} />
-      {errorMessage ? <InlineNotice title="Google sign-in failed" body={errorMessage} tone="owe" /> : null}
+      <Button label="Continue with Google" variant="secondary" onPress={() => void signIn()} disabled={disabled} />
+      {shownError ? <InlineNotice title="Google sign-in failed" body={shownError} tone="owe" /> : null}
     </>
   );
 }

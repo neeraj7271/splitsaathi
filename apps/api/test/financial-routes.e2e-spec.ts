@@ -137,15 +137,6 @@ describe('financial HTTP routes', () => {
       .send({ upiApp: 'gpay' })
       .expect(201)
       .expect(({ body }) => {
-        expect(body.intent.state).toBe('payer_opened_upi_app');
-      });
-
-    await request(app.getHttpServer())
-      .post('/v1/settlement-intents/33333333-3333-4333-8333-333333333333/proofs')
-      .set('Idempotency-Key', 'route-settlement-proof-1')
-      .send({ amountMinor: 5000, utr: 'ROUTE-UTR-1' })
-      .expect(201)
-      .expect(({ body }) => {
         expect(body.intent.state).toBe('awaiting_receiver_confirmation');
       });
 
@@ -207,8 +198,9 @@ describe('financial HTTP routes', () => {
       .get('/v1/groups/route-group-1/activity')
       .expect(200)
       .expect(({ body }) => {
-        expect(body.length).toBeGreaterThanOrEqual(1);
-        expect(body).toEqual(
+        expect(body.items.length).toBeGreaterThanOrEqual(1);
+        expect(body.nextCursor).toBeNull();
+        expect(body.items).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
               type: 'ExpenseCreated',
@@ -228,6 +220,7 @@ describe('financial HTTP routes', () => {
             })
           ])
         );
+        expect(body.items.every((row: { body: string }) => !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(row.body))).toBe(true);
       });
 
     await request(app.getHttpServer())

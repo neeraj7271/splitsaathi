@@ -18,3 +18,9 @@ deploy/*.apk
 # Never commit Google OAuth client secret JSON downloads
 apps/mobile/public/assets/client_secret*.json
 **/client_secret*.json
+
+# Firebase / FCM secrets
+apps/mobile/secrets/
+apps/mobile/google-services.json
+**/firebase-adminsdk*.json
+**-firebase-adminsdk-*.json

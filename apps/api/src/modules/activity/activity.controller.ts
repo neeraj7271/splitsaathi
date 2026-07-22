@@ -20,9 +20,19 @@ export class ActivityController {
   async listGroupActivity(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param('groupId') groupId: string,
-    @Query('q') query?: string
+    @Query('q') query?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursorRaw?: string
   ) {
     await this.authorization.assertCan(currentUser.userId, groupId, 'read');
-    return query ? this.activity.search(groupId, query) : this.activity.listGroupActivity(groupId);
+    const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+    const cursor = cursorRaw !== undefined ? Number(cursorRaw) : undefined;
+    const pageQuery = {
+      limit: Number.isFinite(limit) ? limit : undefined,
+      cursor: Number.isFinite(cursor) ? cursor : undefined
+    };
+    return query
+      ? this.activity.search(groupId, query, pageQuery)
+      : this.activity.listGroupActivity(groupId, pageQuery);
   }
 }

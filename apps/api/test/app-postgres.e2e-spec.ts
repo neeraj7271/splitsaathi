@@ -153,7 +153,8 @@ describePostgres('AppModule with Postgres persistence', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.length).toBeGreaterThanOrEqual(4);
+        expect(body.items.length).toBeGreaterThanOrEqual(4);
+        expect(body.nextCursor === null || typeof body.nextCursor === 'number').toBe(true);
       });
   });
 

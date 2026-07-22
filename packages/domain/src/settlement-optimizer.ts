@@ -44,7 +44,7 @@ export function buildSettlementExplanation(
     .map((expense) => expense.description)
     .slice(0, 3);
 
-  return `${payerParticipantId} pays ${payeeParticipantId} to settle ${formatExpenseNames(relatedNames)}.`;
+  return `Someone owes this amount to settle ${formatExpenseNames(relatedNames)}.`;
 }
 
 export class GreedySettlementOptimizer {

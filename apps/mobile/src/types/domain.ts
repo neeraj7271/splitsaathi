@@ -135,6 +135,7 @@ export interface ActivityRowDto {
   status?: SettlementState | "pending" | "confirmed" | "disputed";
   context?: Record<string, unknown>;
   occurredAt: string;
+  globalPosition?: number;
 }
 
 export interface ExpenseExplanation {
@@ -193,6 +194,9 @@ export interface SettlementIntent {
   clientReference?: string;
   expiresAt?: string;
   createdAt?: string;
+  proofs?: Array<{ id?: string; attachmentId?: string; utr?: string; submittedAt?: string }>;
+  proofAttachmentId?: string;
+  proofUrl?: string;
 }
 
 export interface RecurringSchedule {
@@ -251,6 +255,7 @@ export interface VerifyOtpResponse {
     expiresInSeconds: number;
   };
   needsOnboarding?: boolean;
+  needsPhoneLink?: boolean;
 }
 
 export interface UserProfile {

@@ -68,6 +68,6 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
       }
     }
   ],
-  exports: [AuthService, TypeOrmModule]
+  exports: [AuthService, TypeOrmModule, EMAIL_PROVIDER]
 })
 export class AuthModule {}

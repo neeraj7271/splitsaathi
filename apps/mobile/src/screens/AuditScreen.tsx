@@ -21,8 +21,8 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const activityQuery = useQuery({
-    queryKey: ["groupActivity", selectedGroupId],
-    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string),
+    queryKey: ["groupActivity", selectedGroupId, { limit: 50 }],
+    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: 50 }),
     enabled: Boolean(selectedGroupId)
   });
   const groupQuery = useQuery({
@@ -49,15 +49,16 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
     }
   }, [groups, navigation]);
 
+  const activityItems = activityQuery.data?.items ?? [];
   const enrichedActivity = useMemo(() => {
-    if (!activityQuery.data?.length) {
+    if (!activityItems.length) {
       return [];
     }
     if (!groupQuery.data) {
-      return activityQuery.data;
+      return activityItems;
     }
-    return enrichActivityRows(activityQuery.data, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
-  }, [activityQuery.data, groupQuery.data]);
+    return enrichActivityRows(activityItems, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
+  }, [activityItems, groupQuery.data]);
 
   const activityAsAudit = useMemo(() => {
     const lookups = groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined;

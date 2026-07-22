@@ -1,0 +1,6 @@
+# Place your Firebase Android config here (from Firebase Console → Project settings).
+# Required for FCM device tokens via expo-notifications getDevicePushTokenAsync.
+#
+# Download google-services.json for package `in.splitsaathi.mobile` and replace this file.
+# Until then, push registration will skip gracefully.
+{}

@@ -35,4 +35,21 @@ describe('RoundingAllocator', () => {
 
     expect(allocator.allocate(100, inputs)).toEqual(allocator.allocate(100, inputs));
   });
+
+  it('reconciles equal split of ₹100.00 across 3 people (residual handled)', () => {
+    const allocator = new RoundingAllocator();
+    const totalMinor = 10000; // ₹100.00
+    const result = allocator.allocate(totalMinor, [
+      { id: 'alice', weightNumerator: 1, weightDenominator: 1 },
+      { id: 'bob', weightNumerator: 1, weightDenominator: 1 },
+      { id: 'carol', weightNumerator: 1, weightDenominator: 1 }
+    ]);
+
+    expect(result.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(totalMinor);
+    expect(result.every((row) => Number.isInteger(row.amountMinor))).toBe(true);
+    // 10000 / 3 → 3333 + 3333 + 3334 (one paisa residual)
+    const amounts = result.map((row) => row.amountMinor).sort((a, b) => a - b);
+    expect(amounts).toEqual([3333, 3333, 3334]);
+    expect(result.reduce((sum, row) => sum + row.residualMinor, 0)).toBe(1);
+  });
 });

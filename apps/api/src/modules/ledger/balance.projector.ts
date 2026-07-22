@@ -37,9 +37,15 @@ export class BalanceProjector implements Projector {
     }
   }
 
-  listGroupBalances(groupId: string): ParticipantBalanceRow[] {
+  /**
+   * Returns projected balances for a group.
+   * Zero balances are included by default so clients can show "Settled".
+   * Pass `includeZero: false` when only open balances are needed.
+   */
+  listGroupBalances(groupId: string, options: { includeZero?: boolean } = {}): ParticipantBalanceRow[] {
+    const includeZero = options.includeZero !== false;
     return [...this.balances.values()]
-      .filter((row) => row.groupId === groupId && row.amountMinor !== 0)
+      .filter((row) => row.groupId === groupId && (includeZero || row.amountMinor !== 0))
       .sort((left, right) => {
         if (left.currencyCode !== right.currencyCode) return left.currencyCode.localeCompare(right.currencyCode);
         return left.participantId.localeCompare(right.participantId);

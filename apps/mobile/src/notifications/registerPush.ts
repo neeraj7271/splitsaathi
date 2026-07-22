@@ -12,18 +12,19 @@ function isExpoGo() {
   return Constants.appOwnership === "expo";
 }
 
+/**
+ * Registers the native FCM (Android) / APNs (iOS) device token with the API.
+ * Requires a dev/production build with `google-services.json` (Android) — not Expo Go.
+ */
 export async function registerPushIfPossible() {
   if (Platform.OS === "web") {
     return { status: "skipped" as const, reason: "push_not_supported_on_web_preview" };
   }
 
-  // Remote push was removed from Expo Go on Android in SDK 53+.
-  // Skip entirely in Expo Go so onboarding does not surface a hard error.
   if (isExpoGo()) {
     return { status: "skipped" as const, reason: "push_not_supported_in_expo_go" };
   }
 
-  // Lazy-load so Expo Go never evaluates the expo-notifications native path.
   const Notifications = await import("expo-notifications");
 
   function allowsNotifications(permission: NotificationPermissionShape) {
@@ -41,14 +42,21 @@ export async function registerPushIfPossible() {
   if (!allowsNotifications(granted as NotificationPermissionShape)) {
     return { status: "skipped" as const, reason: "permission_denied" };
   }
+
   try {
-    const token = await Notifications.getExpoPushTokenAsync();
+    // Native FCM/APNs token (not Expo push token) — API delivers via FCM HTTP v1.
+    const deviceToken = await Notifications.getDevicePushTokenAsync();
+    const pushToken = deviceToken.data;
+    if (!pushToken || typeof pushToken !== "string") {
+      return { status: "skipped" as const, reason: "empty_device_push_token" };
+    }
+
     await apiClient.registerDeviceInstallation({
       platform: Platform.OS === "ios" ? "ios" : "android",
       appVersion: Constants.expoConfig?.version ?? "0.1.0",
-      pushToken: token.data
+      pushToken
     });
-    return { status: "registered" as const, pushToken: token.data };
+    return { status: "registered" as const, pushToken, provider: deviceToken.type };
   } catch (error) {
     return { status: "skipped" as const, reason: error instanceof Error ? error.message : String(error) };
   }

@@ -40,9 +40,12 @@ export const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
   EMAIL_PROVIDER_DRIVER: z.enum(['dev', 'resend']).default('dev'),
-  EMAIL_FROM: z.string().email().optional(),
+  /** Plain email or Resend display form, e.g. `SplitSaathi <noreply@example.com>`. */
+  EMAIL_FROM: z.string().min(3).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_DEV_CODE: z.string().regex(/^\d{6}$/).default('123456'),
+  /** Shared secret for external cron hitting `POST /v1/jobs/*` (`x-cron-secret` header). */
+  CRON_SECRET: z.string().min(16).optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   UPI_INTENT_PROVIDER_DRIVER: z.enum(['dev']).default('dev'),
   PAYMENT_GATEWAY_DRIVER: z.enum(['manual', 'razorpay', 'cashfree']).default('manual'),
@@ -53,8 +56,13 @@ export const envSchema = z.object({
   CASHFREE_SECRET_KEY: z.string().min(1).optional(),
   CASHFREE_WEBHOOK_SECRET: z.string().min(1).optional(),
   CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
-  NOTIFICATION_PROVIDER_DRIVER: z.enum(['dev', 'expo']).default('dev'),
+  NOTIFICATION_PROVIDER_DRIVER: z.enum(['dev', 'expo', 'fcm']).default('dev'),
   EXPO_PUSH_ACCESS_TOKEN: z.string().min(1).optional(),
+  /** Raw Firebase service-account JSON string for FCM. */
+  FCM_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
+  /** Path to a Firebase service-account JSON file for FCM. */
+  FCM_SERVICE_ACCOUNT_PATH: z.string().min(1).optional(),
+  FCM_PROJECT_ID: z.string().min(1).optional(),
   OCR_PROVIDER_DRIVER: z.enum(['noop', 'tesseract']).default('noop'),
   OBJECT_STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
   S3_ENDPOINT: z.string().min(1).optional(),

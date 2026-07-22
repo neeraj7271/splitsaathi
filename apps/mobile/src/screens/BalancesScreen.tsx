@@ -53,9 +53,25 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
     () => (suggestionsQuery.data && lookups ? enrichSettlementSuggestions(suggestionsQuery.data, lookups) : suggestionsQuery.data ?? []),
     [lookups, suggestionsQuery.data]
   );
+  const allSettled =
+    Boolean(selectedGroupId) &&
+    !balancesQuery.isLoading &&
+    !balancesQuery.error &&
+    (balances.length === 0 || balances.every((balance) => balance.balanceMinor === 0));
+  const refreshing =
+    groupsQuery.isRefetching || groupQuery.isRefetching || balancesQuery.isRefetching || suggestionsQuery.isRefetching;
+
+  async function refreshScreen() {
+    await Promise.all([
+      groupsQuery.refetch(),
+      selectedGroupId ? groupQuery.refetch() : Promise.resolve(),
+      selectedGroupId ? balancesQuery.refetch() : Promise.resolve(),
+      selectedGroupId ? suggestionsQuery.refetch() : Promise.resolve()
+    ]);
+  }
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
       <View style={styles.header}>
         <View style={styles.headerTitle}>
           <ThemedText variant="caption" tone="muted">
@@ -72,7 +88,9 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
 
       <View style={styles.section}>
         <SectionHeader title="Participant balances" />
-        {balances.length ? (
+        {allSettled ? (
+          <EmptyState title="Everyone is settled" body="No outstanding balances in this group right now." />
+        ) : balances.length ? (
           <DataSurface>
             {balances.map((balance) => (
               <View key={`${balance.participantId}-${balance.currencyCode}`} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
@@ -88,6 +106,8 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
               </View>
             ))}
           </DataSurface>
+        ) : balancesQuery.isLoading ? (
+          <EmptyState title="Loading balances" body="Fetching server projections for this group." />
         ) : (
           <EmptyState title="No balances yet" body="Balances are server projections and appear after ledger events are accepted." />
         )}
@@ -96,7 +116,9 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
       <View style={styles.section}>
         <SectionHeader title="Why this payment?" />
         {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
-        {suggestions.length ? (
+        {allSettled ? (
+          <EmptyState title="Nothing to settle" body="Everyone is settled, so there are no payment suggestions." />
+        ) : suggestions.length ? (
           <DataSurface>
             {suggestions.map((suggestion) => (
               <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline }]}>

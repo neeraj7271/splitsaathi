@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ApiConfigService } from '../../../config/api-config.service';
-import { EmailProviderPort, SendEmailOtpInput, SendEmailOtpResult } from '../ports/email-provider.port';
+import {
+  EmailProviderPort,
+  SendEmailInput,
+  SendEmailOtpInput,
+  SendEmailOtpResult,
+  SendEmailResult
+} from '../ports/email-provider.port';
 
 @Injectable()
 export class DevEmailProvider implements EmailProviderPort {
@@ -14,5 +20,12 @@ export class DevEmailProvider implements EmailProviderPort {
       deliveryMode: 'development',
       devCode: this.config.isProduction ? undefined : input.code
     };
+  }
+
+  async send(input: SendEmailInput): Promise<SendEmailResult> {
+    this.logger.log(
+      `Development email to=${input.to} subject=${JSON.stringify(input.subject)} body=${JSON.stringify(input.text)}`
+    );
+    return { deliveryMode: 'development' };
   }
 }

@@ -103,7 +103,7 @@ export class RecurringController {
 
   @Post('reminder-schedules/due')
   async findDueReminders(@CurrentUser() _currentUser: AuthenticatedUser, @Body() dto: { asOf?: string }) {
-    return this.reminders.findDue(dto.asOf ? new Date(dto.asOf) : new Date());
+    return this.reminders.processDue(dto.asOf ? new Date(dto.asOf) : new Date());
   }
 
   private requireIdempotencyKey(headerValue: string | undefined, body: unknown): string {

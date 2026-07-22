@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -375,6 +376,61 @@ export class GroupsService {
     return this.getGroupForUser(userId, groupId);
   }
 
+  async unarchiveGroup(userId: string, groupId: string): Promise<GroupResponseDto> {
+    await this.assertPermission(userId, groupId, 'group.archive');
+    const group = await this.findGroupOrThrow(groupId);
+    group.state = 'active';
+    group.archivedAt = null;
+    await this.groups.save(group);
+    await this.notifyActiveUsers(groupId, {
+      type: 'group_unarchived',
+      title: 'Group restored',
+      body: `${group.name} was unarchived.`,
+      data: { groupId }
+    });
+    return this.getGroupForUser(userId, groupId);
+  }
+
+  async leaveGroup(userId: string, groupId: string): Promise<MembershipResponseDto> {
+    const membership = await this.memberships.findOne({
+      where: { groupId, userId, status: In(['active', 'locked_for_exit']) }
+    });
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this group.');
+    }
+    return this.removeMembershipWithBalanceCheck(groupId, membership);
+  }
+
+  async removeMembership(
+    userId: string,
+    groupId: string,
+    membershipId: string
+  ): Promise<MembershipResponseDto> {
+    await this.assertPermission(userId, groupId, 'membership.exit.lock');
+    const membership = await this.findMembershipInGroupOrThrow(groupId, membershipId);
+    return this.removeMembershipWithBalanceCheck(groupId, membership);
+  }
+
+  async resolveUserIdForParticipant(groupId: string, participantId: string): Promise<string | null> {
+    const membership = await this.memberships.findOne({
+      where: { groupId, participantId, status: In(['active', 'locked_for_exit']) }
+    });
+    if (membership?.userId) {
+      return membership.userId;
+    }
+    const participant = await this.participants.findOne({ where: { id: participantId, groupId } });
+    return participant?.linkedUserId ?? null;
+  }
+
+  async listActiveMemberUserIds(groupId: string): Promise<string[]> {
+    const memberships = await this.memberships.find({
+      where: { groupId, status: In(['active', 'locked_for_exit']) }
+    });
+    return memberships
+      .map((membership) => membership.userId)
+      .filter((id): id is string => Boolean(id));
+  }
+
   async lockMembershipForExit(
     userId: string,
     groupId: string,
@@ -537,6 +593,62 @@ export class GroupsService {
     return membership;
   }
 
+  private async removeMembershipWithBalanceCheck(
+    groupId: string,
+    membership: GroupMembershipEntity
+  ): Promise<MembershipResponseDto> {
+    if (membership.role === 'owner') {
+      throw new ForbiddenException(
+        'Owners cannot leave or be removed. Transfer ownership or archive the group first.'
+      );
+    }
+    if (membership.status === 'locked_for_exit') {
+      throw new BadRequestException(
+        'Membership is locked for exit until balances are resolved.'
+      );
+    }
+    if (membership.status !== 'active') {
+      throw new BadRequestException('Membership is not active.');
+    }
+
+    if (!membership.participantId) {
+      throw new BadRequestException('Membership has no linked participant to check balances.');
+    }
+
+    const outstanding = this.balanceProjector
+      .listGroupBalances(groupId)
+      .filter(
+        (row) =>
+          row.participantId === membership.participantId && Math.abs(row.amountMinor) > 0
+      );
+    if (outstanding.length > 0) {
+      const detail = outstanding
+        .map((row) => `${row.amountMinor} ${row.currencyCode}`)
+        .join(', ');
+      throw new BadRequestException(
+        `Settle outstanding balances before leaving (${detail}).`
+      );
+    }
+
+    const group = await this.findGroupOrThrow(groupId);
+    const leavingUserId = membership.userId;
+    membership.status = 'removed_zero_balance';
+    const saved = await this.memberships.save(membership);
+
+    await this.notifyActiveUsers(
+      groupId,
+      {
+        type: 'membership_removed',
+        title: 'Member left the group',
+        body: `A member left ${group.name}.`,
+        data: { groupId, membershipId: saved.id, participantId: saved.participantId }
+      },
+      leavingUserId ? new Set([leavingUserId]) : undefined
+    );
+
+    return MembershipResponseDto.fromEntity(saved);
+  }
+
   private async notifyActiveUsers(
     groupId: string,
     input: {
@@ -544,7 +656,8 @@ export class GroupsService {
       title: string;
       body: string;
       data?: Record<string, unknown>;
-    }
+    },
+    excludeUserIds?: Set<string>
   ): Promise<void> {
     const memberships = await this.memberships.find({
       where: { groupId, status: In(['active', 'locked_for_exit']) }
@@ -553,6 +666,7 @@ export class GroupsService {
     await Promise.all(
       memberships
         .filter((membership) => Boolean(membership.userId))
+        .filter((membership) => !excludeUserIds?.has(membership.userId!))
         .map((membership) =>
           this.notificationsService.create({
             userId: membership.userId!,

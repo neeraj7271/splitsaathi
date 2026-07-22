@@ -1,5 +1,5 @@
 import React from "react";
-import { ScrollView, StatusBar, StyleSheet, View } from "react-native";
+import { RefreshControl, ScrollView, StatusBar, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../theme";
@@ -9,11 +9,15 @@ const TAB_BAR_HEIGHT = 64;
 export function Screen({
   children,
   scroll = true,
-  footer
+  footer,
+  refreshing,
+  onRefresh
 }: {
   children: React.ReactNode;
   scroll?: boolean;
   footer?: React.ReactNode;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -46,6 +50,16 @@ export function Screen({
           contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl
+                refreshing={Boolean(refreshing)}
+                onRefresh={onRefresh}
+                tintColor={theme.colors.confirmed}
+                colors={[theme.colors.confirmed]}
+              />
+            ) : undefined
+          }
         >
           {content}
         </ScrollView>

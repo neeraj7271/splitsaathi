@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiConfigModule } from '../../config/api-config.module';
 import { ApiConfigService } from '../../config/api-config.service';
 import { DeviceInstallationEntity } from '@splitsaathi/db';
+import { UsersModule } from '../users/users.module';
 import { DeviceInstallationsController } from './device-installations.controller';
 import { DeviceInstallationsService } from './device-installations.service';
 import { NotificationDeliveryEntity } from './entities/notification-delivery.entity';
@@ -14,11 +15,13 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { DevNotificationProvider } from './providers/dev-notification.provider';
 import { ExpoPushProvider } from './providers/expo-push.provider';
+import { FcmPushProvider } from './providers/fcm-push.provider';
 
 @Module({
   imports: [
     ApiConfigModule,
     JwtModule.register({}),
+    UsersModule,
     TypeOrmModule.forFeature([NotificationEntity, NotificationDeliveryEntity, DeviceInstallationEntity])
   ],
   controllers: [NotificationsController, DeviceInstallationsController],
@@ -28,10 +31,16 @@ import { ExpoPushProvider } from './providers/expo-push.provider';
     JwtAuthGuard,
     DevNotificationProvider,
     ExpoPushProvider,
+    FcmPushProvider,
     {
       provide: NOTIFICATION_PROVIDER,
-      inject: [ApiConfigService, DevNotificationProvider, ExpoPushProvider],
-      useFactory: (config: ApiConfigService, dev: DevNotificationProvider, expo: ExpoPushProvider) => {
+      inject: [ApiConfigService, DevNotificationProvider, ExpoPushProvider, FcmPushProvider],
+      useFactory: (
+        config: ApiConfigService,
+        dev: DevNotificationProvider,
+        expo: ExpoPushProvider,
+        fcm: FcmPushProvider
+      ) => {
         if (
           config.env.NODE_ENV === 'production' &&
           config.env.NOTIFICATION_PROVIDER_DRIVER === 'dev' &&
@@ -39,7 +48,13 @@ import { ExpoPushProvider } from './providers/expo-push.provider';
         ) {
           throw new Error('NOTIFICATION_PROVIDER_DRIVER=dev is not allowed in production.');
         }
-        return config.env.NOTIFICATION_PROVIDER_DRIVER === 'expo' ? expo : dev;
+        if (config.env.NOTIFICATION_PROVIDER_DRIVER === 'expo') {
+          return expo;
+        }
+        if (config.env.NOTIFICATION_PROVIDER_DRIVER === 'fcm') {
+          return fcm;
+        }
+        return dev;
       }
     }
   ],

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, BackHandler, Linking, StyleSheet, View } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { House, Scales, UsersThree, CloudArrowUp } from "phosphor-react-native";
@@ -8,12 +8,12 @@ import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from "@expo-google-
 import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 
 import { BottomTabs } from "./src/components/BottomTabs";
-import { BrandLogo } from "./src/components/BrandLogo";
-import { ThemedText } from "./src/components/ThemedText";
+import { AnimatedBrandLoader } from "./src/components/AnimatedBrandLoader";
+import { BiometricGate } from "./src/components/BiometricGate";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
 import { restoreSession } from "./src/auth/session";
-import { apiClient } from "./src/api/client";
+import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
 import { AuditScreen } from "./src/screens/AuditScreen";
 import { BalancesScreen } from "./src/screens/BalancesScreen";
@@ -38,10 +38,26 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 20_000
+      staleTime: 20_000,
+      refetchOnReconnect: true
     }
   }
 });
+
+const SETTINGS_ROUTES: AppRoute[] = [
+  "expense",
+  "balances",
+  "audit",
+  "recurring",
+  "importExport",
+  "profile",
+  "settings",
+  "securitySettings",
+  "notificationSettings",
+  "appearanceSettings",
+  "contactsSettings",
+  "groupDetail"
+];
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
@@ -73,6 +89,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const [route, setRoute] = useState<AppRoute>("home");
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [selectedExpenseId, setSelectedExpenseId] = useState<string>();
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   useEffect(() => {
     async function boot() {
@@ -97,7 +114,65 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       .getPreferences()
       .then((preferences) => theme.setRequestedMode(preferences.appearance))
       .catch(() => undefined);
-  }, [authenticated]);
+  }, [authenticated, theme]);
+
+  const claimInviteFromUrl = useCallback(
+    async (url: string | null) => {
+      if (!url || !authenticated || inviteBusy) {
+        return;
+      }
+      const token = extractInviteToken(url);
+      if (!token) {
+        return;
+      }
+      setInviteBusy(true);
+      try {
+        const group = await apiClient.claimInvite(token);
+        setSelectedGroupId(group.id);
+        setRoute("groupDetail");
+        await queryClient.invalidateQueries({ queryKey: ["groups"] });
+        Alert.alert("Joined group", `You're now in ${group.name}.`);
+      } catch (error) {
+        Alert.alert("Invite failed", error instanceof Error ? error.message : "Could not join this group.");
+      } finally {
+        setInviteBusy(false);
+      }
+    },
+    [authenticated, inviteBusy]
+  );
+
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+    Linking.getInitialURL().then((url) => void claimInviteFromUrl(url));
+    const sub = Linking.addEventListener("url", ({ url }) => void claimInviteFromUrl(url));
+    return () => sub.remove();
+  }, [authenticated, claimInviteFromUrl]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (SETTINGS_ROUTES.includes(route)) {
+        if (route === "groupDetail") {
+          setRoute("groups");
+          return true;
+        }
+        if (
+          route === "securitySettings" ||
+          route === "notificationSettings" ||
+          route === "appearanceSettings" ||
+          route === "contactsSettings"
+        ) {
+          setRoute("settings");
+          return true;
+        }
+        setRoute("home");
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [route]);
 
   const navigation = useMemo<AppNavigation>(
     () => ({
@@ -124,17 +199,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   );
 
   if (!fontsLoaded || !booted) {
-    return (
-      <View style={[styles.loading, { backgroundColor: theme.colors.canvas }]}>
-        <View style={styles.loadingBrand}>
-          <BrandLogo variant="lockup" size={168} />
-        </View>
-        <ActivityIndicator color={theme.colors.confirmed} />
-        <ThemedText variant="caption" tone="muted">
-          Loading your ledger
-        </ThemedText>
-      </View>
-    );
+    return <AnimatedBrandLoader />;
   }
 
   if (!authenticated) {
@@ -142,6 +207,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   }
 
   return (
+    <BiometricGate enabled>
     <View style={styles.root}>
       {route === "home" ? <HomeScreen navigation={navigation} /> : null}
       {route === "groups" ? <GroupCreateScreen navigation={navigation} /> : null}
@@ -164,7 +230,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         value={
           route === "groupDetail"
             ? "groups"
-            : route === "expense" || route === "balances" || route === "audit" || route === "recurring" || route === "importExport" || route === "profile" || route === "settings" || route === "securitySettings" || route === "notificationSettings" || route === "appearanceSettings" || route === "contactsSettings"
+            : SETTINGS_ROUTES.includes(route)
               ? "home"
               : route
         }
@@ -178,24 +244,12 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         ]}
       />
     </View>
+    </BiometricGate>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1
-  },
-  loading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12
-  },
-  loadingBrand: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginBottom: 8
   }
 });

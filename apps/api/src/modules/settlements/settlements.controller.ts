@@ -1,15 +1,18 @@
-import { BadRequestException, Body, Controller, Get, Headers, Inject, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Inject, Optional, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request';
+import { GroupsService } from '../groups/groups.service';
 import { FINANCIAL_AUTHORIZATION, type FinancialAuthorizationPort } from '../ledger/financial-authorization';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SettlementProjector } from './settlement.projector';
 import { SettlementCommandService } from './settlement-command.service';
 import { SettlementSuggestionService } from './settlement-suggestion.service';
 import type {
   CreateSettlementIntentCommand,
   MarkUpiOpenedCommand,
+  SettlementIntentRow,
   SettlementTransitionCommand,
   SubmitPaymentProofCommand
 } from './settlement.types';
@@ -23,7 +26,9 @@ export class SettlementsController {
     private readonly commands: SettlementCommandService,
     private readonly settlements: SettlementProjector,
     private readonly suggestions: SettlementSuggestionService,
-    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort
+    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly groups?: GroupsService
   ) {}
 
   @Get('groups/:groupId/settlement-suggestions')
@@ -82,13 +87,15 @@ export class SettlementsController {
   ): ReturnType<SettlementCommandService['markUpiOpened']> {
     await this.assertCanActOnIntent(currentUser.userId, settlementIntentId, 'settlement.confirm');
     const expectedVersion = dto.expectedVersion ?? (await this.commands.currentVersion(settlementIntentId));
-    return this.commands.markUpiOpened({
+    const result = await this.commands.markUpiOpened({
       ...dto,
       settlementIntentId,
       expectedVersion,
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
+    await this.notifySettlementConfirmationRequested(result.intent);
+    return result;
   }
 
   @Post('settlement-intents/:id/proofs')
@@ -114,7 +121,7 @@ export class SettlementsController {
       utrText?: string;
     };
     const expectedVersion = dto.expectedVersion ?? (await this.commands.currentVersion(settlementIntentId));
-    return this.commands.submitProof({
+    const result = await this.commands.submitProof({
       ...normalizedDto,
       settlementIntentId,
       amountMinor: dto.amountMinor ?? normalizedDto.claimedAmountMinor,
@@ -123,6 +130,8 @@ export class SettlementsController {
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
+    await this.notifySettlementConfirmationRequested(result.intent);
+    return result;
   }
 
   @Post('settlement-intents/:id/confirm')
@@ -141,7 +150,11 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<SettlementTransitionCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['confirm']> {
-    return this.commands.confirm(await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto));
+    const result = await this.commands.confirm(
+      await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto)
+    );
+    await this.notifySettlementConfirmed(result.intent);
+    return result;
   }
 
   @Post('settlement-intents/:id/reject')
@@ -311,5 +324,59 @@ export class SettlementsController {
       return;
     }
     await this.authorization.assertCan(userId, intent.groupId, action);
+  }
+
+  private async notifySettlementConfirmationRequested(intent: SettlementIntentRow): Promise<void> {
+    if (!this.notifications || !this.groups) {
+      return;
+    }
+    const payeeUserId = await this.groups.resolveUserIdForParticipant(
+      intent.groupId,
+      intent.payeeParticipantId
+    );
+    if (!payeeUserId) {
+      return;
+    }
+    await this.notifications.create({
+      userId: payeeUserId,
+      groupId: intent.groupId,
+      type: 'settlement_confirmation_requested',
+      title: 'Confirm payment',
+      body: `Please confirm a payment of ${intent.amountMinor} ${intent.currencyCode}.`,
+      data: {
+        settlementIntentId: intent.settlementIntentId,
+        amountMinor: intent.amountMinor,
+        currencyCode: intent.currencyCode,
+        payerParticipantId: intent.payerParticipantId,
+        payeeParticipantId: intent.payeeParticipantId
+      }
+    });
+  }
+
+  private async notifySettlementConfirmed(intent: SettlementIntentRow): Promise<void> {
+    if (!this.notifications || !this.groups) {
+      return;
+    }
+    const payerUserId = await this.groups.resolveUserIdForParticipant(
+      intent.groupId,
+      intent.payerParticipantId
+    );
+    if (!payerUserId) {
+      return;
+    }
+    await this.notifications.create({
+      userId: payerUserId,
+      groupId: intent.groupId,
+      type: 'settlement_confirmed',
+      title: 'Payment confirmed',
+      body: `Your payment of ${intent.amountMinor} ${intent.currencyCode} was confirmed.`,
+      data: {
+        settlementIntentId: intent.settlementIntentId,
+        amountMinor: intent.amountMinor,
+        currencyCode: intent.currencyCode,
+        payerParticipantId: intent.payerParticipantId,
+        payeeParticipantId: intent.payeeParticipantId
+      }
+    });
   }
 }

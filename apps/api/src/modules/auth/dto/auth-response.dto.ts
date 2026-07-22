@@ -23,4 +23,9 @@ export class AuthResponseDto {
     description: 'True when the user still needs profile name and consent setup after OTP.'
   })
   needsOnboarding!: boolean;
+
+  @ApiProperty({
+    description: 'True when the authenticated user does not yet have a linked phone identity.'
+  })
+  needsPhoneLink!: boolean;
 }

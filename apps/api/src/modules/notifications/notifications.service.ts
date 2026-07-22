@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { UserPreferencesEntity } from '../users/entities/user-preferences.entity';
 import { NOTIFICATION_PROVIDER } from './notifications.constants';
 import { NotificationDeliveryEntity } from './entities/notification-delivery.entity';
 import { NotificationEntity, NotificationTone } from './entities/notification.entity';
@@ -25,6 +26,8 @@ export class NotificationsService {
     private readonly notifications: Repository<NotificationEntity>,
     @InjectRepository(NotificationDeliveryEntity)
     private readonly deliveries: Repository<NotificationDeliveryEntity>,
+    @InjectRepository(UserPreferencesEntity)
+    private readonly preferences: Repository<UserPreferencesEntity>,
     @Inject(NOTIFICATION_PROVIDER)
     private readonly provider: NotificationProviderPort,
     private readonly devices: DeviceInstallationsService
@@ -59,6 +62,23 @@ export class NotificationsService {
   }
 
   private async deliver(notification: NotificationEntity): Promise<void> {
+    const prefs = await this.preferences.findOne({ where: { userId: notification.userId } });
+    // Missing prefs row inherits DB default (push enabled). Opt-out skips push only;
+    // the in-app notification row is already stored above.
+    if (prefs && prefs.pushNotificationsEnabled === false) {
+      await this.deliveries.save(
+        this.deliveries.create({
+          notificationId: notification.id,
+          provider: 'skipped',
+          status: 'skipped',
+          providerMessageId: null,
+          error: 'pushNotificationsEnabled=false',
+          deliveredAt: null
+        })
+      );
+      return;
+    }
+
     const targetPushTokens = await this.devices.listPushTokens(notification.userId);
     const result = await this.provider.deliver({
       notificationId: notification.id,

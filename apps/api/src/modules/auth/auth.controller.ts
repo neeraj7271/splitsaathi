@@ -40,6 +40,18 @@ export class AuthController {
     return this.authService.verifyOtp(dto);
   }
 
+  /** Verify an OTP (from `otp/start`) and link the phone to the current JWT user. */
+  @Post('phone/link/verify')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AuthResponseDto })
+  linkPhoneVerify(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() dto: VerifyOtpDto
+  ): Promise<AuthResponseDto> {
+    return this.authService.linkPhoneVerify(currentUser.userId, dto);
+  }
+
   @Public()
   @Post('email/signup/start')
   @ApiCreatedResponse({ type: StartEmailOtpResponseDto })

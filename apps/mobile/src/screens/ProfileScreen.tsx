@@ -180,7 +180,11 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           <View style={styles.menuBlock}>
             <SettingsLinkRow
               label="Rate SplitSaathi"
-              onPress={() => Linking.openURL("market://details?id=com.splitsaathi.app").catch(() => Linking.openURL("https://play.google.com/store/apps/details?id=com.splitsaathi.app"))}
+              onPress={() =>
+                Linking.openURL("market://details?id=in.splitsaathi.mobile").catch(() =>
+                  Linking.openURL("https://play.google.com/store/apps/details?id=in.splitsaathi.mobile")
+                )
+              }
             />
             <SettingsLinkRow
               label="Contact support"

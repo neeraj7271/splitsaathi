@@ -137,6 +137,37 @@ export class GroupsController {
     return this.groupsService.archiveGroup(currentUser.userId, groupId);
   }
 
+  @Post(':groupId/unarchive')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: GroupResponseDto })
+  unarchiveGroup(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('groupId') groupId: string
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.unarchiveGroup(currentUser.userId, groupId);
+  }
+
+  @Post(':groupId/leave')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: MembershipResponseDto })
+  leaveGroup(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('groupId') groupId: string
+  ): Promise<MembershipResponseDto> {
+    return this.groupsService.leaveGroup(currentUser.userId, groupId);
+  }
+
+  @Post(':groupId/memberships/:membershipId/remove')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: MembershipResponseDto })
+  removeMembership(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('groupId') groupId: string,
+    @Param('membershipId') membershipId: string
+  ): Promise<MembershipResponseDto> {
+    return this.groupsService.removeMembership(currentUser.userId, groupId, membershipId);
+  }
+
   @Post(':groupId/memberships/:membershipId/lock-exit')
   @ApiOkResponse({ type: MembershipResponseDto })
   lockExit(

@@ -24,6 +24,7 @@ import { SettlementIntent, SettlementSuggestion } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
+import { resolveAuthenticatedImageUri } from "../utils/authenticatedImage";
 
 type SettlementMode = "suggested" | "custom";
 type PaymentMethod = "cash" | "upi";
@@ -206,9 +207,39 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const canCreateCustom = payerParticipantId && payeeParticipantId && payerParticipantId !== payeeParticipantId && parseAmountToMinor(customAmount) > 0;
   const activeAmount = intent?.amountMinor ?? selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
+  const refreshing =
+    groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching;
+
+  async function refreshScreen() {
+    await Promise.all([
+      groupsQuery.refetch(),
+      selectedGroupId ? groupQuery.refetch() : Promise.resolve(),
+      selectedGroupId ? suggestionsQuery.refetch() : Promise.resolve(),
+      selectedGroupId ? historyQuery.refetch() : Promise.resolve()
+    ]);
+  }
+
+  async function openProof(row: SettlementIntent) {
+    const pathOrUrl = row.proofUrl ?? (row.proofAttachmentId ? `/v1/attachments/${row.proofAttachmentId}/content` : null);
+    if (!pathOrUrl) {
+      return;
+    }
+    try {
+      const localUri = await resolveAuthenticatedImageUri(pathOrUrl);
+      const target = localUri ?? apiClient.resolveUrl(pathOrUrl);
+      if (target) {
+        await Linking.openURL(target);
+      }
+    } catch {
+      const fallback = apiClient.resolveUrl(pathOrUrl);
+      if (fallback) {
+        await Linking.openURL(fallback);
+      }
+    }
+  }
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
       <View style={styles.header}>
         <View>
           <ThemedText variant="caption" tone="muted">
@@ -394,6 +425,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   <ThemedText variant="bodySm" tone="muted">
                     {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
                   </ThemedText>
+                  {row.proofAttachmentId || row.proofUrl ? (
+                    <Button label="View proof" variant="ghost" onPress={() => void openProof(row)} />
+                  ) : null}
                 </View>
                 <View style={styles.trailing}>
                   <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>

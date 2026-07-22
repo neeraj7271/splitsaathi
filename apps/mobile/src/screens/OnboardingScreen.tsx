@@ -35,7 +35,14 @@ type OnboardingStep =
   | "consent"
   | "join";
 
-function shouldSkipOnboarding(response: { needsOnboarding?: boolean; user: { displayName: string } }) {
+function shouldSkipOnboarding(response: {
+  needsOnboarding?: boolean;
+  needsPhoneLink?: boolean;
+  user: { displayName: string };
+}) {
+  if (response.needsPhoneLink) {
+    return false;
+  }
   if (response.needsOnboarding === false) {
     return true;
   }
@@ -43,6 +50,20 @@ function shouldSkipOnboarding(response: { needsOnboarding?: boolean; user: { dis
     return false;
   }
   return Boolean(response.user.displayName) && !/^User \d{4}$/.test(response.user.displayName);
+}
+
+function nextStepAfterAuth(response: {
+  needsOnboarding?: boolean;
+  needsPhoneLink?: boolean;
+  user: { displayName: string };
+}): OnboardingStep | "done" {
+  if (response.needsPhoneLink) {
+    return "phone";
+  }
+  if (shouldSkipOnboarding(response)) {
+    return "done";
+  }
+  return "profile";
 }
 
 function formatPhoneE164(phone: string) {
@@ -82,6 +103,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   const [emailCode, setEmailCode] = useState("");
   const [emailChallengeId, setEmailChallengeId] = useState<string>();
   const [otpVerified, setOtpVerified] = useState(false);
+  const [linkingPhone, setLinkingPhone] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -112,17 +134,23 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       if (!challengeId) {
         throw new Error("OTP challenge was not started.");
       }
-      return apiClient.verifyOtp(challengeId, code.trim());
+      if (linkingPhone) {
+        return apiClient.linkPhoneVerify(challengeId, code.trim());
+      }
+      // Phone OTP login is disabled for now — Google signup + post-login phone link only.
+      throw new Error("Phone sign-in is temporarily disabled. Continue with Google.");
     },
     onSuccess: async (response) => {
       setOtpVerified(true);
-      if (shouldSkipOnboarding(response)) {
+      setLinkingPhone(false);
+      const next = nextStepAfterAuth(response);
+      if (next === "done") {
         await markLoggedInBefore();
         onAuthenticated();
         return;
       }
       setDisplayName(response.user.displayName.startsWith("User ") ? "" : response.user.displayName);
-      setStep("profile");
+      setStep(next);
     }
   });
 
@@ -130,13 +158,19 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     mutationFn: (idToken: string) => apiClient.loginWithGoogle(idToken),
     onSuccess: async (response) => {
       setOtpVerified(true);
-      if (shouldSkipOnboarding(response)) {
+      const next = nextStepAfterAuth(response);
+      if (next === "phone") {
+        setLinkingPhone(true);
+        setStep("phone");
+        return;
+      }
+      if (next === "done") {
         await markLoggedInBefore();
         onAuthenticated();
         return;
       }
       setDisplayName(response.user.displayName);
-      setStep("profile");
+      setStep(next);
     }
   });
 
@@ -292,47 +326,48 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               </View>
               <ThemedText variant="body" style={{ color: onGradient, opacity: 0.88, textAlign: "center" }}>
                 {returningUser
-                  ? "Welcome back. Sign in with your phone, or use email / Google."
+                  ? "Welcome back. Continue with Google to open your groups."
                   : "Split expenses with proof-backed UPI settlements for flats, trips, and groups."}
               </ThemedText>
             </View>
             <View style={[styles.welcomeCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.lg }]}>
+              {googleConfigured ? (
+                <GoogleSignInButton
+                  variant="button"
+                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+                  pending={loginWithGoogle.isPending}
+                  errorMessage={loginWithGoogle.error?.message}
+                />
+              ) : (
+                <InlineNotice
+                  title="Google sign-in not configured"
+                  body="Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to enable signup."
+                  tone="pending"
+                />
+              )}
+
+              {/* Phone OTP login / email signup temporarily disabled — Google only for signup.
               <View style={styles.welcomePhoneHeader}>
-                <Phone size={20} color={theme.colors.confirmed} weight="duotone" />
-                <ThemedText variant="bodyMedium">{returningUser ? "Sign in with phone" : "Continue with phone"}</ThemedText>
+                <Phone ... />
+                <InputField ... />
+                <Button label="Send OTP" ... />
+                <AuthIconButton method="email" ... />
               </View>
-              <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-              {startOtp.error ? <InlineNotice title="OTP could not start" body={startOtp.error.message} tone="owe" /> : null}
-              <Button label="Send OTP" onPress={sendOtp} loading={startOtp.isPending} disabled={phone.length < 8} />
+              */}
 
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
-                <ThemedText variant="caption" tone="muted">
-                  or continue with
-                </ThemedText>
-                <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
-              </View>
-
-              <View style={styles.iconRow}>
-                <AuthIconButton method="email" label="Email" onPress={() => setStep("emailGate")} />
-                {googleConfigured ? (
-                  <GoogleSignInButton
-                    variant="icon"
-                    onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
-                    pending={loginWithGoogle.isPending}
-                  />
-                ) : (
-                  <AuthIconButton method="google" label="Google" onPress={() => undefined} disabled />
-                )}
-              </View>
-              {loginWithGoogle.error ? <InlineNotice title="Google sign-in failed" body={loginWithGoogle.error.message} tone="owe" /> : null}
+              <ThemedText variant="caption" tone="muted" style={{ textAlign: "center", marginTop: 8 }}>
+                After Google sign-in we&apos;ll ask for your phone number once to help friends find you.
+              </ThemedText>
 
               <Button label="Join with invite" variant="ghost" onPress={() => setStep("join")} />
             </View>
           </>
         ) : null}
 
-        {step === "emailGate" ? (
+        {/* Email auth steps kept in code but unreachable from welcome while Google-only mode is on.
+        {step === "emailGate" ? ( ... ) : null}
+        */}
+        {false && step === "emailGate" ? (
           <AuthPanel title="Continue with email" body="Create a new account or sign in with your verified email and password." icon={<EnvelopeSimple size={24} color={theme.colors.confirmed} weight="duotone" />}>
             <Button label="Create account" onPress={() => setStep("emailSignup")} />
             <Button label="Sign in" variant="secondary" onPress={() => setStep("emailLogin")} />
@@ -342,18 +377,29 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
         {step === "phone" ? (
           <AuthPanel
-            title={returningUser ? "Welcome back" : "Enter phone"}
-            body={
-              returningUser
-                ? "Sign in with your phone number. Your profile and groups are already saved."
-                : "We use OTP for recovery and group accountability. Contact upload is not required."
-            }
+            title="Add your phone"
+            body="Enter your +91 mobile number. We'll send a one-time code so friends can find you in SplitSaathi."
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
             <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {startOtp.error ? <InlineNotice title="OTP could not start" body={startOtp.error.message} tone="owe" /> : null}
-            <Button label="Send OTP" onPress={sendOtp} loading={startOtp.isPending} disabled={phone.length < 8} />
-            {returningUser ? null : <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />}
+            <Button
+              label="Send OTP"
+              onPress={() => {
+                setLinkingPhone(true);
+                sendOtp();
+              }}
+              loading={startOtp.isPending}
+              disabled={phone.length < 8}
+            />
+            <Button
+              label="Skip for now"
+              variant="ghost"
+              onPress={() => {
+                setLinkingPhone(false);
+                setStep("profile");
+              }}
+            />
           </AuthPanel>
         ) : null}
 
@@ -410,7 +456,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
         {step === "otp" ? (
           <AuthPanel
-            title="Verify code"
+            title={linkingPhone ? "Verify phone" : "Verify code"}
             body={
               maskedDestination
                 ? `Enter the six digit code sent to ${maskedDestination}.`

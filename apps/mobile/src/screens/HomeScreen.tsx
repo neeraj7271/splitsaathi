@@ -7,6 +7,7 @@ import { apiClient } from "../api/client";
 import { ActivityRow } from "../components/ActivityRow";
 import { BalanceHeroCard } from "../components/BalanceHeroCard";
 import { BrandLogo } from "../components/BrandLogo";
+import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
@@ -22,6 +23,8 @@ import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows } from "../utils/displayNames";
 
+const HOME_ACTIVITY_LIMIT = 20;
+
 export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
@@ -29,8 +32,8 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const activityQuery = useQuery({
-    queryKey: ["groupActivity", selectedGroupId],
-    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string),
+    queryKey: ["groupActivity", selectedGroupId, { limit: HOME_ACTIVITY_LIMIT }],
+    queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: HOME_ACTIVITY_LIMIT }),
     enabled: Boolean(selectedGroupId)
   });
   const groupQuery = useQuery({
@@ -38,15 +41,16 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+  const activityItems = activityQuery.data?.items ?? [];
   const enrichedActivity = useMemo(() => {
-    if (!activityQuery.data?.length) {
+    if (!activityItems.length) {
       return [];
     }
     if (!groupQuery.data) {
-      return activityQuery.data;
+      return activityItems;
     }
-    return enrichActivityRows(activityQuery.data, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
-  }, [activityQuery.data, groupQuery.data]);
+    return enrichActivityRows(activityItems, buildGroupDisplayLookups(groupQuery.data), groupQuery.data.name);
+  }, [activityItems, groupQuery.data]);
 
   useEffect(() => {
     if (!navigation.selectedGroupId && groups[0]?.id) {
@@ -56,9 +60,19 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
 
   const netBalance = groups.reduce((total, group) => total + (group.netBalanceMinor ?? 0), 0);
   const pendingProofs = groups.reduce((total, group) => total + (group.pendingProofCount ?? 0), 0);
+  const refreshing = groupsQuery.isRefetching || profileQuery.isRefetching || activityQuery.isRefetching || groupQuery.isRefetching;
+
+  async function refreshScreen() {
+    await Promise.all([
+      groupsQuery.refetch(),
+      profileQuery.refetch(),
+      selectedGroupId ? activityQuery.refetch() : Promise.resolve(),
+      selectedGroupId ? groupQuery.refetch() : Promise.resolve()
+    ]);
+  }
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
       <View style={styles.header}>
         <View style={styles.headerBrand}>
           <View style={styles.headerMarkClip}>
@@ -133,19 +147,31 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title="Recent activity" />
+        <SectionHeader
+          title="Recent activity"
+          action={
+            selectedGroupId ? (
+              <Button label="See all in group" variant="ghost" onPress={() => navigation.go("groupDetail")} />
+            ) : undefined
+          }
+        />
         {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
         {enrichedActivity.length ? (
-          <DataSurface>
-            {enrichedActivity.slice(0, 6).map((item) => (
-              <ActivityRow
-                key={item.id}
-                item={item}
-                groupName={groupQuery.data?.name}
-                groupImageUrl={groupQuery.data?.imageUrl}
-              />
-            ))}
-          </DataSurface>
+          <>
+            <DataSurface>
+              {enrichedActivity.map((item) => (
+                <ActivityRow
+                  key={item.id}
+                  item={item}
+                  groupName={groupQuery.data?.name}
+                  groupImageUrl={groupQuery.data?.imageUrl}
+                />
+              ))}
+            </DataSurface>
+            {activityQuery.data?.nextCursor != null || enrichedActivity.length >= HOME_ACTIVITY_LIMIT ? (
+              <Button label="See all in group" variant="secondary" onPress={() => navigation.go("groupDetail")} />
+            ) : null}
+          </>
         ) : (
           <EmptyState title="No ledger activity yet" body="Accepted expenses, proofs, edits, and settlements will appear here." />
         )}

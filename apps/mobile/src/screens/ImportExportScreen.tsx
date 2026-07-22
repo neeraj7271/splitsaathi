@@ -135,7 +135,10 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
             <Button label="Select Splitwise CSV" onPress={() => importCsv.mutate()} loading={importCsv.isPending} />
             {importJob ? (
               <View style={styles.jobBox}>
-                <ThemedText variant="bodyMedium">Import job {importJob.id}</ThemedText>
+                <ThemedText variant="bodyMedium">Import ready for review</ThemedText>
+                <ThemedText variant="bodySm" tone="muted">
+                  Source: {(importJob.source ?? "csv").replace(/_/g, " ")}
+                </ThemedText>
                 <StatusPill state={importJob.state === "completed" || importJob.state === "committed" ? "confirmed" : importJob.state === "failed" ? "rejected" : "pending"} />
                 <Button label="Commit reviewed import" variant="secondary" onPress={() => commitImport.mutate()} loading={commitImport.isPending} disabled={importJob.state === "completed" || importJob.state === "committed"} />
               </View>
@@ -177,17 +180,23 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
               <Button label="Create export" onPress={() => createExport.mutate()} loading={createExport.isPending} />
               {exportJob ? (
                 <View style={styles.jobBox}>
-                  <ThemedText variant="bodyMedium">Export job {exportJob.id}</ThemedText>
+                  <ThemedText variant="bodyMedium">
+                    {exportJob.exportType.replace(/_/g, " ")} export
+                  </ThemedText>
                   <StatusPill state={exportJob.state === "ready" || exportJob.state === "completed" ? "confirmed" : exportJob.state === "failed" ? "rejected" : "pending"} />
                   {exportJob.fileUrl ? (
                     <ThemedText variant="bodySm" tone="confirmed">
-                      {exportJob.fileUrl}
+                      Download ready
                     </ThemedText>
                   ) : exportJob.data ? (
                     <ThemedText variant="bodySm" tone="confirmed">
-                      Export ready in job payload ({exportJob.contentType ?? exportJob.exportType}).
+                      Export ready ({exportJob.contentType ?? exportJob.exportType.replace(/_/g, " ")}).
                     </ThemedText>
-                  ) : null}
+                  ) : (
+                    <ThemedText variant="bodySm" tone="muted">
+                      Preparing export…
+                    </ThemedText>
+                  )}
                 </View>
               ) : null}
             </View>

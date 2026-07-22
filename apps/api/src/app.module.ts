@@ -4,6 +4,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ConsentsModule } from './modules/consents';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { GroupsModule } from './modules/groups/groups.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { UsersModule } from './modules/users/users.module';
 import { EntitlementsModule } from './modules/entitlements';
@@ -29,6 +30,7 @@ import { ObservabilityModule } from './observability/observability.module';
     NotificationsModule,
     EntitlementsModule,
     ObservabilityModule,
+    JobsModule,
     FinancialLedgerModule.forRoot({ eventStore: 'postgres' })
   ]
 })

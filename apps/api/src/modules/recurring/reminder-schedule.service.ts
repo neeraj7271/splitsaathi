@@ -3,6 +3,9 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ReminderScheduleEntity, type JsonObject, type ReminderScheduleType } from '@splitsaathi/db';
 import { Repository } from 'typeorm';
+import { BalanceProjector } from '../ledger/balance.projector';
+import { GroupsService } from '../groups/groups.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface ReminderScheduleRecord {
   id: string;
@@ -30,7 +33,10 @@ export class ReminderScheduleService {
   constructor(
     @Optional()
     @InjectRepository(ReminderScheduleEntity)
-    private readonly repository?: Repository<ReminderScheduleEntity>
+    private readonly repository?: Repository<ReminderScheduleEntity>,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly groups?: GroupsService,
+    @Optional() private readonly balances?: BalanceProjector
   ) {}
 
   async create(input: Omit<ReminderScheduleRecord, 'id' | 'createdAt' | 'status'>): Promise<ReminderScheduleRecord> {
@@ -75,6 +81,86 @@ export class ReminderScheduleService {
     return schedules.filter((schedule) => schedule.status === 'active').flatMap((schedule) => this.evaluate(schedule, asOf));
   }
 
+  async processDue(asOf = new Date()): Promise<DueReminderRecord[]> {
+    const due = await this.findDue(asOf);
+    for (const reminder of due) {
+      await this.deliverReminder(reminder);
+      await this.markFired(reminder);
+    }
+    return due;
+  }
+
+  private async deliverReminder(reminder: DueReminderRecord): Promise<void> {
+    if (!this.notifications || !this.groups) {
+      return;
+    }
+
+    let userIds = await this.groups.listActiveMemberUserIds(reminder.groupId);
+    if (reminder.type === 'settlement_day' && this.balances) {
+      const debtorParticipantIds = new Set(
+        this.balances
+          .listGroupBalances(reminder.groupId)
+          .filter((row) => row.amountMinor < 0)
+          .map((row) => row.participantId)
+      );
+      if (debtorParticipantIds.size > 0) {
+        const debtorUserIds: string[] = [];
+        for (const participantId of debtorParticipantIds) {
+          const userId = await this.groups.resolveUserIdForParticipant(reminder.groupId, participantId);
+          if (userId) {
+            debtorUserIds.push(userId);
+          }
+        }
+        if (debtorUserIds.length > 0) {
+          userIds = debtorUserIds;
+        }
+      }
+    }
+
+    await Promise.all(
+      userIds.map((userId) =>
+        this.notifications!.create({
+          userId,
+          groupId: reminder.groupId,
+          type: `reminder_${reminder.type}`,
+          title: reminder.title,
+          body: reminder.body,
+          data: {
+            scheduleId: reminder.scheduleId,
+            dueKey: reminder.dueKey,
+            reminderType: reminder.type
+          }
+        })
+      )
+    );
+  }
+
+  private async markFired(reminder: DueReminderRecord): Promise<void> {
+    if (this.repository) {
+      const row = await this.repository.findOne({ where: { id: reminder.scheduleId } });
+      if (!row) {
+        return;
+      }
+      row.schedule = {
+        ...row.schedule,
+        lastFiredDueKey: reminder.dueKey,
+        lastFiredAt: new Date().toISOString()
+      };
+      await this.repository.save(row);
+      return;
+    }
+
+    const memory = this.schedules.get(reminder.scheduleId);
+    if (!memory) {
+      return;
+    }
+    memory.schedule = {
+      ...memory.schedule,
+      lastFiredDueKey: reminder.dueKey,
+      lastFiredAt: new Date().toISOString()
+    };
+  }
+
   private evaluate(schedule: ReminderScheduleRecord, asOf: Date): DueReminderRecord[] {
     const hour = numberValue(schedule.schedule.hour, 9);
     if (asOf.getHours() !== hour) {
@@ -88,12 +174,16 @@ export class ReminderScheduleService {
     if (dayOfWeek !== undefined && asOf.getDay() !== dayOfWeek) {
       return [];
     }
+    const dueKey = `${schedule.id}:${asOf.toISOString().slice(0, 13)}`;
+    if (schedule.schedule.lastFiredDueKey === dueKey) {
+      return [];
+    }
     return [
       {
         scheduleId: schedule.id,
         groupId: schedule.groupId,
         type: schedule.type,
-        dueKey: `${schedule.id}:${asOf.toISOString().slice(0, 13)}`,
+        dueKey,
         title: titleFor(schedule.type),
         body: bodyFor(schedule.type)
       }
