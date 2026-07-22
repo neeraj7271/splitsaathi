@@ -120,11 +120,18 @@ pm2 stop splitsaathi-api
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d yourdomain.com
+sudo certbot --nginx -d api.thesplitsaathi.com
 ```
 
-4. Switch mobile `EXPO_PUBLIC_API_URL` to `https://yourdomain.com` and remove cleartext exceptions
-5. Update `APP_PUBLIC_URL` / `MOBILE_API_URL` to HTTPS and restart PM2
+4. Switch mobile `EXPO_PUBLIC_API_URL` to `https://api.thesplitsaathi.com` and rebuild the APK
+5. Set API env (invite links use this):
+
+```bash
+APP_PUBLIC_URL=https://api.thesplitsaathi.com
+MOBILE_API_URL=https://api.thesplitsaathi.com
+```
+
+Then restart with `bash deploy/start.sh`. New invites look like `https://api.thesplitsaathi.com/join/<token>`.
 
 ## Troubleshooting
 

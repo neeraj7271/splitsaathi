@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { resolve } from 'node:path';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
@@ -35,7 +35,9 @@ async function bootstrap(): Promise<void> {
     origin: true,
     credentials: true
   });
-  app.setGlobalPrefix('v1');
+  app.setGlobalPrefix('v1', {
+    exclude: [{ path: 'join/:token', method: RequestMethod.GET }]
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
