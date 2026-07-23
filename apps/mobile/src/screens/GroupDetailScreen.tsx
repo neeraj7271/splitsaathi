@@ -28,7 +28,7 @@ import { useTheme } from "../theme";
 import { ExpenseExplanation, GroupDetail, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
-import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, resolveParticipantDisplayName } from "../utils/displayNames";
+import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, replaceParticipantIds, resolveActorDisplayName, resolveParticipantDisplayName } from "../utils/displayNames";
 import { activeGroupMemberships, activeGroupParticipants } from "../utils/groupPeople";
 import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
@@ -940,6 +940,7 @@ function ExpenseExplanationSection({
     version: number;
     summary: string;
     reason?: string;
+    actorId?: string;
     changes?: Array<{ field: string; detail: string }>;
     actorName?: string;
     createdAt?: string;
@@ -1024,24 +1025,28 @@ function ExpenseExplanationSection({
                   History is unavailable for this expense.
                 </ThemedText>
               ) : null}
-              {revisions.map((entry) => (
+              {revisions.map((entry) => {
+                const actorLabel =
+                  resolveActorDisplayName(entry.actorId, lookups) ?? entry.actorName;
+                return (
                 <View key={entry.id} style={[styles.historyEntry, { borderTopColor: theme.colors.hairline }]}>
                   <ThemedText variant="bodySm">
                     v{entry.version} · {entry.summary}
-                    {entry.actorName ? ` · ${entry.actorName}` : ""}
+                    {actorLabel ? ` · ${actorLabel}` : ""}
                   </ThemedText>
                   {entry.reason ? (
                     <ThemedText variant="caption" tone="muted">
-                      Reason: {entry.reason}
+                      Reason: {replaceParticipantIds(entry.reason, lookups)}
                     </ThemedText>
                   ) : null}
                   {entry.changes?.map((change, index) => (
                     <ThemedText key={`${entry.id}-${change.field}-${index}`} variant="caption">
-                      • {change.detail}
+                      • {replaceParticipantIds(change.detail, lookups)}
                     </ThemedText>
                   ))}
                 </View>
-              ))}
+                );
+              })}
               <Button label="Open full audit" size="compact" variant="secondary" onPress={onHistory} />
             </View>
 

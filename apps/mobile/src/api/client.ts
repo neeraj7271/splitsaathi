@@ -210,9 +210,19 @@ function formatMoneyRows(value: unknown, currencyCode: string): string | undefin
   return value
     .map((row: Record<string, any>) => {
       const amount = asMinorAmount(row.amountMinor) ?? 0;
-      const who = typeof row.label === "string" && row.label.trim() ? row.label.trim() : "member";
+      // Prefer item label; otherwise keep full participantId for name resolution in UI.
+      const who =
+        typeof row.label === "string" && row.label.trim()
+          ? row.label.trim()
+          : typeof row.participantId === "string" && row.participantId
+            ? row.participantId
+            : "someone";
       const share = typeof row.shareType === "string" ? ` (${row.shareType})` : "";
-      return `${who} ${formatMoney(amount, currencyCode)}${share}`;
+      const sharedBy =
+        Array.isArray(row.participantIds) && row.participantIds.length
+          ? ` [${row.participantIds.filter((id: unknown) => typeof id === "string").join(", ")}]`
+          : "";
+      return `${who} ${formatMoney(amount, currencyCode)}${share}${sharedBy}`;
     })
     .join("; ");
 }

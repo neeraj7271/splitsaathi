@@ -136,10 +136,16 @@ export function participantList(ids: string[], lookups: GroupDisplayLookups): st
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-function replaceParticipantIds(text: string, lookups: GroupDisplayLookups): string {
+export function replaceParticipantIds(text: string, lookups: GroupDisplayLookups): string {
   let next = text;
-  for (const [participantId, participant] of lookups.participantById) {
-    next = next.split(participantId).join(participant.displayName);
+  // Replace longer IDs first so partial overlaps cannot break names.
+  const ids = [...lookups.participantById.keys()].sort((left, right) => right.length - left.length);
+  for (const participantId of ids) {
+    const name = lookups.participantById.get(participantId)?.displayName;
+    if (!name) {
+      continue;
+    }
+    next = next.split(participantId).join(name);
   }
   return next;
 }

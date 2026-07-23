@@ -119,7 +119,8 @@ function describeMoneyRows(
   return (value as Array<{ participantId?: string; amountMinor: unknown; shareType?: string; label?: string }>)
     .map((row) => {
       const amount = asAmountMinor(row.amountMinor) ?? 0;
-      const who = row.label?.trim() || (row.participantId ? row.participantId.slice(0, 8) : 'member');
+      // Keep full participantId so clients can resolve display names.
+      const who = row.label?.trim() || row.participantId || 'someone';
       const share = row.shareType ? ` (${row.shareType})` : '';
       return `${who} ${formatMoneyMinor(amount, currencyCode)}${share}`;
     })
