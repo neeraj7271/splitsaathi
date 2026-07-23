@@ -366,7 +366,10 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           <>
             <View style={styles.heroBrand}>
               <View style={[styles.brandCard, { backgroundColor: "#FFFFFF", borderRadius: theme.radius.lg }]}>
-                <BrandLogo variant="lockup" size={148} />
+                <BrandLogo variant="mark" size={112} />
+              </View>
+              <View style={styles.heroWordmark}>
+                <BrandLogo variant="wordmark" size={28} />
               </View>
               <ThemedText variant="body" style={{ color: onGradient, opacity: 0.88, textAlign: "center" }}>
                 {returningUser
@@ -711,10 +714,10 @@ function AuthPanel({ title, body, icon, children }: { title: string; body: strin
     <View style={[styles.authPanel, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.lg, padding: theme.spacing.cardPadding }]}>
       <View style={styles.authBrand}>
         <View style={styles.authMarkClip}>
-          <BrandLogo variant="mark" size={36} />
+          <BrandLogo variant="mark" size={28} />
         </View>
         <View style={styles.authWordmarkChip}>
-          <BrandLogo variant="wordmark" size={16} />
+          <BrandLogo variant="wordmark" size={14} />
         </View>
       </View>
       <View style={styles.authHeader}>
@@ -794,11 +797,19 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   brandCard: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    width: 148,
+    height: 148,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center"
+    alignSelf: "center",
+    overflow: "hidden"
+  },
+  heroWordmark: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8
   },
   welcomeCard: {
     gap: 14,
@@ -851,19 +862,27 @@ const styles = StyleSheet.create({
   authBrand: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10
+    gap: 10,
+    marginBottom: 4
   },
   authMarkClip: {
-    borderRadius: 10,
-    overflow: "hidden"
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center"
   },
   authWordmarkChip: {
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E4E7EF"
+    borderColor: "#E4E7EF",
+    overflow: "hidden",
+    maxWidth: "78%"
   },
   authHeader: {
     flexDirection: "row",
