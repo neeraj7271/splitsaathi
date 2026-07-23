@@ -9,6 +9,7 @@ import { PhaseTenEmailPasswordAuth1783641600004 } from './migrations/17836416000
 import { PhaseTenGroupImagePurpose1783641600005 } from './migrations/1783641600005-PhaseTenGroupImagePurpose';
 import { PhaseElevenGroupUpdatePermission1783641600006 } from './migrations/1783641600006-PhaseElevenGroupUpdatePermission';
 import { NotificationDeliveriesCreatedAt1783641600007 } from './migrations/1783641600007-NotificationDeliveriesCreatedAt';
+import { NotificationExpensePrefsDefaults1783641600008 } from './migrations/1783641600008-NotificationExpensePrefsDefaults';
 
 const url = process.env.NODE_ENV === 'test'
   ? process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
@@ -27,7 +28,8 @@ export function createDbDataSource(overrides: Partial<DataSourceOptions> = {}): 
       PhaseTenEmailPasswordAuth1783641600004,
       PhaseTenGroupImagePurpose1783641600005,
       PhaseElevenGroupUpdatePermission1783641600006,
-      NotificationDeliveriesCreatedAt1783641600007
+      NotificationDeliveriesCreatedAt1783641600007,
+      NotificationExpensePrefsDefaults1783641600008
     ],
     synchronize: false,
     migrationsRun: false,

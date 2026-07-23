@@ -155,7 +155,7 @@ describePostgres('AppModule with Postgres persistence', () => {
       .expect(({ body }) => {
         expect(body.items.length).toBeGreaterThanOrEqual(2);
         expect(body.items.every((row: { type: string }) =>
-          ['ExpenseCreated', 'ExpenseAdjusted', 'ExpenseVoided', 'CashSettlementRecorded', 'SettlementLedgerPosted', 'SettlementReversed', 'SettlementRefunded'].includes(row.type)
+          ['ExpenseCreated', 'ExpenseAdjusted', 'ExpenseVoided', 'SettlementLedgerPosted', 'SettlementReversed', 'SettlementRefunded'].includes(row.type)
         )).toBe(true);
         expect(body.nextCursor === null || typeof body.nextCursor === 'number').toBe(true);
       });

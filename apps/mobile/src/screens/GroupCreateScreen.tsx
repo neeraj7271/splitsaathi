@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, LinkSimple, UserPlus } from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { apiClient } from "../api/client";
+import { useAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { ContactPicker } from "../components/ContactPicker";
 import { DataSurface } from "../components/DataSurface";
@@ -40,6 +41,7 @@ const tabOptions: Array<{ label: string; value: GroupsTab }> = [
 
 export function GroupCreateScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<GroupsTab>("list");
   const [name, setName] = useState("");
@@ -95,7 +97,12 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   async function selectGroupImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Photos are off", "Allow photo access to attach a group image.");
+      showDialog({
+        title: "Photos are off",
+        message: "Allow photo access to attach a group image.",
+        tone: "warning",
+        primaryAction: { label: "OK" }
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -114,10 +121,16 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
     setContactError(null);
     const granted = await hasContactsConsent();
     if (!granted) {
-      Alert.alert("Contacts are off", "Enable contacts in Settings → Contacts, then try again.", [
-        { text: "Open settings", onPress: () => navigation.go("contactsSettings") },
-        { text: "Cancel", style: "cancel" }
-      ]);
+      showDialog({
+        title: "Contacts are off",
+        message: "Enable contacts in Settings → Contacts, then try again.",
+        tone: "warning",
+        primaryAction: {
+          label: "Open settings",
+          onPress: () => navigation.go("contactsSettings")
+        },
+        secondaryAction: { label: "Cancel", variant: "ghost" }
+      });
       return;
     }
 

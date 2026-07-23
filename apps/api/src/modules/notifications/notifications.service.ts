@@ -19,6 +19,47 @@ interface CreateNotificationInput {
   deliver?: boolean;
 }
 
+/** Maps notification types to per-event preference toggles (UI "Email settings" / notification prefs). */
+function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string): boolean {
+  if (!prefs) {
+    // Missing row → allow (DB defaults); expense_added defaults false in DB historically,
+    // but treat missing prefs as allow so first-time users still get critical alerts.
+    return true;
+  }
+  if (prefs.pushNotificationsEnabled === false) {
+    return false;
+  }
+
+  switch (type) {
+    case 'expense_created':
+      // Prefer explicit opt-in; treat unset as enabled after prefs defaults migration.
+      return prefs.emailExpenseAdded !== false;
+    case 'expense_revised':
+    case 'expense_voided':
+      return prefs.emailExpenseEdited !== false;
+    case 'settlement_confirmation_requested':
+    case 'settlement_confirmed':
+    case 'settlement_rejected':
+    case 'settlement_disputed':
+      return prefs.emailPaymentReceived !== false;
+    case 'participant_added':
+    case 'invite_claimed':
+    case 'group_archived':
+    case 'group_unarchived':
+    case 'membership_removed':
+    case 'membership_role_changed':
+    case 'membership_exit_locked':
+    case 'membership_exit_unlocked':
+      return prefs.emailGroupAdded !== false;
+    case 'reminder_settlement_day':
+    case 'reminder_recurring_expense':
+    case 'reminder_stale_proof':
+      return prefs.emailExpenseDue !== false;
+    default:
+      return true;
+  }
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -63,9 +104,7 @@ export class NotificationsService {
 
   private async deliver(notification: NotificationEntity): Promise<void> {
     const prefs = await this.preferences.findOne({ where: { userId: notification.userId } });
-    // Missing prefs row inherits DB default (push enabled). Opt-out skips push only;
-    // the in-app notification row is already stored above.
-    if (prefs && prefs.pushNotificationsEnabled === false) {
+    if (!preferenceAllowsType(prefs, notification.type)) {
       await this.deliveries.save(
         this.deliveries.create({
           notificationId: notification.id,
@@ -73,7 +112,7 @@ export class NotificationsService {
           provider: 'skipped',
           status: 'skipped',
           providerMessageId: null,
-          error: 'pushNotificationsEnabled=false',
+          error: prefs?.pushNotificationsEnabled === false ? 'pushNotificationsEnabled=false' : `preference_disabled:${notification.type}`,
           deliveredAt: null
         })
       );

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Pressable, Share, StyleSheet, View } from "react-native";
+import { Pressable, Share, StyleSheet, View } from "react-native";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CaretLeft, ImageSquare, LinkSimple, LockKey, LockKeyOpen, Trash, UserMinus, UserPlus } from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -7,6 +7,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { ApiError, apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
+import { useAppDialog } from "../components/AppDialog";
 import { ActivityRow } from "../components/ActivityRow";
 import { Button } from "../components/Button";
 import { ContactPicker } from "../components/ContactPicker";
@@ -56,6 +57,7 @@ function apiErrorMessage(error: unknown, fallback: string) {
 
 export function GroupDetailScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<GroupTab>("activity");
   const [explainingExpenseId, setExplainingExpenseId] = useState<string>();
@@ -256,10 +258,16 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     setContactError(null);
     const granted = await hasContactsConsent();
     if (!granted) {
-      Alert.alert("Contacts are off", "Enable contacts in Settings → Contacts, then try again.", [
-        { text: "Open settings", onPress: () => navigation.go("contactsSettings") },
-        { text: "Cancel", style: "cancel" }
-      ]);
+      showDialog({
+        title: "Contacts are off",
+        message: "Enable contacts in Settings → Contacts, then try again.",
+        tone: "warning",
+        primaryAction: {
+          label: "Open settings",
+          onPress: () => navigation.go("contactsSettings")
+        },
+        secondaryAction: { label: "Cancel", variant: "ghost" }
+      });
       return;
     }
 
@@ -331,26 +339,32 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
   function confirmLeaveGroup() {
     setMembershipActionError(null);
-    Alert.alert("Leave group?", "You can leave only when your balance is settled.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave",
-        style: "destructive",
+    showDialog({
+      title: "Leave group?",
+      message: "You can leave only when your balance is settled.",
+      tone: "warning",
+      primaryAction: {
+        label: "Leave",
+        variant: "destructive",
         onPress: () => leaveGroup.mutate()
-      }
-    ]);
+      },
+      secondaryAction: { label: "Cancel", variant: "ghost" }
+    });
   }
 
   function confirmRemoveMember(membershipId: string, displayName: string) {
     setMembershipActionError(null);
-    Alert.alert(`Remove ${displayName}?`, "They can only be removed when their balance is settled.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
+    showDialog({
+      title: `Remove ${displayName}?`,
+      message: "They can only be removed when their balance is settled.",
+      tone: "warning",
+      primaryAction: {
+        label: "Remove",
+        variant: "destructive",
         onPress: () => removeMember.mutate(membershipId)
-      }
-    ]);
+      },
+      secondaryAction: { label: "Cancel", variant: "ghost" }
+    });
   }
 
   return (

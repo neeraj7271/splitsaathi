@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, BackHandler, Linking, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BackHandler, Linking, StyleSheet, View } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { House, Scales, UsersThree, CloudArrowUp } from "phosphor-react-native";
@@ -9,6 +9,7 @@ import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fon
 
 import { BottomTabs } from "./src/components/BottomTabs";
 import { AnimatedBrandLoader } from "./src/components/AnimatedBrandLoader";
+import { AppDialogProvider, useAppDialog } from "./src/components/AppDialog";
 import { BiometricGate } from "./src/components/BiometricGate";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
@@ -76,7 +77,9 @@ export default function App() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <AppBootstrap fontsLoaded={fontsLoaded || Boolean(fontError)} />
+          <AppDialogProvider>
+            <AppBootstrap fontsLoaded={fontsLoaded || Boolean(fontError)} />
+          </AppDialogProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
@@ -85,12 +88,15 @@ export default function App() {
 
 function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const [booted, setBooted] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [route, setRoute] = useState<AppRoute>("home");
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [selectedExpenseId, setSelectedExpenseId] = useState<string>();
-  const [inviteBusy, setInviteBusy] = useState(false);
+  const inviteBusyRef = useRef(false);
+  const claimedInviteTokensRef = useRef(new Set<string>());
+  const handledInitialInviteUrlRef = useRef(false);
 
   useEffect(() => {
     async function boot() {
@@ -115,38 +121,58 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       .getPreferences()
       .then((preferences) => theme.setRequestedMode(preferences.appearance))
       .catch(() => undefined);
+    // Refresh FCM token on every authenticated session (not only onboarding).
+    void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
+      registerPushIfPossible().catch(() => undefined)
+    );
   }, [authenticated, theme]);
 
   const claimInviteFromUrl = useCallback(
     async (url: string | null) => {
-      if (!url || !authenticated || inviteBusy) {
+      if (!url || !authenticated) {
         return;
       }
       const token = extractInviteToken(url);
-      if (!token) {
+      if (!token || inviteBusyRef.current || claimedInviteTokensRef.current.has(token)) {
         return;
       }
-      setInviteBusy(true);
+      inviteBusyRef.current = true;
+      claimedInviteTokensRef.current.add(token);
       try {
         const group = await apiClient.claimInvite(token);
         setSelectedGroupId(group.id);
         setRoute("groupDetail");
         await queryClient.invalidateQueries({ queryKey: ["groups"] });
-        Alert.alert("Joined group", `You're now in ${group.name}.`);
+        showDialog({
+          title: "Joined group",
+          message: `You're now in ${group.name}.`,
+          tone: "success",
+          primaryAction: { label: "Continue" }
+        });
       } catch (error) {
-        Alert.alert("Invite failed", error instanceof Error ? error.message : "Could not join this group.");
+        claimedInviteTokensRef.current.delete(token);
+        showDialog({
+          title: "Invite failed",
+          message: error instanceof Error ? error.message : "Could not join this group.",
+          tone: "error",
+          primaryAction: { label: "OK" }
+        });
       } finally {
-        setInviteBusy(false);
+        inviteBusyRef.current = false;
       }
     },
-    [authenticated, inviteBusy]
+    [authenticated, showDialog]
   );
 
   useEffect(() => {
     if (!authenticated) {
+      handledInitialInviteUrlRef.current = false;
       return;
     }
-    Linking.getInitialURL().then((url) => void claimInviteFromUrl(url));
+    if (!handledInitialInviteUrlRef.current) {
+      handledInitialInviteUrlRef.current = true;
+      Linking.getInitialURL().then((url) => void claimInviteFromUrl(url));
+    }
     const sub = Linking.addEventListener("url", ({ url }) => void claimInviteFromUrl(url));
     return () => sub.remove();
   }, [authenticated, claimInviteFromUrl]);
@@ -189,6 +215,8 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
           .catch(() => undefined)
           .finally(() => {
             void clearCachedBiometricPrefs();
+            claimedInviteTokensRef.current.clear();
+            handledInitialInviteUrlRef.current = false;
             setAuthenticated(false);
             setRoute("home");
             setSelectedGroupId(undefined);

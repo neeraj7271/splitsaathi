@@ -167,7 +167,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
         <SectionHeader title="Preferences" />
         <DataSurface>
           <View style={styles.menuBlock}>
-            <SettingsLinkRow label="Email settings" onPress={() => navigation.go("notificationSettings")} />
+            <SettingsLinkRow label="Notifications" onPress={() => navigation.go("notificationSettings")} />
             <SettingsLinkRow label="Security" onPress={() => navigation.go("securitySettings")} />
             <SettingsLinkRow label="Appearance" onPress={() => navigation.go("appearanceSettings")} />
           </View>

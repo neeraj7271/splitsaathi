@@ -1,9 +1,8 @@
-/** Event types shown on Home + Group activity (ledger facts only). */
+/** Event types shown on Home + Group activity (expenses + posted payments only). */
 export const LEDGER_ACTIVITY_TYPES = new Set([
   "ExpenseCreated",
   "ExpenseAdjusted",
   "ExpenseVoided",
-  "CashSettlementRecorded",
   "SettlementLedgerPosted",
   "SettlementReversed",
   "SettlementRefunded"
@@ -17,6 +16,8 @@ export const SETTLEMENT_PIPELINE_ACTIVITY_TYPES = new Set([
   "PaymentProofSubmitted",
   "PaymentAutoMatched",
   "ReceiverConfirmationRequested",
+  "CashSettlementRecorded",
+  "SettlementConfirmed",
   "SettlementRejected",
   "SettlementDisputed",
   "SettlementExpired",

@@ -25,10 +25,10 @@ export class UserPreferencesEntity {
   @Column({ name: 'email_friend_added', type: 'boolean', default: true })
   emailFriendAdded!: boolean;
 
-  @Column({ name: 'email_expense_added', type: 'boolean', default: false })
+  @Column({ name: 'email_expense_added', type: 'boolean', default: true })
   emailExpenseAdded!: boolean;
 
-  @Column({ name: 'email_expense_edited', type: 'boolean', default: false })
+  @Column({ name: 'email_expense_edited', type: 'boolean', default: true })
   emailExpenseEdited!: boolean;
 
   @Column({ name: 'email_expense_comment', type: 'boolean', default: false })

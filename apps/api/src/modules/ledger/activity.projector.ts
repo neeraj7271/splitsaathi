@@ -31,12 +31,11 @@ export interface ActivityFeedQuery {
   feed?: 'ledger' | 'settlement' | 'all';
 }
 
-/** Home + group: recorded expenses and completed/posted payments only. */
+/** Home + group: recorded expenses and posted payments only (not confirm / cash intermediate). */
 const LEDGER_ACTIVITY_TYPES = new Set([
   'ExpenseCreated',
   'ExpenseAdjusted',
   'ExpenseVoided',
-  'CashSettlementRecorded',
   'SettlementLedgerPosted',
   'SettlementReversed',
   'SettlementRefunded'
@@ -49,6 +48,8 @@ const SETTLEMENT_PIPELINE_ACTIVITY_TYPES = new Set([
   'PaymentProofSubmitted',
   'PaymentAutoMatched',
   'ReceiverConfirmationRequested',
+  'CashSettlementRecorded',
+  'SettlementConfirmed',
   'SettlementRejected',
   'SettlementDisputed',
   'SettlementExpired',

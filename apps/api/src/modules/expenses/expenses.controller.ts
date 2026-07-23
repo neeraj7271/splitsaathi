@@ -1,10 +1,24 @@
-import { BadRequestException, Body, Controller, Get, Headers, Inject, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  NotFoundException,
+  Optional,
+  Param,
+  Post,
+  UseGuards
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request';
+import { GroupsService } from '../groups/groups.service';
 import { ExpenseProjector } from '../ledger';
 import { FINANCIAL_AUTHORIZATION, type FinancialAuthorizationPort } from '../ledger/financial-authorization';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ExpenseCommandService } from './expense-command.service';
 import type { CreateExpenseCommand, ReviseExpenseCommand, VoidExpenseCommand } from './expense.types';
 
@@ -44,7 +58,10 @@ function explainExpense(expense: ReturnType<ExpenseProjector['getExpense']>) {
     splitMethod === 'itemized'
       ? {
           lineItems: expense.lineItems.map((item) => ({ ...item, formattedAmount: formatMinor(item.amountMinor, expense.currencyCode) })),
-          billAdjustments: expense.billAdjustments.map((adjustment) => ({ ...adjustment, formattedAmount: formatMinor(adjustment.amountMinor, expense.currencyCode) }))
+          billAdjustments: expense.billAdjustments.map((adjustment) => ({
+            ...adjustment,
+            formattedAmount: formatMinor(adjustment.amountMinor, expense.currencyCode)
+          }))
         }
       : undefined;
 
@@ -73,7 +90,9 @@ export class ExpensesController {
   constructor(
     private readonly commands: ExpenseCommandService,
     private readonly expenses: ExpenseProjector,
-    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort
+    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly groups?: GroupsService
   ) {}
 
   @Post('expenses')
@@ -91,11 +110,22 @@ export class ExpensesController {
     dto: Omit<CreateExpenseCommand, 'actorId' | 'idempotencyKey'>
   ): ReturnType<ExpenseCommandService['createExpense']> {
     await this.authorization.assertCan(currentUser.userId, dto.groupId, 'expense.create');
-    return this.commands.createExpense({
+    const result = await this.commands.createExpense({
       ...dto,
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
+    await this.notifyGroupExpense(currentUser.userId, {
+      type: 'expense_created',
+      title: 'Expense added',
+      body: `${dto.description} · ${formatMinor(
+        result.expense?.totalAmountMinor ?? dto.payers.reduce((sum, p) => sum + p.amountMinor, 0),
+        dto.currencyCode ?? 'INR'
+      )}`,
+      groupId: dto.groupId,
+      expenseId: result.expense?.expenseId ?? dto.expenseId
+    });
+    return result;
   }
 
   @Post('expenses/:expenseId/revisions')
@@ -116,13 +146,21 @@ export class ExpensesController {
   ): ReturnType<ExpenseCommandService['reviseExpense']> {
     await this.authorization.assertCan(currentUser.userId, dto.groupId, 'expense.edit');
     const expectedVersion = dto.expectedVersion ?? dto.baseVersion ?? (await this.commands.currentVersion(expenseId));
-    return this.commands.reviseExpense({
+    const result = await this.commands.reviseExpense({
       ...dto,
       expenseId,
       expectedVersion,
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
+    await this.notifyGroupExpense(currentUser.userId, {
+      type: 'expense_revised',
+      title: 'Expense updated',
+      body: `${dto.description ?? result.expense?.description ?? 'An expense'} was edited.`,
+      groupId: dto.groupId,
+      expenseId
+    });
+    return result;
   }
 
   @Post('expenses/:expenseId/void')
@@ -143,13 +181,22 @@ export class ExpensesController {
   ): ReturnType<ExpenseCommandService['voidExpense']> {
     await this.authorization.assertCan(currentUser.userId, dto.groupId, 'expense.void');
     const expectedVersion = dto.expectedVersion ?? dto.baseVersion ?? (await this.commands.currentVersion(expenseId));
-    return this.commands.voidExpense({
+    const existing = this.expenses.getExpense(expenseId);
+    const result = await this.commands.voidExpense({
       ...dto,
       expenseId,
       expectedVersion,
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
+    await this.notifyGroupExpense(currentUser.userId, {
+      type: 'expense_voided',
+      title: 'Expense voided',
+      body: `${existing?.description ?? 'An expense'} was voided.`,
+      groupId: dto.groupId,
+      expenseId
+    });
+    return result;
   }
 
   @Get('groups/:groupId/expenses')
@@ -184,6 +231,44 @@ export class ExpensesController {
     }
     await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
     return explainExpense(expense);
+  }
+
+  private async notifyGroupExpense(
+    actorUserId: string,
+    input: {
+      type: 'expense_created' | 'expense_revised' | 'expense_voided';
+      title: string;
+      body: string;
+      groupId: string;
+      expenseId?: string;
+    }
+  ): Promise<void> {
+    if (!this.notifications || !this.groups) {
+      return;
+    }
+    try {
+      const memberIds = await this.groups.listActiveMemberUserIds(input.groupId);
+      await Promise.all(
+        memberIds
+          .filter((userId) => userId !== actorUserId)
+          .map((userId) =>
+            this.notifications!.create({
+              userId,
+              groupId: input.groupId,
+              type: input.type,
+              title: input.title,
+              body: input.body,
+              tone: input.type === 'expense_voided' ? 'warning' : 'neutral',
+              data: {
+                groupId: input.groupId,
+                expenseId: input.expenseId
+              }
+            })
+          )
+      );
+    } catch (error) {
+      console.error('[expenses] notification failed', error);
+    }
   }
 
   private requireIdempotencyKey(headerValue: string | undefined, body: unknown): string {

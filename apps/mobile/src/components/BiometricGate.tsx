@@ -154,11 +154,16 @@ export function BiometricGate({ children, enabled }: Props) {
       return;
     }
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "background" || next === "inactive") {
+      // Only treat true background as leaving the app. `inactive` fires for
+      // system sheets (alerts, share, biometrics) and would cause lock/unlock blink.
+      if (next === "background") {
         lastBackgroundAt.current = Date.now();
         return;
       }
       if (next !== "active") {
+        return;
+      }
+      if (prompting.current) {
         return;
       }
       const leftAt = lastBackgroundAt.current;

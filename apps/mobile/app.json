@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "in.splitsaathi.mobile",
+      "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

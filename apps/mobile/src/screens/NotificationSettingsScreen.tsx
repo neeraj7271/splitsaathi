@@ -33,8 +33,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   pushNotificationsEnabled: true,
   emailGroupAdded: true,
   emailFriendAdded: true,
-  emailExpenseAdded: false,
-  emailExpenseEdited: false,
+  emailExpenseAdded: true,
+  emailExpenseEdited: true,
   emailExpenseComment: false,
   emailExpenseDue: true,
   emailPaymentReceived: true,
@@ -104,7 +104,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
         <Pressable onPress={() => navigation.go("profile")} style={styles.backButton}>
           <ArrowLeft size={22} color={theme.colors.ink} />
         </Pressable>
-        <ThemedText variant="title">Email settings</ThemedText>
+        <ThemedText variant="title">Notifications</ThemedText>
       </View>
 
       {preferencesQuery.isLoading ? (
@@ -118,7 +118,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
         <View style={styles.block}>
           <SettingsToggleRow
             label="Push notifications"
-            subtitle="Device and push notification delivery"
+            subtitle="Master switch for device alerts (expenses, payments, groups)"
             value={draft.pushNotificationsEnabled}
             onValueChange={(value) => updateDraft("pushNotificationsEnabled", value)}
             disabled={preferencesQuery.isLoading}
@@ -135,6 +135,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
                 <SettingsToggleRow
                   key={item.key}
                   label={item.label}
+                  subtitle="Controls push alerts for this event"
                   value={draft[item.key]}
                   onValueChange={(value) => updateDraft(item.key, value)}
                   disabled={preferencesQuery.isLoading}
