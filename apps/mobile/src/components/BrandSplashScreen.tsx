@@ -74,20 +74,20 @@ export function BrandSplashScreen({ message = "Loading your ledger", onFinished,
           return;
         }
 
-        glowOpacity.value = withDelay(150, withTiming(isDark ? 0.55 : 0.32, { duration: 900, easing: Easing.out(Easing.cubic) }));
-        glowScale.value = withDelay(150, withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }));
+        glowOpacity.value = withDelay(200, withTiming(isDark ? 0.55 : 0.32, { duration: 1000, easing: Easing.out(Easing.cubic) }));
+        glowScale.value = withDelay(200, withTiming(1, { duration: 1000, easing: Easing.out(Easing.cubic) }));
 
-        iconClip.value = withDelay(100, withTiming(1, { duration: 700, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
-        iconOpacity.value = withDelay(180, withTiming(1, { duration: 750, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
-        iconScale.value = withDelay(180, withTiming(1, { duration: 750, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
-        iconRotate.value = withDelay(180, withTiming(0, { duration: 750, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        iconClip.value = withDelay(180, withTiming(1, { duration: 850, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        iconOpacity.value = withDelay(260, withTiming(1, { duration: 900, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        iconScale.value = withDelay(260, withTiming(1, { duration: 900, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        iconRotate.value = withDelay(260, withTiming(0, { duration: 900, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
 
-        wordOpacity.value = withDelay(620, withTiming(1, { duration: 650, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
-        wordTranslateY.value = withDelay(620, withTiming(0, { duration: 650, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        wordOpacity.value = withDelay(820, withTiming(1, { duration: 750, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
+        wordTranslateY.value = withDelay(820, withTiming(0, { duration: 750, easing: Easing.bezier(0.16, 1, 0.3, 1) }));
 
         dotsOpacity.value = withDelay(
-          1050,
-          withTiming(1, { duration: 400 }, (finished) => {
+          1400,
+          withTiming(1, { duration: 450 }, (finished) => {
             if (finished && onFinished) {
               runOnJS(onFinished)();
             }
@@ -95,33 +95,33 @@ export function BrandSplashScreen({ message = "Loading your ledger", onFinished,
         );
 
         iconScale.value = withDelay(
-          1100,
+          1600,
           withRepeat(
             withSequence(
-              withTiming(1.045, { duration: 1300, easing: Easing.inOut(Easing.sin) }),
-              withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.sin) })
+              withTiming(1.045, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+              withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) })
             ),
             -1,
             true
           )
         );
         glowScale.value = withDelay(
-          1050,
+          1500,
           withRepeat(
             withSequence(
-              withTiming(1.12, { duration: 1300, easing: Easing.inOut(Easing.sin) }),
-              withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.sin) })
+              withTiming(1.12, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+              withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) })
             ),
             -1,
             true
           )
         );
         glowOpacity.value = withDelay(
-          1050,
+          1500,
           withRepeat(
             withSequence(
-              withTiming(isDark ? 0.7 : 0.4, { duration: 1300, easing: Easing.inOut(Easing.sin) }),
-              withTiming(isDark ? 0.45 : 0.24, { duration: 1300, easing: Easing.inOut(Easing.sin) })
+              withTiming(isDark ? 0.7 : 0.4, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+              withTiming(isDark ? 0.45 : 0.24, { duration: 1400, easing: Easing.inOut(Easing.sin) })
             ),
             -1,
             true

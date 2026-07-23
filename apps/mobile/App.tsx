@@ -51,6 +51,9 @@ const queryClient = new QueryClient({
 
 const TAB_ROUTES: AppRoute[] = ["home", "groups", "friends", "settlement"];
 
+/** Keep branded splash on screen long enough for the intro animation (not just boot I/O). */
+const MIN_SPLASH_MS = 2800;
+
 const SETTINGS_ROUTES: AppRoute[] = [
   "expense",
   "balances",
@@ -97,6 +100,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const theme = useTheme();
   const { showDialog } = useAppDialog();
   const [booted, setBooted] = useState(false);
+  const [splashMinElapsed, setSplashMinElapsed] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [history, setHistory] = useState<AppRoute[]>(["home"]);
   const route = history[history.length - 1] ?? "home";
@@ -106,6 +110,11 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const inviteBusyRef = useRef(false);
   const claimedInviteTokensRef = useRef(new Set<string>());
   const handledInitialInviteUrlRef = useRef(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashMinElapsed(true), MIN_SPLASH_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   const go = useCallback((next: AppRoute) => {
     setHistory((prev) => {
@@ -255,8 +264,12 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     [back, go, history.length, route, selectedExpenseId, selectedFriendUserId, selectedGroupId]
   );
 
-  if (!fontsLoaded || !booted) {
-    return <AnimatedBrandLoader />;
+  if (!fontsLoaded || !booted || !splashMinElapsed) {
+    return (
+      <AnimatedBrandLoader
+        message={!booted || !fontsLoaded ? "Loading your ledger" : "Welcome"}
+      />
+    );
   }
 
   if (!authenticated) {
