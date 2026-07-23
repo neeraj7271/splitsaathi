@@ -17,6 +17,7 @@ import { clearCachedBiometricPrefs } from "./src/auth/biometricPrefsCache";
 import { restoreSession } from "./src/auth/session";
 import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
+import { configurePushNotifications } from "./src/notifications/configurePush";
 import { AuditScreen } from "./src/screens/AuditScreen";
 import { BalancesScreen } from "./src/screens/BalancesScreen";
 import { ExpenseEntryScreen } from "./src/screens/ExpenseEntryScreen";
@@ -100,6 +101,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   useEffect(() => {
     async function boot() {
+      await configurePushNotifications().catch(() => undefined);
       await initOutbox();
       const sessionActive = await restoreSession();
       setAuthenticated(sessionActive);

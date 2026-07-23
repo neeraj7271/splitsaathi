@@ -209,17 +209,22 @@ export class AuthService {
 
     let identity = await this.identities.findOne({ where: { provider: 'google', identifier: payload.sub } });
     let user: UserEntity;
+    let returningAccount = false;
     if (identity) {
       user = await this.usersService.findByIdOrThrow(identity.userId);
+      returningAccount = true;
     } else {
       const email = payload.email.trim().toLowerCase();
       const existingCredential = await this.emailCredentials.findOne({ where: { email } });
-      user = existingCredential
-        ? await this.usersService.findByIdOrThrow(existingCredential.userId)
-        : await this.usersService.createUser({
-            displayName: payload.name?.trim() || email.split('@')[0],
-            defaultCurrencyCode: 'INR'
-          });
+      if (existingCredential) {
+        user = await this.usersService.findByIdOrThrow(existingCredential.userId);
+        returningAccount = true;
+      } else {
+        user = await this.usersService.createUser({
+          displayName: payload.name?.trim() || email.split('@')[0],
+          defaultCurrencyCode: 'INR'
+        });
+      }
       identity = await this.identities.save(
         this.identities.create({
           userId: user.id,
@@ -233,7 +238,9 @@ export class AuthService {
     if (payload.name?.trim() && user.displayName.startsWith('User ')) {
       user = await this.usersService.updateDisplayName(user, payload.name.trim());
     }
-    return this.issueAuthResponse(user, 'Google', await this.needsOnboarding(user.id));
+    // Returning Google accounts skip name/consent after reinstall; brand-new accounts still onboard.
+    const needsOnboarding = returningAccount ? false : await this.needsOnboarding(user.id);
+    return this.issueAuthResponse(user, 'Google', needsOnboarding);
   }
 
   async startEmailSignup(dto: StartEmailSignupDto): Promise<StartEmailOtpResponseDto> {

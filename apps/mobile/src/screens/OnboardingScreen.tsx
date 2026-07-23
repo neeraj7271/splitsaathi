@@ -35,35 +35,33 @@ type OnboardingStep =
   | "consent"
   | "join";
 
-function shouldSkipOnboarding(response: {
-  needsOnboarding?: boolean;
-  needsPhoneLink?: boolean;
-  user: { displayName: string };
-}) {
-  if (response.needsPhoneLink) {
-    return false;
-  }
-  if (response.needsOnboarding === false) {
-    return true;
-  }
-  if (response.needsOnboarding === true) {
-    return false;
-  }
-  return Boolean(response.user.displayName) && !/^User \d{4}$/.test(response.user.displayName);
+function isPlaceholderDisplayName(name: string | undefined) {
+  const trimmed = name?.trim() ?? "";
+  return !trimmed || /^User \d{4}$/.test(trimmed);
 }
 
-function nextStepAfterAuth(response: {
+type AuthStepResponse = {
   needsOnboarding?: boolean;
   needsPhoneLink?: boolean;
   user: { displayName: string };
-}): OnboardingStep | "done" {
+};
+
+/**
+ * Returning users (needsOnboarding === false) go straight into the app —
+ * no phone / name / consent prompts after reinstall + Google sign-in.
+ * New users with a real Google name skip the name step and go to consent.
+ */
+function nextStepAfterAuth(response: AuthStepResponse): OnboardingStep | "done" {
+  if (response.needsOnboarding === false) {
+    return "done";
+  }
   if (response.needsPhoneLink) {
     return "phone";
   }
-  if (shouldSkipOnboarding(response)) {
-    return "done";
+  if (isPlaceholderDisplayName(response.user.displayName)) {
+    return "profile";
   }
-  return "profile";
+  return "consent";
 }
 
 function formatPhoneE164(phone: string) {
@@ -104,6 +102,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   const [emailChallengeId, setEmailChallengeId] = useState<string>();
   const [otpVerified, setOtpVerified] = useState(false);
   const [linkingPhone, setLinkingPhone] = useState(false);
+  const [authSnapshot, setAuthSnapshot] = useState<AuthStepResponse | null>(null);
   const [inviteLink, setInviteLink] = useState("");
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -129,6 +128,30 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     }
   });
 
+  const completeAuth = async (response: { user: { displayName: string } }) => {
+    if (inviteLink.trim()) {
+      await apiClient.claimInvite(inviteLink, response.user.displayName).catch(() => undefined);
+    }
+    await markLoggedInBefore();
+    onAuthenticated();
+  };
+
+  const continueAfterAuth = async (response: AuthStepResponse) => {
+    setAuthSnapshot(response);
+    const next = nextStepAfterAuth(response);
+    if (next === "phone") {
+      setLinkingPhone(true);
+      setStep("phone");
+      return;
+    }
+    if (next === "done") {
+      await completeAuth(response);
+      return;
+    }
+    setDisplayName(isPlaceholderDisplayName(response.user.displayName) ? "" : response.user.displayName);
+    setStep(next);
+  };
+
   const verifyOtp = useMutation({
     mutationFn: async () => {
       if (!challengeId) {
@@ -143,24 +166,9 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     onSuccess: async (response) => {
       setOtpVerified(true);
       setLinkingPhone(false);
-      const next = nextStepAfterAuth(response);
-      if (next === "done") {
-        await markLoggedInBefore();
-        onAuthenticated();
-        return;
-      }
-      setDisplayName(response.user.displayName.startsWith("User ") ? "" : response.user.displayName);
-      setStep(next);
+      await continueAfterAuth(response);
     }
   });
-
-  const completeAuth = async (response: { user: { displayName: string } }) => {
-    if (inviteLink.trim()) {
-      await apiClient.claimInvite(inviteLink, response.user.displayName).catch(() => undefined);
-    }
-    await markLoggedInBefore();
-    onAuthenticated();
-  };
 
   const loginWithPhone = useMutation({
     mutationFn: async () => {
@@ -174,13 +182,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       setOtpVerified(true);
       setLinkingPhone(false);
       setPhoneE164(formatPhoneE164(phone));
-      const next = nextStepAfterAuth(response);
-      if (next === "done") {
-        await completeAuth(response);
-        return;
-      }
-      setDisplayName(response.user.displayName.startsWith("User ") ? "" : response.user.displayName);
-      setStep(next === "phone" ? "profile" : next);
+      await continueAfterAuth(response);
     }
   });
 
@@ -188,18 +190,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     mutationFn: (idToken: string) => apiClient.loginWithGoogle(idToken),
     onSuccess: async (response) => {
       setOtpVerified(true);
-      const next = nextStepAfterAuth(response);
-      if (next === "phone") {
-        setLinkingPhone(true);
-        setStep("phone");
-        return;
-      }
-      if (next === "done") {
-        await completeAuth(response);
-        return;
-      }
-      setDisplayName(response.user.displayName);
-      setStep(next);
+      await continueAfterAuth(response);
     }
   });
 
@@ -220,13 +211,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     },
     onSuccess: async (response) => {
       setOtpVerified(true);
-      if (shouldSkipOnboarding(response)) {
-        await markLoggedInBefore();
-        onAuthenticated();
-        return;
-      }
-      setDisplayName(response.user.displayName);
-      setStep("profile");
+      await continueAfterAuth(response);
     }
   });
 
@@ -234,13 +219,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     mutationFn: () => apiClient.loginWithEmailPassword(email.trim(), password),
     onSuccess: async (response) => {
       setOtpVerified(true);
-      if (shouldSkipOnboarding(response)) {
-        await markLoggedInBefore();
-        onAuthenticated();
-        return;
-      }
-      setDisplayName(response.user.displayName);
-      setStep("profile");
+      await continueAfterAuth(response);
     }
   });
 
@@ -422,8 +401,17 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               label="Skip for now"
               variant="ghost"
               onPress={() => {
-                setLinkingPhone(false);
-                setStep("profile");
+                void (async () => {
+                  setLinkingPhone(false);
+                  const snapshot: AuthStepResponse = authSnapshot
+                    ? { ...authSnapshot, needsPhoneLink: false }
+                    : {
+                        needsOnboarding: false,
+                        needsPhoneLink: false,
+                        user: { displayName: displayName || "User" }
+                      };
+                  await continueAfterAuth(snapshot);
+                })();
               }}
             />
           </AuthPanel>

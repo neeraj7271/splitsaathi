@@ -58,7 +58,15 @@ export class FcmPushProvider implements NotificationProviderPort {
           title: input.title,
           body: input.body
         },
-        data
+        data,
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'default',
+            priority: 'high',
+            defaultSound: true
+          }
+        }
       });
 
       const messageIds = response.responses

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1062818938455",
+    "project_id": "splitsaathi-ebe8a",
+    "storage_bucket": "splitsaathi-ebe8a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1062818938455:android:406a4e2466809466d7ed12",
+        "android_client_info": {
+          "package_name": "in.splitsaathi.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCjGOY_Idx05MKvLZ0jtVml-WHi4I0nKCg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

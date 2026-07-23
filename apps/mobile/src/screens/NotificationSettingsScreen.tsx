@@ -85,10 +85,15 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
 
   const savePreferences = useMutation({
     mutationFn: () => apiClient.updatePreferences(draft),
-    onSuccess: (preferences) => {
+    onSuccess: async (preferences) => {
       queryClient.setQueryData(["preferences"], preferences);
       setDraft(preferences);
       setSavedSnapshot(preferences);
+      if (preferences.pushNotificationsEnabled) {
+        await import("../notifications/registerPush").then(({ registerPushIfPossible }) =>
+          registerPushIfPossible().catch(() => undefined)
+        );
+      }
     }
   });
 

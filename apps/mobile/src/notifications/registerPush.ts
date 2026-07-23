@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { apiClient } from "../api/client";
+import { configurePushNotifications } from "./configurePush";
 
 type NotificationPermissionShape = {
   granted?: boolean;
@@ -24,6 +25,8 @@ export async function registerPushIfPossible() {
   if (isExpoGo()) {
     return { status: "skipped" as const, reason: "push_not_supported_in_expo_go" };
   }
+
+  await configurePushNotifications();
 
   const Notifications = await import("expo-notifications");
 
@@ -58,6 +61,7 @@ export async function registerPushIfPossible() {
     });
     return { status: "registered" as const, pushToken, provider: deviceToken.type };
   } catch (error) {
+    console.warn("[SplitSaathi] push registration failed", error);
     return { status: "skipped" as const, reason: error instanceof Error ? error.message : String(error) };
   }
 }

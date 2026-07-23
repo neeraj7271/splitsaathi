@@ -29,6 +29,14 @@ describe('FcmPushProvider', () => {
         amount: '12',
         notificationId: 'n1',
         type: 'settlement_reminder'
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'default',
+          priority: 'high',
+          defaultSound: true
+        }
       }
     });
     expect(result).toEqual({
