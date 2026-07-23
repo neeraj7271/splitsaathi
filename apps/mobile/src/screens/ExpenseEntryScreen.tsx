@@ -86,7 +86,16 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [queuedOffline, setQueuedOffline] = useState(false);
   const [receiptName, setReceiptName] = useState<string>();
+  const submitLockRef = useRef(false);
+
+  function markFormDirty() {
+    if (queuedOffline) {
+      setQueuedOffline(false);
+      setMessage(undefined);
+    }
+  }
 
   const participants = groupQuery.data ? activeGroupParticipants(groupQuery.data) : [];
   const participantNameById = useMemo(() => new Map(participants.map((participant) => [participant.id, participant.displayName])), [participants]);
@@ -267,7 +276,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   });
 
   const submit = async () => {
-    if (!selectedGroupId) {
+    if (!selectedGroupId || submitLockRef.current || submitting || queuedOffline) {
       return;
     }
     if (isEditing && !canManageExpense) {
@@ -282,6 +291,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       setMessage("This expense is already deleted.");
       return;
     }
+    submitLockRef.current = true;
     setSubmitting(true);
     setMessage(undefined);
 
@@ -320,11 +330,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         await apiClient.createExpense(payload);
         await invalidateExpenseQueries(selectedGroupId);
         setMessage("Expense posted to the ledger.");
-        setDescription("");
-        setAmount("");
-        setNotes("");
-        setLineItems([]);
-        setAdjustments([]);
+        resetExpenseForm();
         navigation.setSelectedExpenseId(undefined);
         if (!navigation.back()) {
           navigation.go("groupDetail");
@@ -335,14 +341,32 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         setMessage(error.message);
       } else if (!isEditing) {
         await enqueueCommand("expense.create", payload as unknown as Record<string, unknown>);
-        setMessage("Network unavailable. Expense create command was queued for sync.");
+        resetExpenseForm();
+        setQueuedOffline(true);
+        setMessage("Saved offline. This expense is in the sync queue and will post when you're back online.");
       } else {
         setMessage(error instanceof Error ? error.message : "Could not update expense.");
       }
     } finally {
       setSubmitting(false);
+      submitLockRef.current = false;
     }
   };
+
+  function resetExpenseForm() {
+    setDescription("");
+    setCategory("");
+    setNotes("");
+    setAmount("");
+    setLineItems([]);
+    setAdjustments([]);
+    setShowAdjustments(false);
+    setReason("");
+    setReceiptName(undefined);
+    setPayerAmounts({});
+    setShareAmounts({});
+    setShareWeights({});
+  }
 
   const confirmDelete = () => {
     if (!reason.trim()) {
@@ -411,15 +435,42 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         <>
           <DataSurface>
             <View style={styles.formBlock}>
-              <InputField label="Description" value={description} onChangeText={setDescription} placeholder="Groceries, rent, dinner" />
+              <InputField
+                label="Description"
+                value={description}
+                onChangeText={(value) => {
+                  markFormDirty();
+                  setDescription(value);
+                }}
+                placeholder="Groceries, rent, dinner"
+              />
               {splitType !== "itemized" ? (
-                <InputField label="Total amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" amount />
+                <InputField
+                  label="Total amount"
+                  value={amount}
+                  onChangeText={(value) => {
+                    markFormDirty();
+                    setAmount(value);
+                  }}
+                  keyboardType="decimal-pad"
+                  amount
+                />
               ) : null}
-              <InputField label="Category optional" value={category} onChangeText={setCategory} />
+              <InputField
+                label="Category optional"
+                value={category}
+                onChangeText={(value) => {
+                  markFormDirty();
+                  setCategory(value);
+                }}
+              />
               <InputField
                 label="Notes optional"
                 value={notes}
-                onChangeText={setNotes}
+                onChangeText={(value) => {
+                  markFormDirty();
+                  setNotes(value);
+                }}
                 placeholder="Extra context for this expense"
                 multiline
                 style={{ minHeight: 72, textAlignVertical: "top", paddingTop: 14 }}
@@ -713,10 +764,19 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
             <InlineNotice
               title="Expense status"
               body={message}
-              tone={message.includes("queued") ? "pending" : message.includes("failed") || message.includes("required") || message.includes("Could not") ? "owe" : "confirmed"}
+              tone={
+                message.includes("offline") || message.includes("queue")
+                  ? "pending"
+                  : message.includes("failed") || message.includes("required") || message.includes("Could not")
+                    ? "owe"
+                    : "confirmed"
+              }
             />
           ) : null}
-          {!description.trim() ? (
+          {queuedOffline ? (
+            <Button label="Open sync queue" variant="secondary" onPress={() => navigation.go("offline")} />
+          ) : null}
+          {!description.trim() && !queuedOffline ? (
             <InlineNotice title="Description required" body="Enter a description for this expense before posting." tone="info" />
           ) : null}
           {description.trim() && !balanced ? (
@@ -735,10 +795,23 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
             />
           ) : null}
           <Button
-            label={isEditing ? "Save expense changes" : "Review and post expense"}
+            label={
+              queuedOffline
+                ? "Already queued for sync"
+                : isEditing
+                  ? "Save expense changes"
+                  : "Review and post expense"
+            }
             onPress={submit}
             loading={submitting}
-            disabled={!balanced || !description.trim() || isVoided || (isEditing && (!canManageExpense || !reason.trim()))}
+            disabled={
+              queuedOffline ||
+              submitting ||
+              !balanced ||
+              !description.trim() ||
+              isVoided ||
+              (isEditing && (!canManageExpense || !reason.trim()))
+            }
           />
           {isEditing && canManageExpense && !isVoided ? (
             <Button

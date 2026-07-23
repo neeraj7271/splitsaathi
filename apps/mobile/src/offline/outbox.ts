@@ -138,6 +138,97 @@ export async function getOutboxStatus() {
   };
 }
 
+export function describeOutboxCommand(row: OutboxCommandRecord): {
+  title: string;
+  summary: string;
+  amountLabel?: string;
+  meta: string;
+} {
+  const commandLabel =
+    row.commandType === "expense.create"
+      ? "Create expense"
+      : row.commandType === "expense.revise" || row.commandType === "expense.revision"
+        ? "Edit expense"
+        : row.commandType === "expense.void"
+          ? "Delete expense"
+          : row.commandType === "settlement.proof" || row.commandType.includes("proof")
+            ? "Upload proof"
+            : row.commandType.replace(/\./g, " ");
+
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(row.payloadJson) as Record<string, unknown>;
+  } catch {
+    payload = {};
+  }
+
+  const currencyCode = typeof payload.currencyCode === "string" ? payload.currencyCode : "INR";
+  const description =
+    typeof payload.description === "string" && payload.description.trim()
+      ? payload.description.trim()
+      : commandLabel;
+  const expenseDate = typeof payload.expenseDate === "string" ? payload.expenseDate : undefined;
+  const notes = typeof payload.notes === "string" && payload.notes.trim() ? payload.notes.trim() : undefined;
+  const category = typeof payload.category === "string" && payload.category.trim() ? payload.category.trim() : undefined;
+  const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim() : undefined;
+
+  const payers = Array.isArray(payload.payers) ? payload.payers : [];
+  const shares = Array.isArray(payload.shares) ? payload.shares : [];
+  const totalFromPayers = payers.reduce((sum, payer) => {
+    if (!payer || typeof payer !== "object") {
+      return sum;
+    }
+    const amount = (payer as { amountMinor?: unknown }).amountMinor;
+    return sum + (typeof amount === "number" ? amount : 0);
+  }, 0);
+  const totalFromShares = shares.reduce((sum, share) => {
+    if (!share || typeof share !== "object") {
+      return sum;
+    }
+    const amount = (share as { amountMinor?: unknown }).amountMinor;
+    return sum + (typeof amount === "number" ? amount : 0);
+  }, 0);
+  const totalMinor =
+    typeof payload.totalAmountMinor === "number"
+      ? payload.totalAmountMinor
+      : totalFromPayers || totalFromShares || undefined;
+
+  const splitTypes = [
+    ...new Set(
+      shares
+        .map((share) =>
+          share && typeof share === "object" ? String((share as { shareType?: unknown }).shareType ?? "") : ""
+        )
+        .filter(Boolean)
+    )
+  ];
+  const splitLabel = splitTypes.length === 1 ? `${splitTypes[0]} split` : splitTypes.length ? "mixed split" : undefined;
+
+  const parts = [
+    commandLabel,
+    expenseDate,
+    splitLabel,
+    category ? `category ${category}` : undefined,
+    payers.length ? `${payers.length} payer${payers.length === 1 ? "" : "s"}` : undefined,
+    shares.length ? `${shares.length} share${shares.length === 1 ? "" : "s"}` : undefined,
+    notes ? `note: ${notes}` : undefined,
+    reason ? `reason: ${reason}` : undefined
+  ].filter(Boolean);
+
+  return {
+    title: description,
+    summary: parts.join(" · "),
+    amountLabel: typeof totalMinor === "number" ? formatMoney(totalMinor, currencyCode) : undefined,
+    meta: new Date(row.createdAt).toLocaleString()
+  };
+}
+
+function formatMoney(amountMinor: number, currencyCode: string) {
+  const major = (Math.abs(amountMinor) / 100).toFixed(2);
+  const signed = amountMinor < 0 ? "-" : "";
+  return currencyCode === "INR" ? `${signed}₹${major}` : `${signed}${major} ${currencyCode}`;
+}
+
 export async function flushOutbox(client: SplitSaathiApiClient = apiClient) {
   if (Platform.OS === "web") {
     const rows = await listOutbox();

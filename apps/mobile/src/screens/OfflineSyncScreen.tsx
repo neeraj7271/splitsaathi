@@ -15,7 +15,7 @@ import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
-import { flushOutbox, getOutboxStatus, OutboxCommandRecord } from "../offline/outbox";
+import { describeOutboxCommand, flushOutbox, getOutboxStatus, OutboxCommandRecord } from "../offline/outbox";
 
 export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -49,7 +49,7 @@ export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation })
   });
 
   return (
-    <Screen>
+    <Screen refreshing={false} onRefresh={() => void refreshStatus()}>
       <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View>
@@ -71,8 +71,8 @@ export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation })
       </DataSurface>
 
       <View style={styles.actions}>
-        <Button label="Flush command queue" onPress={() => flush.mutate()} loading={flush.isPending} />
-        <Button label="Fetch server sync cursor" variant="secondary" onPress={() => sync.mutate()} loading={sync.isPending} />
+        <Button label="Sync now" onPress={() => flush.mutate()} loading={flush.isPending} disabled={!status.total} />
+        <Button label="Refresh queue" variant="secondary" onPress={() => void refreshStatus()} />
       </View>
 
       {syncCursor ? <InlineNotice title="Sync cursor" body={syncCursor} tone="confirmed" /> : null}
@@ -80,30 +80,59 @@ export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation })
       {sync.error ? <InlineNotice title="Sync fetch failed" body={sync.error.message} tone="owe" /> : null}
 
       <View style={styles.section}>
-        <SectionHeader title="Queued commands" />
+        <SectionHeader title="Waiting to sync" />
         {rows.length ? (
           <DataSurface>
-            {rows.map((row) => (
-              <View key={row.id} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
-                <View style={styles.titleBlock}>
-                  <ThemedText variant="bodyMedium">{row.commandType}</ThemedText>
-                  <ThemedText variant="bodySm" tone="muted">
-                    {row.clientMutationId}
-                  </ThemedText>
-                  {row.lastError ? (
-                    <ThemedText variant="bodySm" tone="owe">
-                      {row.lastError}
+            {rows.map((row) => {
+              const detail = describeOutboxCommand(row);
+              return (
+                <View key={row.id} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
+                  <View style={styles.titleBlock}>
+                    <View style={styles.rowTop}>
+                      <ThemedText variant="bodyMedium" style={styles.flex}>
+                        {detail.title}
+                      </ThemedText>
+                      {detail.amountLabel ? <ThemedText variant="amount">{detail.amountLabel}</ThemedText> : null}
+                    </View>
+                    <ThemedText variant="bodySm" tone="muted">
+                      {detail.summary}
                     </ThemedText>
-                  ) : null}
+                    <ThemedText variant="caption" tone="muted">
+                      Queued {detail.meta}
+                    </ThemedText>
+                    {row.lastError ? (
+                      <ThemedText variant="bodySm" tone="owe">
+                        {row.lastError}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                  <StatusPill
+                    state={
+                      row.status === "failed"
+                        ? "rejected"
+                        : row.status === "syncing"
+                          ? "awaiting_receiver_confirmation"
+                          : "pending"
+                    }
+                  />
                 </View>
-                <StatusPill state={row.status === "failed" ? "rejected" : row.status === "syncing" ? "awaiting_receiver_confirmation" : "pending"} />
-              </View>
-            ))}
+              );
+            })}
           </DataSurface>
         ) : (
-          <EmptyState title="Queue is clear" body="Offline expense and proof commands will appear here until the backend accepts them." />
+          <EmptyState
+            title="Queue is clear"
+            body="When you're offline, new expenses are saved here and sync automatically once the network is back."
+          />
         )}
       </View>
+
+      <Button
+        label="Fetch server sync cursor"
+        variant="ghost"
+        onPress={() => sync.mutate()}
+        loading={sync.isPending}
+      />
     </Screen>
   );
 }
@@ -144,10 +173,18 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
     padding: 14,
     borderBottomWidth: 1
+  },
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  flex: {
+    flex: 1
   },
   titleBlock: {
     flex: 1,
