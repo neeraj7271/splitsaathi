@@ -19,7 +19,7 @@ type BrandLogoProps = {
 
 const ASPECT = {
   mark: 1,
-  wordmark: 1834 / 858,
+  wordmark: 1697 / 392,
   lockup: 1
 } as const;
 
