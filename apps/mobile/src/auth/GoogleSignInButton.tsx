@@ -24,13 +24,22 @@ type Props = {
   pending?: boolean;
   errorMessage?: string;
   variant?: "button" | "icon";
+  label?: string;
+  disabled?: boolean;
 };
 
 /**
  * Native Google Sign-In (ID token → API /v1/auth/google).
  * Requires a dev/release build with the Google Sign-In native module — not Expo Go.
  */
-export function GoogleSignInButton({ onIdToken, pending, errorMessage, variant = "button" }: Props) {
+export function GoogleSignInButton({
+  onIdToken,
+  pending,
+  errorMessage,
+  variant = "button",
+  label = "Continue with Google",
+  disabled: disabledProp
+}: Props) {
   const webClientId = resolveWebClientId();
   const [localError, setLocalError] = useState<string>();
   const [configured, setConfigured] = useState(false);
@@ -52,7 +61,7 @@ export function GoogleSignInButton({ onIdToken, pending, errorMessage, variant =
   }, [webClientId]);
 
   const signIn = useCallback(async () => {
-    if (!webClientId || pending) {
+    if (!webClientId || pending || disabledProp) {
       return;
     }
     setLocalError(undefined);
@@ -83,13 +92,13 @@ export function GoogleSignInButton({ onIdToken, pending, errorMessage, variant =
       }
       setLocalError(error instanceof Error ? error.message : "Google sign-in failed.");
     }
-  }, [webClientId, pending, onIdToken]);
+  }, [webClientId, pending, disabledProp, onIdToken]);
 
   if (!webClientId) {
     return null;
   }
 
-  const disabled = !configured || pending;
+  const disabled = !configured || pending || Boolean(disabledProp);
   const shownError = localError || errorMessage;
 
   if (variant === "icon") {
@@ -103,7 +112,7 @@ export function GoogleSignInButton({ onIdToken, pending, errorMessage, variant =
 
   return (
     <>
-      <Button label="Continue with Google" variant="secondary" onPress={() => void signIn()} disabled={disabled} />
+      <Button label={label} variant="secondary" onPress={() => void signIn()} disabled={disabled} />
       {shownError ? <InlineNotice title="Google sign-in failed" body={shownError} tone="owe" /> : null}
     </>
   );

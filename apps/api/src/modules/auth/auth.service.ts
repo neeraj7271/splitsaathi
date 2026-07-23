@@ -132,7 +132,22 @@ export class AuthService {
    */
   async linkPhoneVerify(userId: string, dto: VerifyOtpDto): Promise<AuthResponseDto> {
     const challenge = await this.verifyPhoneOtpChallenge(dto.challengeId, dto.code);
-    const normalized = normalizePhoneE164(challenge.phoneE164);
+    return this.attachPhoneToUser(userId, challenge.phoneE164, dto.displayName);
+  }
+
+  /** Sign in / create account with phone only (no OTP) — used while SMS OTP is not enabled. */
+  async loginWithPhone(dto: { phoneE164: string; displayName?: string }): Promise<AuthResponseDto> {
+    const user = await this.findOrCreateUserForPhone(dto.phoneE164, dto.displayName);
+    return this.issueAuthResponse(user, undefined, await this.needsOnboarding(user.id));
+  }
+
+  /** Link phone to the current user without OTP. */
+  async linkPhone(userId: string, dto: { phoneE164: string; displayName?: string }): Promise<AuthResponseDto> {
+    return this.attachPhoneToUser(userId, dto.phoneE164, dto.displayName);
+  }
+
+  private async attachPhoneToUser(userId: string, phoneRaw: string, displayName?: string): Promise<AuthResponseDto> {
+    const normalized = normalizePhoneE164(phoneRaw);
     const candidates = phoneLookupCandidates(normalized);
 
     const existingForPhone = await this.identities.findOne({
@@ -170,9 +185,9 @@ export class AuthService {
     }
 
     const user = await this.usersService.findByIdOrThrow(userId);
-    if (dto.displayName && user.displayName !== dto.displayName) {
+    if (displayName && user.displayName !== displayName) {
       return this.issueAuthResponse(
-        await this.usersService.updateDisplayName(user, dto.displayName),
+        await this.usersService.updateDisplayName(user, displayName),
         undefined,
         await this.needsOnboarding(userId)
       );

@@ -16,6 +16,7 @@ import {
 } from './dto/email-auth.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LogoutDto } from './dto/logout.dto';
+import { PhoneAuthDto } from './dto/phone-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { StartOtpDto, StartOtpResponseDto } from './dto/start-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -50,6 +51,27 @@ export class AuthController {
     @Body() dto: VerifyOtpDto
   ): Promise<AuthResponseDto> {
     return this.authService.linkPhoneVerify(currentUser.userId, dto);
+  }
+
+  /** Link phone to the current user without OTP (SMS OTP not enabled yet). */
+  @Post('phone/link')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AuthResponseDto })
+  linkPhone(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() dto: PhoneAuthDto
+  ): Promise<AuthResponseDto> {
+    return this.authService.linkPhone(currentUser.userId, dto);
+  }
+
+  /** Sign in / sign up with phone only — no OTP while SMS delivery is off. */
+  @Public()
+  @Post('phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AuthResponseDto })
+  loginWithPhone(@Body() dto: PhoneAuthDto): Promise<AuthResponseDto> {
+    return this.authService.loginWithPhone(dto);
   }
 
   @Public()

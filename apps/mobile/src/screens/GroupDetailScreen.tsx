@@ -830,7 +830,7 @@ function PeopleManagement({
             <View style={styles.formHeader}>
               <UserPlus size={20} color={theme.colors.inkMuted} weight="duotone" />
               <ThemedText variant="bodyMedium">Add manual or guest participant</ThemedText>
-            </View>
+            </View> 
             <InputField label="Name" value={newParticipantName} onChangeText={setNewParticipantName} />
             <InputField label="Phone optional" value={newParticipantPhone} onChangeText={setNewParticipantPhone} keyboardType="phone-pad" />
             <Button label="Add participant" variant="secondary" onPress={addParticipant} loading={addParticipantPending} disabled={!newParticipantName.trim()} />

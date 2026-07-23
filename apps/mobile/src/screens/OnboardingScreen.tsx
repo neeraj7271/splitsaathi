@@ -154,6 +154,36 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     }
   });
 
+  const completeAuth = async (response: { user: { displayName: string } }) => {
+    if (inviteLink.trim()) {
+      await apiClient.claimInvite(inviteLink, response.user.displayName).catch(() => undefined);
+    }
+    await markLoggedInBefore();
+    onAuthenticated();
+  };
+
+  const loginWithPhone = useMutation({
+    mutationFn: async () => {
+      const formatted = formatPhoneE164(phone);
+      if (linkingPhone) {
+        return apiClient.linkPhone(formatted, displayName.trim() || undefined);
+      }
+      return apiClient.loginWithPhone(formatted, displayName.trim() || undefined);
+    },
+    onSuccess: async (response) => {
+      setOtpVerified(true);
+      setLinkingPhone(false);
+      setPhoneE164(formatPhoneE164(phone));
+      const next = nextStepAfterAuth(response);
+      if (next === "done") {
+        await completeAuth(response);
+        return;
+      }
+      setDisplayName(response.user.displayName.startsWith("User ") ? "" : response.user.displayName);
+      setStep(next === "phone" ? "profile" : next);
+    }
+  });
+
   const loginWithGoogle = useMutation({
     mutationFn: (idToken: string) => apiClient.loginWithGoogle(idToken),
     onSuccess: async (response) => {
@@ -165,8 +195,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         return;
       }
       if (next === "done") {
-        await markLoggedInBefore();
-        onAuthenticated();
+        await completeAuth(response);
         return;
       }
       setDisplayName(response.user.displayName);
@@ -240,9 +269,6 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
   const finishSetup = useMutation({
     mutationFn: async () => {
-      if (!otpVerified) {
-        throw new Error("Verify your phone number before finishing setup.");
-      }
       if (displayName.trim()) {
         await apiClient.updateMe({ displayName: displayName.trim() });
       }
@@ -378,18 +404,18 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         {step === "phone" ? (
           <AuthPanel
             title="Add your phone"
-            body="Enter your +91 mobile number. We'll send a one-time code so friends can find you in SplitSaathi."
+            body="Enter your +91 mobile number so friends can find you. No OTP for now — we'll verify later when SMS is enabled."
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
             <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-            {startOtp.error ? <InlineNotice title="OTP could not start" body={startOtp.error.message} tone="owe" /> : null}
+            {loginWithPhone.error ? <InlineNotice title="Phone could not be saved" body={loginWithPhone.error.message} tone="owe" /> : null}
             <Button
-              label="Send OTP"
+              label="Save phone and continue"
               onPress={() => {
                 setLinkingPhone(true);
-                sendOtp();
+                loginWithPhone.mutate();
               }}
-              loading={startOtp.isPending}
+              loading={loginWithPhone.isPending}
               disabled={phone.length < 8}
             />
             <Button
@@ -503,7 +529,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           <AuthPanel title="Profile name" body="This name appears in groups, audit history, and payment confirmations." icon={<UsersThree size={24} color={theme.colors.confirmed} weight="duotone" />}>
             <InputField label="Display name" value={displayName} onChangeText={setDisplayName} />
             <Button label="Review consent choices" onPress={() => setStep("consent")} disabled={!displayName.trim()} />
-            <Button label="Back to OTP" variant="ghost" onPress={returnToOtpStep} />
+            <Button label="Back" variant="ghost" onPress={() => setStep(inviteLink.trim() ? "join" : "welcome")} />
           </AuthPanel>
         ) : null}
 
@@ -523,13 +549,17 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               onPress={() => setConsents((value) => ({ ...value, proofStorage: !value.proofStorage }))}
             />
             {finishSetup.error ? <InlineNotice title="Setup failed" body={finishSetup.error.message} tone="owe" /> : null}
-            <Button label="Finish setup" onPress={() => finishSetup.mutate()} loading={finishSetup.isPending} disabled={!otpVerified || !displayName.trim()} />
-            <Button label="Back to OTP" variant="ghost" onPress={returnToOtpStep} />
+            <Button label="Finish setup" onPress={() => finishSetup.mutate()} loading={finishSetup.isPending} disabled={!displayName.trim()} />
+            <Button label="Back" variant="ghost" onPress={() => setStep("profile")} />
           </AuthPanel>
         ) : null}
 
         {step === "join" ? (
-          <AuthPanel title="Join or claim guest" body="Paste an invite link or QR payload, then verify by phone if the group owner requires it." icon={<LinkSimple size={24} color={theme.colors.confirmed} weight="duotone" />}>
+          <AuthPanel
+            title="Join a group"
+            body="Sign in with Google, or continue with your phone number. Then we'll claim this invite."
+            icon={<LinkSimple size={24} color={theme.colors.confirmed} weight="duotone" />}
+          >
             <InputField label="Invite link or token" value={inviteLink} onChangeText={setInviteLink} autoCapitalize="none" />
             {scanningInvite && !isWeb ? (
               <View style={[styles.cameraBox, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>
@@ -543,9 +573,15 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
                 />
               </View>
             ) : null}
-            {isWeb ? <InlineNotice title="Desktop preview" body="QR scanning is available on phone builds. Paste the invite link or token here when testing in the browser." tone="info" /> : null}
+            {isWeb ? (
+              <InlineNotice
+                title="Desktop preview"
+                body="QR scanning is available on phone builds. Paste the invite link or token here when testing in the browser."
+                tone="info"
+              />
+            ) : null}
             <Button
-              label={isWeb ? "QR scan is phone-only" : "Scan QR"}
+              label={isWeb ? "QR scan is phone-only" : scanningInvite ? "Close scanner" : "Scan QR"}
               variant="secondary"
               disabled={isWeb}
               onPress={async () => {
@@ -556,8 +592,34 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
                 setScanningInvite((value) => !value);
               }}
             />
-            <Button label="Continue with phone OTP" onPress={() => setStep("phone")} disabled={!inviteLink.trim()} />
-            <Button label="Back" variant="secondary" onPress={() => setStep("welcome")} />
+
+            {googleConfigured ? (
+              <GoogleSignInButton
+                label="Continue with Google"
+                onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+                pending={loginWithGoogle.isPending}
+                errorMessage={loginWithGoogle.error?.message}
+                disabled={!inviteLink.trim()}
+              />
+            ) : (
+              <InlineNotice title="Google sign-in not configured" body="Use phone below, or configure Google OAuth client IDs." tone="pending" />
+            )}
+
+            <ThemedText variant="caption" tone="muted" style={{ textAlign: "center", marginTop: 4 }}>
+              Or continue with phone (no OTP for now)
+            </ThemedText>
+            <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+            {loginWithPhone.error ? <InlineNotice title="Phone sign-in failed" body={loginWithPhone.error.message} tone="owe" /> : null}
+            <Button
+              label="Continue with phone"
+              onPress={() => {
+                setLinkingPhone(false);
+                loginWithPhone.mutate();
+              }}
+              loading={loginWithPhone.isPending}
+              disabled={!inviteLink.trim() || phone.length < 8}
+            />
+            <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
           </AuthPanel>
         ) : null}
       </View>

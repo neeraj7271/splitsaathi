@@ -4,7 +4,6 @@ export const LEDGER_ACTIVITY_TYPES = new Set([
   "ExpenseAdjusted",
   "ExpenseVoided",
   "CashSettlementRecorded",
-  "SettlementConfirmed",
   "SettlementLedgerPosted",
   "SettlementReversed",
   "SettlementRefunded"

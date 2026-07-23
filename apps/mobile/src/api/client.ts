@@ -289,6 +289,25 @@ export class SplitSaathiApiClient {
     return response;
   }
 
+  /** Phone sign-in / sign-up without OTP (SMS OTP not enabled yet). */
+  async loginWithPhone(phoneE164: string, displayName?: string) {
+    const response = await this.request<VerifyOtpResponse>("/v1/auth/phone", {
+      method: "POST",
+      body: { phoneE164, displayName },
+      skipAuth: true
+    });
+    await setTokens(response.tokens.accessToken, response.tokens.refreshToken);
+    return response;
+  }
+
+  /** Attach phone to the current session without OTP. */
+  async linkPhone(phoneE164: string, displayName?: string) {
+    return this.request<VerifyOtpResponse>("/v1/auth/phone/link", {
+      method: "POST",
+      body: { phoneE164, displayName }
+    });
+  }
+
   /** Attach phone to the current Google session after OTP (does not create a new user). */
   async linkPhoneVerify(challengeId: string, code: string) {
     return this.request<VerifyOtpResponse>("/v1/auth/phone/link/verify", {
