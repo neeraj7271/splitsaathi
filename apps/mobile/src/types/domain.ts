@@ -256,6 +256,7 @@ export interface VerifyOtpResponse {
   };
   needsOnboarding?: boolean;
   needsPhoneLink?: boolean;
+  suggestedPhoneE164?: string | null;
 }
 
 export interface UserProfile {
@@ -264,6 +265,7 @@ export interface UserProfile {
   defaultCurrencyCode: string;
   state: string;
   phoneMasked?: string;
+  email?: string | null;
   avatarAttachmentId?: string | null;
   avatarUrl?: string | null;
   upiVpa?: string | null;
@@ -285,4 +287,42 @@ export interface UserPreferences {
   emailPaymentReceived: boolean;
   emailMonthlySummary: boolean;
   emailNewsUpdates: boolean;
+}
+
+export type FriendBalanceStatus = "owes_you" | "you_owe" | "settled" | "no_expenses";
+
+export interface FriendSharedGroup {
+  groupId: string;
+  groupName: string;
+  pairNetMinor: number;
+  currencyCode: string;
+}
+
+export interface FriendSummary {
+  otherUserId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  currencyCode: string;
+  netMinor: number;
+  status: FriendBalanceStatus;
+  sharedGroupCount: number;
+  sharedGroups: FriendSharedGroup[];
+}
+
+export interface FriendTransaction {
+  id: string;
+  kind: "expense" | "settlement";
+  groupId: string;
+  groupName: string;
+  occurredAt: string;
+  description: string;
+  amountMinor: number;
+  currencyCode: string;
+  expenseId?: string;
+  settlementIntentId?: string;
+}
+
+export interface FriendDetail {
+  friend: FriendSummary;
+  transactions: FriendTransaction[];
 }

@@ -18,6 +18,9 @@ export class UserResponseDto {
   @ApiPropertyOptional({ example: '+91 •••• 8829' })
   phoneMasked?: string;
 
+  @ApiPropertyOptional({ example: 'priya@gmail.com' })
+  email?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid' })
   avatarAttachmentId?: string | null;
 
@@ -27,13 +30,17 @@ export class UserResponseDto {
   @ApiPropertyOptional({ example: 'priya@okaxis' })
   upiVpa?: string | null;
 
-  static fromEntity(entity: UserEntity, extras?: { phoneMasked?: string }): UserResponseDto {
+  static fromEntity(
+    entity: UserEntity,
+    extras?: { phoneMasked?: string; email?: string | null }
+  ): UserResponseDto {
     return {
       id: entity.id,
       displayName: entity.displayName,
       defaultCurrencyCode: entity.defaultCurrencyCode,
       state: entity.state,
       phoneMasked: extras?.phoneMasked,
+      email: extras?.email ?? null,
       avatarAttachmentId: entity.avatarAttachmentId ?? null,
       avatarUrl: entity.avatarAttachmentId ? `/v1/public/avatars/${entity.avatarAttachmentId}` : null,
       upiVpa: entity.upiVpa ?? null

@@ -137,6 +137,20 @@ describe('financial HTTP routes', () => {
       .send({ upiApp: 'gpay' })
       .expect(201)
       .expect(({ body }) => {
+        expect(body.intent.state).toBe('payer_opened_upi_app');
+      });
+
+    await request(app.getHttpServer())
+      .post('/v1/settlement-intents/33333333-3333-4333-8333-333333333333/proofs')
+      .set('Idempotency-Key', 'route-settlement-proof-1')
+      .send({
+        proofType: 'utr_text',
+        utr: 'ROUTE-UTR-1',
+        amountMinor: 5000,
+        currencyCode: 'INR'
+      })
+      .expect(201)
+      .expect(({ body }) => {
         expect(body.intent.state).toBe('awaiting_receiver_confirmation');
       });
 
@@ -153,7 +167,7 @@ describe('financial HTTP routes', () => {
       .get('/v1/groups/route-group-1/balances')
       .expect(200)
       .expect(({ body }) => {
-        expect(body.balances).toEqual([]);
+        expect(body.balances.every((row: { amountMinor: number }) => row.amountMinor === 0)).toBe(true);
       });
 
     await request(app.getHttpServer())

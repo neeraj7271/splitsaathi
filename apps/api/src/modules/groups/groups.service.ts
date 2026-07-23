@@ -280,7 +280,7 @@ export class GroupsService {
       groupId: invite.groupId,
       type: 'invite_claimed',
       title: 'Invite accepted',
-      body: 'You joined the group through an invite link.',
+      body: `You joined ${await this.getGroupName(invite.groupId)} through an invite link.`,
       data: { groupId: invite.groupId, inviteId: invite.id }
     });
     return this.getGroupForUser(userId, invite.groupId);
@@ -318,12 +318,13 @@ export class GroupsService {
     );
 
     if (dto.linkedUserId) {
+      const groupName = await this.getGroupName(groupId);
       await this.notificationsService.create({
         userId: dto.linkedUserId,
         groupId,
         type: 'participant_added',
-        title: 'You were added to a group',
-        body: `${dto.displayName} was added to this group.`,
+        title: 'Added to a group',
+        body: `You were added to ${groupName}.`,
         data: { groupId, participantId: participant.id }
       });
     }
@@ -348,12 +349,13 @@ export class GroupsService {
     const saved = await this.memberships.save(membership);
 
     if (saved.userId) {
+      const groupName = await this.getGroupName(groupId);
       await this.notificationsService.create({
         userId: saved.userId,
         groupId,
         type: 'membership_role_changed',
         title: 'Group role updated',
-        body: `Your role in this group is now ${saved.role}.`,
+        body: `${groupName} · Your role is now ${saved.role}.`,
         data: { groupId, membershipId: saved.id, role: saved.role }
       });
     }
@@ -450,12 +452,13 @@ export class GroupsService {
     const saved = await this.memberships.save(membership);
 
     if (saved.userId) {
+      const groupName = await this.getGroupName(groupId);
       await this.notificationsService.create({
         userId: saved.userId,
         groupId,
         type: 'membership_exit_locked',
         title: 'Group access changed',
-        body: 'Your membership is locked for exit until balances are resolved.',
+        body: `${groupName} · Your membership is locked for exit until balances are resolved.`,
         data: { groupId, membershipId: saved.id }
       });
     }
@@ -481,12 +484,13 @@ export class GroupsService {
     const saved = await this.memberships.save(membership);
 
     if (saved.userId) {
+      const groupName = await this.getGroupName(groupId);
       await this.notificationsService.create({
         userId: saved.userId,
         groupId,
         type: 'membership_exit_unlocked',
         title: 'Group access restored',
-        body: 'Your membership exit lock was removed.',
+        body: `${groupName} · Your membership exit lock was removed.`,
         data: { groupId, membershipId: saved.id }
       });
     }
@@ -549,6 +553,11 @@ export class GroupsService {
       )
     );
     await this.rolePermissions.save(rows);
+  }
+
+  async getGroupName(groupId: string): Promise<string> {
+    const group = await this.groups.findOne({ where: { id: groupId }, select: ['id', 'name'] });
+    return group?.name?.trim() || 'a group';
   }
 
   private async findGroupOrThrow(groupId: string): Promise<GroupEntity> {

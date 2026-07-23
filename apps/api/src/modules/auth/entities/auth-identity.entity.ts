@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-export type AuthIdentityProvider = 'phone' | 'google';
+export type AuthIdentityProvider = 'phone' | 'google' | 'email';
 
 @Entity({ name: 'auth_identities' })
 @Index(['provider', 'identifier'], { unique: true })

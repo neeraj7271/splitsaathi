@@ -339,34 +339,65 @@ function GroupListTab({
   onCreateGroup: () => void;
 }) {
   const theme = useTheme();
+  const [filter, setFilter] = useState<"all" | "outstanding" | "you_owe" | "owes_you">("all");
   const groups = groupsQuery.data ?? [];
-  const canSplitByRole = groups.some((group) => group.currentUserRole != null);
-  const ownedGroups = canSplitByRole ? groups.filter((group) => group.currentUserRole === "owner") : [];
-  const sharedGroups = canSplitByRole ? groups.filter((group) => group.currentUserRole !== "owner") : groups;
+  const activeGroups = groups.filter((group) => group.state !== "archived");
+  const settledGroups = activeGroups.filter((group) => (group.netBalanceMinor ?? 0) === 0);
+  const filtered = activeGroups.filter((group) => {
+    const net = group.netBalanceMinor ?? 0;
+    if (filter === "all") {
+      // Outstanding only in the main list; settled groups have their own section.
+      return net !== 0;
+    }
+    if (filter === "outstanding") {
+      return net !== 0;
+    }
+    if (filter === "you_owe") {
+      return net < 0;
+    }
+    return net > 0;
+  });
 
   return (
     <View style={styles.section}>
       {groupsQuery.error ? <InlineNotice title="Groups could not load" body={groupsQuery.error.message} tone="owe" /> : null}
+      <SegmentedControl
+        value={filter}
+        options={[
+          { label: "All", value: "all" },
+          { label: "Outstanding", value: "outstanding" },
+          { label: "You owe", value: "you_owe" },
+          { label: "Owes you", value: "owes_you" }
+        ]}
+        onChange={setFilter}
+      />
       {groupsQuery.isLoading ? (
         <View style={styles.loading}>
           <ActivityIndicator color={theme.colors.inkMuted} />
         </View>
-      ) : groups.length ? (
-        <>
-          {ownedGroups.length ? (
-            <GroupSection title="Created by you" groups={ownedGroups} onOpenGroup={onOpenGroup} />
-          ) : null}
-          {sharedGroups.length ? (
-            <GroupSection title={canSplitByRole ? "Added by friends" : "Your groups"} groups={sharedGroups} onOpenGroup={onOpenGroup} />
-          ) : null}
-        </>
+      ) : filtered.length ? (
+        <GroupSection
+          title={filter === "all" ? "Outstanding balances" : "Groups"}
+          groups={filtered}
+          onOpenGroup={onOpenGroup}
+        />
       ) : (
         <EmptyState
-          title="No groups yet"
-          body="Create a group or accept an invite from a friend to get started."
-          action={{ label: "Create group", onPress: onCreateGroup }}
+          title={activeGroups.length ? "No groups in this filter" : "No groups yet"}
+          body={
+            activeGroups.length
+              ? filter === "all" && settledGroups.length
+                ? "All your groups are settled up."
+                : "Try another filter or settle balances to clear outstanding groups."
+              : "Create a group or accept an invite from a friend to get started."
+          }
+          action={activeGroups.length ? undefined : { label: "Create group", onPress: onCreateGroup }}
         />
       )}
+
+      {filter === "all" && settledGroups.length ? (
+        <GroupSection title="Settled up groups" groups={settledGroups} onOpenGroup={onOpenGroup} />
+      ) : null}
 
       <View style={styles.managementNotes}>
         <View style={styles.noteRow}>

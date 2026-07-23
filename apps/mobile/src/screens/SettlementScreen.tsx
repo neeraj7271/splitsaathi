@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DeviceMobile, PaperPlaneTilt, QrCode, ShieldCheck } from "phosphor-react-native";
+import { CaretDown, CaretUp, QrCode, ShieldCheck } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
@@ -20,14 +20,33 @@ import { SettlementStepper } from "../components/SettlementStepper";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
-import { SettlementIntent, SettlementSuggestion } from "../types/domain";
+import { SettlementIntent, SettlementState, SettlementSuggestion } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
 import { resolveAuthenticatedImageUri } from "../utils/authenticatedImage";
+import {
+  detectInstalledUpiApps,
+  DetectedUpiApps,
+  openUpiWithApp,
+  UpiAppId,
+  UpiAppOption
+} from "../utils/upiApps";
 
 type SettlementMode = "suggested" | "custom";
 type PaymentMethod = "cash" | "upi";
+
+const CONFIRMABLE_STATES: SettlementState[] = [
+  "awaiting_receiver_confirmation",
+  "auto_matched",
+  "disputed",
+  "partial_detected",
+  "duplicate_reference_review"
+];
+
+function isConfirmableState(state: SettlementState | undefined): boolean {
+  return Boolean(state && CONFIRMABLE_STATES.includes(state));
+}
 
 export function SettlementScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -44,7 +63,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [proofAttachment, setProofAttachment] = useState<{ id: string; name: string }>();
   const [reason, setReason] = useState("");
   const [handoffError, setHandoffError] = useState<string>();
+  const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
+  const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
 
+  const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
@@ -63,6 +85,23 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     queryFn: () => apiClient.listSettlementHistory(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+
+  const myParticipantId = useMemo(
+    () => groupQuery.data?.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.participantId,
+    [groupQuery.data?.memberships, profileQuery.data?.id]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void detectInstalledUpiApps().then((detected) => {
+      if (!cancelled) {
+        setUpiApps(detected);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!navigation.selectedGroupId && groups[0]?.id) {
@@ -88,7 +127,38 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     setProofAttachment(undefined);
     setReason("");
     setHandoffError(undefined);
+    setShowOtherUpiApps(false);
   }, [selectedGroupId]);
+
+  // Resume open settlements for the current member (payer handoff or payee confirmation).
+  useEffect(() => {
+    if (intent || !myParticipantId || !historyQuery.data?.length) {
+      return;
+    }
+    const openForMe = historyQuery.data.find((row) => {
+      if (row.paymentMethod === "cash") {
+        return false;
+      }
+      if (["ledger_posted", "confirmed", "rejected", "cancelled", "expired", "reversed", "refunded"].includes(row.state)) {
+        return false;
+      }
+      if (row.payeeParticipantId === myParticipantId && isConfirmableState(row.state)) {
+        return true;
+      }
+      if (
+        row.payerParticipantId === myParticipantId &&
+        ["intent_created", "intent_generated", "payer_opened_upi_app", "awaiting_payment_evidence", "proof_submitted"].includes(
+          row.state
+        )
+      ) {
+        return true;
+      }
+      return false;
+    });
+    if (openForMe) {
+      setIntent(openForMe);
+    }
+  }, [historyQuery.data, intent, myParticipantId]);
 
   useEffect(() => {
     if (!suggestions.length) {
@@ -102,6 +172,15 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       return suggestions[0];
     });
   }, [suggestions]);
+
+  const isPayer = Boolean(intent && myParticipantId && intent.payerParticipantId === myParticipantId);
+  const isPayee = Boolean(intent && myParticipantId && intent.payeeParticipantId === myParticipantId);
+  const canConfirmAsPayee = isPayee && isConfirmableState(intent?.state);
+  const canSubmitProofAsPayer =
+    isPayer &&
+    intent?.paymentMethod !== "cash" &&
+    !["ledger_posted", "confirmed", "rejected", "cancelled", "expired"].includes(intent?.state ?? "");
+  const awaitingPayeeConfirm = isPayer && isConfirmableState(intent?.state);
 
   const invalidateSettlementBalances = (groupId: string) => {
     void queryClient.invalidateQueries({ queryKey: ["groups"] });
@@ -201,35 +280,51 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   });
   const reject = useMutation({
     mutationFn: () => apiClient.rejectSettlement(intent?.id as string, reason),
-    onSuccess: setIntent
+    onSuccess: (response) => {
+      setIntent(response);
+      void queryClient.invalidateQueries({ queryKey: ["settlementHistory", selectedGroupId] });
+    }
   });
   const dispute = useMutation({
     mutationFn: () => apiClient.disputeSettlement(intent?.id as string, reason),
     onSuccess: setIntent
   });
 
-  const openUpi = async (appName: string) => {
+  const openUpi = async (appId: UpiAppId) => {
     if (!intent?.upiUri) {
       return;
     }
-    const canOpen = await Linking.canOpenURL(intent.upiUri);
     try {
       setHandoffError(undefined);
-      if (!canOpen) {
-        throw new Error("No UPI app is available for this simulator/device. Use QR or copy the UPI link.");
-      }
-      await Linking.openURL(intent.upiUri);
-      const updated = await apiClient.markUpiOpened(intent.id, appName);
+      await openUpiWithApp(appId, intent.upiUri);
+      const updated = await apiClient.markUpiOpened(intent.id, appId === "other" ? "other" : appId);
       setIntent(updated);
     } catch (error) {
       setHandoffError(error instanceof Error ? error.message : String(error));
     }
   };
 
+  const renderUpiAppButton = (app: UpiAppOption | { id: UpiAppId; label: string; brandColor: string }) => (
+    <Pressable
+      key={app.id}
+      onPress={() => void openUpi(app.id)}
+      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}
+    >
+      <View style={[styles.upiBadge, { backgroundColor: app.brandColor }]}>
+        <ThemedText variant="caption" style={styles.upiBadgeText}>
+          {app.label.slice(0, 2).toUpperCase()}
+        </ThemedText>
+      </View>
+      <ThemedText variant="caption" numberOfLines={1}>
+        {app.label}
+      </ThemedText>
+    </Pressable>
+  );
+
   const canCreateCustom = payerParticipantId && payeeParticipantId && payerParticipantId !== payeeParticipantId && parseAmountToMinor(customAmount) > 0;
   const activeAmount = intent?.amountMinor ?? selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
   const refreshing =
-    groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching;
+    groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching || profileQuery.isRefetching;
 
   async function refreshScreen() {
     await Promise.all([
@@ -387,48 +482,144 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         </DataSurface>
       ) : (
         <View style={styles.section}>
-          <SectionHeader title="UPI handoff" />
-          <DataSurface>
-            <View style={styles.formBlock}>
-              <View style={styles.handoffRow}>
-                <QrCode size={24} color={theme.colors.confirmed} weight="duotone" />
-                <View style={styles.titleBlock}>
-                  <ThemedText variant="bodyMedium">Payer-initiated transfer</ThemedText>
-                  <ThemedText variant="bodySm" tone="muted">
-                    Opening UPI is not payment confirmation. Add proof after transfer.
-                  </ThemedText>
+          {isPayer ? (
+            <>
+              <SectionHeader title="UPI handoff" />
+              <DataSurface>
+                <View style={styles.formBlock}>
+                  <View style={styles.handoffRow}>
+                    <QrCode size={24} color={theme.colors.confirmed} weight="duotone" />
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium">Pay with an installed UPI app</ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        Only apps detected on this phone are listed. Use Other for apps we could not detect.
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <View style={styles.appRow}>
+                    {upiApps.installed.map((app) => renderUpiAppButton(app))}
+                    <Pressable
+                      onPress={() => setShowOtherUpiApps((value) => !value)}
+                      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}
+                    >
+                      <View style={[styles.upiBadge, { backgroundColor: theme.colors.inkMuted }]}>
+                        {showOtherUpiApps ? (
+                          <CaretUp size={14} color="#fff" weight="bold" />
+                        ) : (
+                          <CaretDown size={14} color="#fff" weight="bold" />
+                        )}
+                      </View>
+                      <ThemedText variant="caption">Other</ThemedText>
+                    </Pressable>
+                  </View>
+                  {showOtherUpiApps ? (
+                    <View style={styles.otherAppsBlock}>
+                      <ThemedText variant="caption" tone="muted">
+                        Not detected on this phone — tap to try opening anyway, or use Any UPI app / QR.
+                      </ThemedText>
+                      <View style={styles.appRow}>
+                        {upiApps.notInstalled.map((app) => renderUpiAppButton(app))}
+                        {renderUpiAppButton({ id: "other", label: "Any UPI app", brandColor: theme.colors.inkMuted })}
+                      </View>
+                    </View>
+                  ) : null}
+                  {intent.qrPayload ? (
+                    <View style={[styles.qrBox, { backgroundColor: theme.colors.ink, borderRadius: theme.radius.md }]}>
+                      <QRCode value={intent.qrPayload} size={164} backgroundColor="transparent" color={theme.colors.canvas} />
+                    </View>
+                  ) : null}
                 </View>
-              </View>
-              <View style={styles.appRow}>
-                {["gpay", "phonepe", "paytm", "bhim", "other"].map((appName) => (
-                  <Pressable key={appName} onPress={() => openUpi(appName)} style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>
-                    <DeviceMobile size={20} color={theme.colors.inkMuted} weight="duotone" />
-                    <ThemedText variant="caption">{appName}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-              {intent.qrPayload ? (
-                <View style={[styles.qrBox, { backgroundColor: theme.colors.ink, borderRadius: theme.radius.md }]}>
-                  <QRCode value={intent.qrPayload} size={164} backgroundColor="transparent" color={theme.colors.canvas} />
-                </View>
-              ) : null}
-            </View>
-          </DataSurface>
+              </DataSurface>
 
-          <SectionHeader title="Proof and confirmation" />
-          <DataSurface>
-            <View style={styles.formBlock}>
-              <InputField label="UTR or UPI reference" value={utrText} onChangeText={setUtrText} autoCapitalize="characters" />
-              <Button label={proofAttachment ? `Proof attached: ${proofAttachment.name}` : "Attach screenshot or PDF"} variant="secondary" onPress={() => uploadProof.mutate()} loading={uploadProof.isPending} />
-              <Button label="Submit proof" onPress={() => submitProof.mutate()} loading={submitProof.isPending} disabled={!utrText.trim() && !proofAttachment} />
-              <InputField label="Reject or dispute reason" value={reason} onChangeText={setReason} />
-              <View style={styles.actionRow}>
-                <Button label="Confirm received" onPress={() => confirm.mutate()} loading={confirm.isPending} style={styles.inlineButton} />
-                <Button label="Reject" variant="destructive" onPress={() => reject.mutate()} loading={reject.isPending} disabled={!reason.trim()} style={styles.inlineButton} />
-              </View>
-              <Button label="Open dispute" variant="secondary" onPress={() => dispute.mutate()} loading={dispute.isPending} disabled={!reason.trim()} />
-            </View>
-          </DataSurface>
+              {canSubmitProofAsPayer ? (
+                <>
+                  <SectionHeader title="Payment proof" />
+                  <DataSurface>
+                    <View style={styles.formBlock}>
+                      <ThemedText variant="bodySm" tone="muted">
+                        After you pay, add UTR and/or a screenshot. The receiver must confirm before this settles.
+                      </ThemedText>
+                      <InputField label="UTR or UPI reference" value={utrText} onChangeText={setUtrText} autoCapitalize="characters" />
+                      <Button
+                        label={proofAttachment ? `Proof attached: ${proofAttachment.name}` : "Attach screenshot or PDF"}
+                        variant="secondary"
+                        onPress={() => uploadProof.mutate()}
+                        loading={uploadProof.isPending}
+                      />
+                      <Button
+                        label="Submit proof"
+                        onPress={() => submitProof.mutate()}
+                        loading={submitProof.isPending}
+                        disabled={!utrText.trim() && !proofAttachment}
+                      />
+                    </View>
+                  </DataSurface>
+                </>
+              ) : null}
+
+              {awaitingPayeeConfirm ? (
+                <InlineNotice
+                  title="Waiting for receiver confirmation"
+                  body="Proof submitted. Only the person receiving the money can confirm — then balances update."
+                  tone="pending"
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          {canConfirmAsPayee ? (
+            <>
+              <SectionHeader title="Confirm you received payment" />
+              <DataSurface>
+                <View style={styles.formBlock}>
+                  <View style={styles.handoffRow}>
+                    <ShieldCheck size={24} color={theme.colors.confirmed} weight="duotone" />
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium">Only you can settle this</ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        Confirm only after the money has arrived in your account.
+                      </ThemedText>
+                    </View>
+                  </View>
+                  {(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
+                    <Button label="View payment proof" variant="secondary" onPress={() => void openProof(intent)} />
+                  ) : null}
+                  <InputField label="Reject reason (required to reject)" value={reason} onChangeText={setReason} />
+                  <View style={styles.actionRow}>
+                    <Button
+                      label="Confirm received"
+                      onPress={() => confirm.mutate()}
+                      loading={confirm.isPending}
+                      style={styles.inlineButton}
+                    />
+                    <Button
+                      label="Reject"
+                      variant="destructive"
+                      onPress={() => reject.mutate()}
+                      loading={reject.isPending}
+                      disabled={!reason.trim()}
+                      style={styles.inlineButton}
+                    />
+                  </View>
+                  <Button
+                    label="Open dispute"
+                    variant="secondary"
+                    onPress={() => dispute.mutate()}
+                    loading={dispute.isPending}
+                    disabled={!reason.trim()}
+                  />
+                </View>
+              </DataSurface>
+            </>
+          ) : null}
+
+          {isPayee && !canConfirmAsPayee ? (
+            <InlineNotice
+              title="Waiting for payer"
+              body="The payer still needs to complete UPI and submit proof before you can confirm."
+              tone="info"
+            />
+          ) : null}
         </View>
       )}
 
@@ -437,25 +628,36 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         {historyQuery.error ? <InlineNotice title="History could not load" body={historyQuery.error.message} tone="owe" /> : null}
         {historyQuery.data?.length ? (
           <DataSurface>
-            {historyQuery.data.map((row) => (
-              <View key={row.id} style={[styles.historyRow, { borderBottomColor: theme.colors.hairline }]}>
-                <View style={styles.titleBlock}>
-                  <ThemedText variant="bodyMedium">
-                    {lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement"}
-                  </ThemedText>
-                  <ThemedText variant="bodySm" tone="muted">
-                    {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
-                  </ThemedText>
-                  {row.proofAttachmentId || row.proofUrl ? (
-                    <Button label="View proof" variant="ghost" onPress={() => void openProof(row)} />
-                  ) : null}
+            {historyQuery.data.map((row) => {
+              const rowIsPayee = Boolean(myParticipantId && row.payeeParticipantId === myParticipantId);
+              const rowCanConfirm = rowIsPayee && row.paymentMethod !== "cash" && isConfirmableState(row.state);
+              return (
+                <View key={row.id} style={[styles.historyRow, { borderBottomColor: theme.colors.hairline }]}>
+                  <View style={styles.titleBlock}>
+                    <ThemedText variant="bodyMedium">
+                      {lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement"}
+                    </ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">
+                      {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
+                    </ThemedText>
+                    {row.proofAttachmentId || row.proofUrl ? (
+                      <Button label="View proof" variant="ghost" onPress={() => void openProof(row)} />
+                    ) : null}
+                    {rowCanConfirm ? (
+                      <Button
+                        label={intent?.id === row.id ? "Reviewing above" : "Review & confirm"}
+                        variant="secondary"
+                        onPress={() => setIntent(row)}
+                      />
+                    ) : null}
+                  </View>
+                  <View style={styles.trailing}>
+                    <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
+                    <StatusPill state={row.state} />
+                  </View>
                 </View>
-                <View style={styles.trailing}>
-                  <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
-                  <StatusPill state={row.state} />
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </DataSurface>
         ) : (
           <EmptyState title="No settlement history" body="UPI app opens, proofs, confirmations, and postings will appear here." />
@@ -521,12 +723,26 @@ const styles = StyleSheet.create({
   },
   upiApp: {
     minWidth: 88,
-    minHeight: 64,
+    minHeight: 72,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     padding: 10
+  },
+  upiBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  upiBadgeText: {
+    color: "#FFFFFF",
+    fontWeight: "700"
+  },
+  otherAppsBlock: {
+    gap: 10
   },
   qrBox: {
     alignSelf: "center",

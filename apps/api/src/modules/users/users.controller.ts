@@ -19,7 +19,8 @@ export class UsersController {
   async me(@CurrentUser() currentUser: AuthenticatedUser): Promise<UserResponseDto> {
     const user = await this.usersService.findByIdOrThrow(currentUser.userId);
     const phoneMasked = await this.usersService.getPhoneMaskedForUser(currentUser.userId);
-    return UserResponseDto.fromEntity(user, { phoneMasked });
+    const email = await this.usersService.getEmailForUser(currentUser.userId);
+    return UserResponseDto.fromEntity(user, { phoneMasked, email });
   }
 
   @Patch('me')
@@ -35,7 +36,8 @@ export class UsersController {
       upiVpa: dto.upiVpa
     });
     const phoneMasked = await this.usersService.getPhoneMaskedForUser(currentUser.userId);
-    return UserResponseDto.fromEntity(updated, { phoneMasked });
+    const email = await this.usersService.getEmailForUser(currentUser.userId);
+    return UserResponseDto.fromEntity(updated, { phoneMasked, email });
   }
 
   @Get('me/preferences')

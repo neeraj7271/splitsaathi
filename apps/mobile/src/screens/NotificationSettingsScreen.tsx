@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "phosphor-react-native";
@@ -15,16 +15,14 @@ import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import type { UserPreferences } from "../types/domain";
 
-type EmailPreferenceKey =
+type PreferenceToggleKey =
   | "emailGroupAdded"
   | "emailFriendAdded"
   | "emailExpenseAdded"
   | "emailExpenseEdited"
-  | "emailExpenseComment"
   | "emailExpenseDue"
   | "emailPaymentReceived"
-  | "emailMonthlySummary"
-  | "emailNewsUpdates";
+  | "emailMonthlySummary";
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   biometricAuthEnabled: false,
@@ -39,32 +37,35 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   emailExpenseDue: true,
   emailPaymentReceived: true,
   emailMonthlySummary: true,
-  emailNewsUpdates: true
+  emailNewsUpdates: false
 };
 
-const EMAIL_SECTIONS: Array<{ title: string; items: Array<{ key: EmailPreferenceKey; label: string }> }> = [
+const PUSH_SECTIONS: Array<{
+  title: string;
+  items: Array<{ key: PreferenceToggleKey; label: string; subtitle: string }>;
+}> = [
   {
-    title: "Groups and friends",
+    title: "Groups and contacts",
     items: [
-      { key: "emailGroupAdded", label: "When someone adds me to a group" },
-      { key: "emailFriendAdded", label: "When someone adds me as a friend" }
+      {
+        key: "emailGroupAdded",
+        label: "Group updates",
+        subtitle: "Added to a group, invite accepted, role or membership changes"
+      },
+      {
+        key: "emailFriendAdded",
+        label: "Contact joined SplitSaathi",
+        subtitle: "Someone from your contacts signs up with their phone number"
+      }
     ]
   },
   {
-    title: "Expenses",
+    title: "Expenses and payments",
     items: [
-      { key: "emailExpenseAdded", label: "When an expense is added" },
-      { key: "emailExpenseEdited", label: "When an expense is edited/deleted" },
-      { key: "emailExpenseComment", label: "When someone comments on an expense" },
-      { key: "emailExpenseDue", label: "When an expense is due" },
-      { key: "emailPaymentReceived", label: "When someone pays me" }
-    ]
-  },
-  {
-    title: "News and updates",
-    items: [
-      { key: "emailMonthlySummary", label: "Monthly summary of my activity" },
-      { key: "emailNewsUpdates", label: "Major SplitSaathi news and updates" }
+      { key: "emailExpenseAdded", label: "Expense added", subtitle: "Someone adds an expense in your group" },
+      { key: "emailExpenseEdited", label: "Expense edited or deleted", subtitle: "Expense revised or voided" },
+      { key: "emailExpenseDue", label: "Reminders", subtitle: "Settlement day, recurring expense, and proof reminders" },
+      { key: "emailPaymentReceived", label: "Payments", subtitle: "Settlement confirmation requests and confirmations" }
     ]
   }
 ];
@@ -123,7 +124,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
         <View style={styles.block}>
           <SettingsToggleRow
             label="Push notifications"
-            subtitle="Master switch for device alerts (expenses, payments, groups)"
+            subtitle="Master switch for all device alerts"
             value={draft.pushNotificationsEnabled}
             onValueChange={(value) => updateDraft("pushNotificationsEnabled", value)}
             disabled={preferencesQuery.isLoading}
@@ -131,7 +132,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
         </View>
       </DataSurface>
 
-      {EMAIL_SECTIONS.map((section) => (
+      {PUSH_SECTIONS.map((section) => (
         <View key={section.title} style={styles.section}>
           <SectionHeader title={section.title} />
           <DataSurface>
@@ -140,16 +141,31 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
                 <SettingsToggleRow
                   key={item.key}
                   label={item.label}
-                  subtitle="Controls push alerts for this event"
+                  subtitle={item.subtitle}
                   value={draft[item.key]}
                   onValueChange={(value) => updateDraft(item.key, value)}
-                  disabled={preferencesQuery.isLoading}
+                  disabled={preferencesQuery.isLoading || !draft.pushNotificationsEnabled}
                 />
               ))}
             </View>
           </DataSurface>
         </View>
       ))}
+
+      <View style={styles.section}>
+        <SectionHeader title="Email" />
+        <DataSurface>
+          <View style={styles.block}>
+            <SettingsToggleRow
+              label="Monthly summary email"
+              subtitle="Email a balance summary for each active group (uses your Google/login email)"
+              value={draft.emailMonthlySummary}
+              onValueChange={(value) => updateDraft("emailMonthlySummary", value)}
+              disabled={preferencesQuery.isLoading}
+            />
+          </View>
+        </DataSurface>
+      </View>
 
       <Button
         label="Save changes"

@@ -21,6 +21,8 @@ import {
   SettlementSuggestion,
   StartEmailOtpResponse,
   StartOtpResponse,
+  FriendSummary,
+  FriendDetail,
   UserPreferences,
   UserProfile,
   VerifyOtpResponse
@@ -454,6 +456,21 @@ export class SplitSaathiApiClient {
 
   async listGroups() {
     return this.request<GroupSummary[]>("/v1/groups");
+  }
+
+  async listFriends() {
+    return this.request<FriendSummary[]>("/v1/friends");
+  }
+
+  async getFriendDetail(otherUserId: string) {
+    return this.request<FriendDetail>(`/v1/friends/${otherUserId}`);
+  }
+
+  async remindFriend(otherUserId: string) {
+    return this.request<{ notificationId: string; delivered: boolean }>(`/v1/friends/${otherUserId}/remind`, {
+      method: "POST",
+      body: {}
+    });
   }
 
   async getGroup(groupId: string) {

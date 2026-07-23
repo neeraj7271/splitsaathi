@@ -21,6 +21,12 @@ import { BalanceQueryService, BalancesController } from '../balances';
 import { CurrencyController, FxRateService } from '../currency';
 import { ExpenseAllocationService, ExpenseCommandService, ExpensesController } from '../expenses';
 import { GroupsModule } from '../groups/groups.module';
+import { GroupEntity } from '../groups/entities/group.entity';
+import { GroupMembershipEntity } from '../groups/entities/group-membership.entity';
+import { ParticipantEntity } from '../groups/entities/participant.entity';
+import { FriendsController } from '../friends/friends.controller';
+import { FriendsService } from '../friends/friends.service';
+import { UsersModule } from '../users/users.module';
 import {
   BANK_IMPORT_PROVIDER,
   CsvExportService,
@@ -327,6 +333,7 @@ export class FinancialLedgerModule {
         JwtModule.register({}),
         BalanceProjectorModule,
         GroupsModule,
+        UsersModule,
         NotificationsModule,
         TypeOrmModule.forFeature([
           EventStoreEntity,
@@ -337,10 +344,13 @@ export class FinancialLedgerModule {
           ReceiptDraftEntity,
           ReceiptOcrResultEntity,
           ReceiptDraftItemEntity,
-          CaptureJobEntity
+          CaptureJobEntity,
+          GroupEntity,
+          GroupMembershipEntity,
+          ParticipantEntity
         ])
       ],
-      controllers,
+      controllers: [...controllers, FriendsController],
       providers: [
         PostgresEventStore,
         {
@@ -352,6 +362,7 @@ export class FinancialLedgerModule {
           provide: FINANCIAL_AUTHORIZATION,
           useExisting: GroupsFinancialAuthorization
         },
+        FriendsService,
         ...sharedProviders
       ],
       exports: exportsList

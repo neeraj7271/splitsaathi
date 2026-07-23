@@ -40,6 +40,9 @@ describe('MonthlySummaryMailService', () => {
         return null;
       })
     };
+    const identities = {
+      findOne: jest.fn(async () => null)
+    };
     const emailProvider = {
       send: jest.fn(async () => ({ deliveryMode: 'development' as const })),
       sendOtp: jest.fn()
@@ -68,6 +71,7 @@ describe('MonthlySummaryMailService', () => {
       participants as any,
       preferences as any,
       emailCredentials as any,
+      identities as any,
       balances,
       emailProvider as any
     );

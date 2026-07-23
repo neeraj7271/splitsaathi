@@ -130,9 +130,12 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           />
           <View style={styles.identity}>
             <ThemedText variant="title">{profile?.displayName ?? "Your profile"}</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">
-              {profile?.phoneMasked ?? "Phone number unavailable"}
-            </ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                {profile?.email ?? "Email unavailable"}
+              </ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                {profile?.phoneMasked ?? "Phone number unavailable"}
+              </ThemedText>
           </View>
           <Pressable onPress={() => setIsEditing((value) => !value)}>
             <ThemedText variant="bodySm" tone="confirmed">

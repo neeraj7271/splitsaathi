@@ -182,18 +182,6 @@ export class SettlementCommandService {
             upiApp: command.upiApp
           },
           metadata: { command: 'mark_upi_opened' }
-        },
-        {
-          type: 'ReceiverConfirmationRequested',
-          aggregateType: 'settlement_intent',
-          aggregateId: command.settlementIntentId,
-          groupId: intent.groupId,
-          actorId: command.actorId,
-          payload: {
-            settlementIntentId: command.settlementIntentId,
-            reason: 'Payer reported completing the UPI handoff'
-          },
-          metadata: { command: 'request_upi_payment_confirmation' }
         }
       ]
     });

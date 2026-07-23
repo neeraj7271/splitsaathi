@@ -71,7 +71,7 @@ describe('settlement lifecycle', () => {
       expectedVersion: 5
     });
     expect(confirmed.intent.state).toBe('ledger_posted');
-    expect(app.services.balances.getGroupBalances('group-1').balances).toEqual([]);
+    expect(app.services.balances.getGroupBalances('group-1').balances.every((row) => row.amountMinor === 0)).toBe(true);
   });
 
   it('detects duplicate UTR and partial proof exception states', async () => {

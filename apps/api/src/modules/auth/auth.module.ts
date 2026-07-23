@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ContactAliasEntity } from '@splitsaathi/db';
 import { ApiConfigModule } from '../../config/api-config.module';
 import { ApiConfigService } from '../../config/api-config.service';
 import { ConsentsModule } from '../consents/consents.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { EMAIL_PROVIDER, OTP_PROVIDER } from './auth.constants';
@@ -24,12 +26,14 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
     JwtModule.register({}),
     UsersModule,
     ConsentsModule,
+    forwardRef(() => NotificationsModule),
     TypeOrmModule.forFeature([
       AuthIdentityEntity,
       OtpChallengeEntity,
       RefreshSessionEntity,
       EmailCredentialEntity,
-      EmailOtpChallengeEntity
+      EmailOtpChallengeEntity,
+      ContactAliasEntity
     ])
   ],
   controllers: [AuthController],

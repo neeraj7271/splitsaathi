@@ -28,4 +28,11 @@ export class AuthResponseDto {
     description: 'True when the authenticated user does not yet have a linked phone identity.'
   })
   needsPhoneLink!: boolean;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: 'Optional phone hint from Google (rare). Used to prefill signup.'
+  })
+  suggestedPhoneE164?: string | null;
 }

@@ -2,6 +2,8 @@ export type AppRoute =
   | "home"
   | "groups"
   | "groupDetail"
+  | "friends"
+  | "friendDetail"
   | "expense"
   | "balances"
   | "settlement"
@@ -20,8 +22,10 @@ export interface AppNavigation {
   route: AppRoute;
   selectedGroupId?: string;
   selectedExpenseId?: string;
+  selectedFriendUserId?: string;
   setSelectedGroupId: (groupId?: string) => void;
   setSelectedExpenseId: (expenseId?: string) => void;
+  setSelectedFriendUserId: (userId?: string) => void;
   go: (route: AppRoute) => void;
   signOut: () => void;
 }

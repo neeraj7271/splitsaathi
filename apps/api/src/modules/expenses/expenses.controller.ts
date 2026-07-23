@@ -118,10 +118,13 @@ export class ExpensesController {
     await this.notifyGroupExpense(currentUser.userId, {
       type: 'expense_created',
       title: 'Expense added',
-      body: `${dto.description} · ${formatMinor(
-        result.expense?.totalAmountMinor ?? dto.payers.reduce((sum, p) => sum + p.amountMinor, 0),
-        dto.currencyCode ?? 'INR'
-      )}`,
+      body: await this.expenseNotifyBody(
+        dto.groupId,
+        `${dto.description} · ${formatMinor(
+          result.expense?.totalAmountMinor ?? dto.payers.reduce((sum, p) => sum + p.amountMinor, 0),
+          dto.currencyCode ?? 'INR'
+        )}`
+      ),
       groupId: dto.groupId,
       expenseId: result.expense?.expenseId ?? dto.expenseId
     });
@@ -156,7 +159,10 @@ export class ExpensesController {
     await this.notifyGroupExpense(currentUser.userId, {
       type: 'expense_revised',
       title: 'Expense updated',
-      body: `${dto.description ?? result.expense?.description ?? 'An expense'} was edited.`,
+      body: await this.expenseNotifyBody(
+        dto.groupId,
+        `${dto.description ?? result.expense?.description ?? 'An expense'} was edited.`
+      ),
       groupId: dto.groupId,
       expenseId
     });
@@ -192,7 +198,7 @@ export class ExpensesController {
     await this.notifyGroupExpense(currentUser.userId, {
       type: 'expense_voided',
       title: 'Expense voided',
-      body: `${existing?.description ?? 'An expense'} was voided.`,
+      body: await this.expenseNotifyBody(dto.groupId, `${existing?.description ?? 'An expense'} was voided.`),
       groupId: dto.groupId,
       expenseId
     });
@@ -231,6 +237,11 @@ export class ExpensesController {
     }
     await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
     return explainExpense(expense);
+  }
+
+  private async expenseNotifyBody(groupId: string, detail: string): Promise<string> {
+    const groupName = this.groups ? await this.groups.getGroupName(groupId) : 'Group';
+    return `${groupName} · ${detail}`;
   }
 
   private async notifyGroupExpense(

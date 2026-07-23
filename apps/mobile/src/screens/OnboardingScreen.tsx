@@ -43,20 +43,20 @@ function isPlaceholderDisplayName(name: string | undefined) {
 type AuthStepResponse = {
   needsOnboarding?: boolean;
   needsPhoneLink?: boolean;
+  suggestedPhoneE164?: string | null;
   user: { displayName: string };
 };
 
 /**
- * Returning users (needsOnboarding === false) go straight into the app —
- * no phone / name / consent prompts after reinstall + Google sign-in.
- * New users with a real Google name skip the name step and go to consent.
+ * Phone is always required when missing (so friends can find you).
+ * Returning users with a phone skip name/consent.
  */
 function nextStepAfterAuth(response: AuthStepResponse): OnboardingStep | "done" {
-  if (response.needsOnboarding === false) {
-    return "done";
-  }
   if (response.needsPhoneLink) {
     return "phone";
+  }
+  if (response.needsOnboarding === false) {
+    return "done";
   }
   if (isPlaceholderDisplayName(response.user.displayName)) {
     return "profile";
@@ -103,6 +103,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   const [otpVerified, setOtpVerified] = useState(false);
   const [linkingPhone, setLinkingPhone] = useState(false);
   const [authSnapshot, setAuthSnapshot] = useState<AuthStepResponse | null>(null);
+  const [phoneCandidates, setPhoneCandidates] = useState<string[]>([]);
   const [inviteLink, setInviteLink] = useState("");
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -138,6 +139,14 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
   const continueAfterAuth = async (response: AuthStepResponse) => {
     setAuthSnapshot(response);
+    if (response.suggestedPhoneE164) {
+      setPhone(response.suggestedPhoneE164);
+      setPhoneCandidates((current) =>
+        current.includes(response.suggestedPhoneE164 as string)
+          ? current
+          : [...current, response.suggestedPhoneE164 as string]
+      );
+    }
     const next = nextStepAfterAuth(response);
     if (next === "phone") {
       setLinkingPhone(true);
@@ -383,9 +392,38 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         {step === "phone" ? (
           <AuthPanel
             title="Add your phone"
-            body="Enter your +91 mobile number so friends can find you. No OTP for now — we'll verify later when SMS is enabled."
+            body="Friends find you by number — this is required so they can add you to groups. No OTP for now."
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
+            {phoneCandidates.length > 0 ? (
+              <View style={styles.phoneCandidates}>
+                <ThemedText variant="caption" tone="muted">
+                  {phoneCandidates.length > 1 ? "Choose a number" : "Suggested number"}
+                </ThemedText>
+                <View style={styles.phoneChipRow}>
+                  {phoneCandidates.map((candidate) => {
+                    const selected = phone === candidate;
+                    return (
+                      <Pressable
+                        key={candidate}
+                        onPress={() => setPhone(candidate)}
+                        style={[
+                          styles.phoneChip,
+                          {
+                            borderColor: selected ? theme.colors.confirmed : theme.colors.hairline,
+                            backgroundColor: selected ? theme.colors.neutralChipBg : "transparent"
+                          }
+                        ]}
+                      >
+                        <ThemedText variant="bodySm" tone={selected ? "confirmed" : "ink"}>
+                          {candidate}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
             <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {loginWithPhone.error ? <InlineNotice title="Phone could not be saved" body={loginWithPhone.error.message} tone="owe" /> : null}
             <Button
@@ -396,23 +434,6 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               }}
               loading={loginWithPhone.isPending}
               disabled={phone.length < 8}
-            />
-            <Button
-              label="Skip for now"
-              variant="ghost"
-              onPress={() => {
-                void (async () => {
-                  setLinkingPhone(false);
-                  const snapshot: AuthStepResponse = authSnapshot
-                    ? { ...authSnapshot, needsPhoneLink: false }
-                    : {
-                        needsOnboarding: false,
-                        needsPhoneLink: false,
-                        user: { displayName: displayName || "User" }
-                      };
-                  await continueAfterAuth(snapshot);
-                })();
-              }}
             />
           </AuthPanel>
         ) : null}
@@ -727,6 +748,20 @@ const styles = StyleSheet.create({
   iconRow: {
     flexDirection: "row",
     gap: 12
+  },
+  phoneCandidates: {
+    gap: 8
+  },
+  phoneChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  phoneChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8
   },
   stack: {
     gap: 12

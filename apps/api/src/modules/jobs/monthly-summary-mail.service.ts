@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { EMAIL_PROVIDER } from '../auth/auth.constants';
+import { AuthIdentityEntity } from '../auth/entities/auth-identity.entity';
 import { EmailCredentialEntity } from '../auth/entities/email-credential.entity';
 import type { EmailProviderPort } from '../auth/ports/email-provider.port';
 import { GroupMembershipEntity } from '../groups/entities/group-membership.entity';
@@ -31,6 +32,8 @@ export class MonthlySummaryMailService {
     private readonly preferences: Repository<UserPreferencesEntity>,
     @InjectRepository(EmailCredentialEntity)
     private readonly emailCredentials: Repository<EmailCredentialEntity>,
+    @InjectRepository(AuthIdentityEntity)
+    private readonly identities: Repository<AuthIdentityEntity>,
     private readonly balances: BalanceProjector,
     @Inject(EMAIL_PROVIDER)
     private readonly emailProvider: EmailProviderPort
@@ -38,7 +41,7 @@ export class MonthlySummaryMailService {
 
   /**
    * Builds per-group balance summaries and emails members who opted into
-   * `emailMonthlySummary` and have a verified email credential.
+   * `emailMonthlySummary` and have a verified email (password credential or Google email identity).
    */
   async sendMonthlySettlementSummaries(): Promise<MonthlySummaryJobResult> {
     const activeGroups = await this.groups.find({ where: { state: 'active' } });
@@ -61,22 +64,19 @@ export class MonthlySummaryMailService {
         }
 
         const prefs = await this.preferences.findOne({ where: { userId: membership.userId } });
-        // Missing prefs inherit DB default (emailMonthlySummary=true).
         if (prefs && prefs.emailMonthlySummary === false) {
           skipped += 1;
           continue;
         }
 
-        const credential = await this.emailCredentials.findOne({
-          where: { userId: membership.userId }
-        });
-        if (!credential?.verifiedAt) {
+        const to = await this.resolveEmail(membership.userId);
+        if (!to) {
           skipped += 1;
           continue;
         }
 
         await this.emailProvider.send({
-          to: credential.email,
+          to,
           subject: `SplitSaathi monthly summary — ${group.name}`,
           text: summaryBody
         });
@@ -93,6 +93,15 @@ export class MonthlySummaryMailService {
       emailsSent,
       skipped
     };
+  }
+
+  private async resolveEmail(userId: string): Promise<string | null> {
+    const credential = await this.emailCredentials.findOne({ where: { userId } });
+    if (credential?.verifiedAt && credential.email) {
+      return credential.email;
+    }
+    const emailIdentity = await this.identities.findOne({ where: { userId, provider: 'email' } });
+    return emailIdentity?.identifier ?? null;
   }
 
   private formatGroupSummary(

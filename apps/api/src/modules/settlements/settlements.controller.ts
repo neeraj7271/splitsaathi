@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Headers, Inject, Optional, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  Inject,
+  Optional,
+  Param,
+  Post,
+  UseGuards
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -85,17 +97,15 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<MarkUpiOpenedCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['markUpiOpened']> {
-    await this.assertCanActOnIntent(currentUser.userId, settlementIntentId, 'settlement.confirm');
+    await this.assertActorIsPayer(currentUser.userId, settlementIntentId);
     const expectedVersion = dto.expectedVersion ?? (await this.commands.currentVersion(settlementIntentId));
-    const result = await this.commands.markUpiOpened({
+    return this.commands.markUpiOpened({
       ...dto,
       settlementIntentId,
       expectedVersion,
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
-    await this.notifySettlementConfirmationRequested(result.intent);
-    return result;
   }
 
   @Post('settlement-intents/:id/proofs')
@@ -114,7 +124,7 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<SubmitPaymentProofCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['submitProof']> {
-    await this.assertCanActOnIntent(currentUser.userId, settlementIntentId, 'settlement.confirm');
+    await this.assertActorIsPayer(currentUser.userId, settlementIntentId);
     const normalizedDto = dto as typeof dto & {
       claimedAmountMinor?: number;
       upiReference?: string;
@@ -150,6 +160,7 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<SettlementTransitionCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['confirm']> {
+    await this.assertActorIsPayee(currentUser.userId, settlementIntentId);
     const result = await this.commands.confirm(
       await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto)
     );
@@ -173,7 +184,12 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<SettlementTransitionCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['reject']> {
-    return this.commands.reject(await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto));
+    await this.assertActorIsPayee(currentUser.userId, settlementIntentId);
+    const result = await this.commands.reject(
+      await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto)
+    );
+    await this.notifySettlementRejected(result.intent);
+    return result;
   }
 
   @Post('settlement-intents/:id/dispute')
@@ -318,12 +334,43 @@ export class SettlementsController {
     userId: string,
     settlementIntentId: string,
     action: 'read' | 'settlement.confirm'
-  ): Promise<void> {
+  ): Promise<SettlementIntentRow | undefined> {
     const intent = this.settlements.getIntent(settlementIntentId);
     if (!intent) {
-      return;
+      return undefined;
     }
     await this.authorization.assertCan(userId, intent.groupId, action);
+    return intent;
+  }
+
+  private async assertActorIsPayer(userId: string, settlementIntentId: string): Promise<SettlementIntentRow> {
+    const intent = await this.assertCanActOnIntent(userId, settlementIntentId, 'settlement.confirm');
+    if (!intent) {
+      throw new BadRequestException('Settlement intent not found.');
+    }
+    if (!this.groups) {
+      return intent;
+    }
+    const payerUserId = await this.groups.resolveUserIdForParticipant(intent.groupId, intent.payerParticipantId);
+    if (payerUserId && payerUserId !== userId) {
+      throw new ForbiddenException('Only the payer can open UPI or submit payment proof.');
+    }
+    return intent;
+  }
+
+  private async assertActorIsPayee(userId: string, settlementIntentId: string): Promise<SettlementIntentRow> {
+    const intent = await this.assertCanActOnIntent(userId, settlementIntentId, 'settlement.confirm');
+    if (!intent) {
+      throw new BadRequestException('Settlement intent not found.');
+    }
+    if (!this.groups) {
+      return intent;
+    }
+    const payeeUserId = await this.groups.resolveUserIdForParticipant(intent.groupId, intent.payeeParticipantId);
+    if (payeeUserId && payeeUserId !== userId) {
+      throw new ForbiddenException('Only the payee can confirm or reject this payment.');
+    }
+    return intent;
   }
 
   private async notifySettlementConfirmationRequested(intent: SettlementIntentRow): Promise<void> {
@@ -331,28 +378,40 @@ export class SettlementsController {
       return;
     }
     try {
-      const payeeUserId = await this.groups.resolveUserIdForParticipant(
-        intent.groupId,
-        intent.payeeParticipantId
-      );
-      if (!payeeUserId) {
-        return;
-      }
+      const [payeeUserId, payerUserId, groupName] = await Promise.all([
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payeeParticipantId),
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payerParticipantId),
+        this.groups.getGroupName(intent.groupId)
+      ]);
       const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
-      await this.notifications.create({
-        userId: payeeUserId,
-        groupId: intent.groupId,
-        type: 'settlement_confirmation_requested',
-        title: 'Confirm payment',
-        body: `Please confirm a payment of ${amountLabel}.`,
-        data: {
-          settlementIntentId: intent.settlementIntentId,
-          amountMinor: intent.amountMinor,
-          currencyCode: intent.currencyCode,
-          payerParticipantId: intent.payerParticipantId,
-          payeeParticipantId: intent.payeeParticipantId
-        }
-      });
+      const data = {
+        settlementIntentId: intent.settlementIntentId,
+        amountMinor: intent.amountMinor,
+        currencyCode: intent.currencyCode,
+        payerParticipantId: intent.payerParticipantId,
+        payeeParticipantId: intent.payeeParticipantId
+      };
+      if (payeeUserId) {
+        await this.notifications.create({
+          userId: payeeUserId,
+          groupId: intent.groupId,
+          type: 'settlement_confirmation_requested',
+          title: 'Confirm payment',
+          body: `${groupName} · Please confirm you received ${amountLabel}.`,
+          tone: 'action_required',
+          data
+        });
+      }
+      if (payerUserId) {
+        await this.notifications.create({
+          userId: payerUserId,
+          groupId: intent.groupId,
+          type: 'settlement_awaiting_confirmation',
+          title: 'Waiting for confirmation',
+          body: `${groupName} · Your ${amountLabel} payment is waiting for the receiver to confirm.`,
+          data
+        });
+      }
     } catch (error) {
       // Never block UPI handoff / settlement on notification delivery failures.
       console.error('[settlements] confirm-request notification failed', error);
@@ -364,30 +423,85 @@ export class SettlementsController {
       return;
     }
     try {
-      const payerUserId = await this.groups.resolveUserIdForParticipant(
-        intent.groupId,
-        intent.payerParticipantId
-      );
-      if (!payerUserId) {
-        return;
-      }
+      const [payerUserId, payeeUserId, groupName] = await Promise.all([
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payerParticipantId),
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payeeParticipantId),
+        this.groups.getGroupName(intent.groupId)
+      ]);
       const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
-      await this.notifications.create({
-        userId: payerUserId,
-        groupId: intent.groupId,
-        type: 'settlement_confirmed',
-        title: 'Payment confirmed',
-        body: `Your payment of ${amountLabel} was confirmed.`,
-        data: {
-          settlementIntentId: intent.settlementIntentId,
-          amountMinor: intent.amountMinor,
-          currencyCode: intent.currencyCode,
-          payerParticipantId: intent.payerParticipantId,
-          payeeParticipantId: intent.payeeParticipantId
-        }
-      });
+      const data = {
+        settlementIntentId: intent.settlementIntentId,
+        amountMinor: intent.amountMinor,
+        currencyCode: intent.currencyCode,
+        payerParticipantId: intent.payerParticipantId,
+        payeeParticipantId: intent.payeeParticipantId
+      };
+      if (payerUserId) {
+        await this.notifications.create({
+          userId: payerUserId,
+          groupId: intent.groupId,
+          type: 'settlement_confirmed',
+          title: 'Payment confirmed',
+          body: `${groupName} · Your payment of ${amountLabel} was confirmed.`,
+          data
+        });
+      }
+      if (payeeUserId) {
+        await this.notifications.create({
+          userId: payeeUserId,
+          groupId: intent.groupId,
+          type: 'settlement_received_confirmed',
+          title: 'Settlement complete',
+          body: `${groupName} · You confirmed receiving ${amountLabel}. Balances are updated.`,
+          data
+        });
+      }
     } catch (error) {
       console.error('[settlements] confirmed notification failed', error);
+    }
+  }
+
+  private async notifySettlementRejected(intent: SettlementIntentRow): Promise<void> {
+    if (!this.notifications || !this.groups) {
+      return;
+    }
+    try {
+      const [payerUserId, payeeUserId, groupName] = await Promise.all([
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payerParticipantId),
+        this.groups.resolveUserIdForParticipant(intent.groupId, intent.payeeParticipantId),
+        this.groups.getGroupName(intent.groupId)
+      ]);
+      const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
+      const data = {
+        settlementIntentId: intent.settlementIntentId,
+        amountMinor: intent.amountMinor,
+        currencyCode: intent.currencyCode,
+        payerParticipantId: intent.payerParticipantId,
+        payeeParticipantId: intent.payeeParticipantId
+      };
+      if (payerUserId) {
+        await this.notifications.create({
+          userId: payerUserId,
+          groupId: intent.groupId,
+          type: 'settlement_rejected',
+          title: 'Payment not confirmed',
+          body: `${groupName} · Your ${amountLabel} payment was rejected by the receiver.`,
+          tone: 'action_required',
+          data
+        });
+      }
+      if (payeeUserId) {
+        await this.notifications.create({
+          userId: payeeUserId,
+          groupId: intent.groupId,
+          type: 'settlement_rejected',
+          title: 'Payment rejected',
+          body: `${groupName} · You rejected a ${amountLabel} payment claim.`,
+          data
+        });
+      }
+    } catch (error) {
+      console.error('[settlements] rejected notification failed', error);
     }
   }
 }

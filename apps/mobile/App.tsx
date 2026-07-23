@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BackHandler, Linking, StyleSheet, View } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { House, Scales, UsersThree, CloudArrowUp } from "phosphor-react-native";
+import { House, Scales, UsersThree, UserCircle } from "phosphor-react-native";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from "@expo-google-fonts/jetbrains-mono";
 import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
@@ -21,6 +21,8 @@ import { configurePushNotifications } from "./src/notifications/configurePush";
 import { AuditScreen } from "./src/screens/AuditScreen";
 import { BalancesScreen } from "./src/screens/BalancesScreen";
 import { ExpenseEntryScreen } from "./src/screens/ExpenseEntryScreen";
+import { FriendDetailScreen } from "./src/screens/FriendDetailScreen";
+import { FriendsScreen } from "./src/screens/FriendsScreen";
 import { GroupCreateScreen } from "./src/screens/GroupCreateScreen";
 import { GroupDetailScreen } from "./src/screens/GroupDetailScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
@@ -59,7 +61,8 @@ const SETTINGS_ROUTES: AppRoute[] = [
   "notificationSettings",
   "appearanceSettings",
   "contactsSettings",
-  "groupDetail"
+  "groupDetail",
+  "friendDetail"
 ];
 
 export default function App() {
@@ -95,6 +98,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const [route, setRoute] = useState<AppRoute>("home");
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [selectedExpenseId, setSelectedExpenseId] = useState<string>();
+  const [selectedFriendUserId, setSelectedFriendUserId] = useState<string>();
   const inviteBusyRef = useRef(false);
   const claimedInviteTokensRef = useRef(new Set<string>());
   const handledInitialInviteUrlRef = useRef(false);
@@ -186,6 +190,10 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
           setRoute("groups");
           return true;
         }
+        if (route === "friendDetail") {
+          setRoute("friends");
+          return true;
+        }
         if (
           route === "securitySettings" ||
           route === "notificationSettings" ||
@@ -208,8 +216,10 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       route,
       selectedGroupId,
       selectedExpenseId,
+      selectedFriendUserId,
       setSelectedGroupId,
       setSelectedExpenseId,
+      setSelectedFriendUserId,
       go: setRoute,
       signOut: () => {
         apiClient
@@ -223,11 +233,12 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
             setRoute("home");
             setSelectedGroupId(undefined);
             setSelectedExpenseId(undefined);
+            setSelectedFriendUserId(undefined);
             queryClient.clear();
           });
       }
     }),
-    [route, selectedExpenseId, selectedGroupId]
+    [route, selectedExpenseId, selectedFriendUserId, selectedGroupId]
   );
 
   if (!fontsLoaded || !booted) {
@@ -244,6 +255,8 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       {route === "home" ? <HomeScreen navigation={navigation} /> : null}
       {route === "groups" ? <GroupCreateScreen navigation={navigation} /> : null}
       {route === "groupDetail" ? <GroupDetailScreen navigation={navigation} /> : null}
+      {route === "friends" ? <FriendsScreen navigation={navigation} /> : null}
+      {route === "friendDetail" ? <FriendDetailScreen navigation={navigation} /> : null}
       {route === "expense" ? <ExpenseEntryScreen navigation={navigation} /> : null}
       {route === "balances" ? <BalancesScreen navigation={navigation} /> : null}
       {route === "settlement" ? <SettlementScreen navigation={navigation} /> : null}
@@ -262,17 +275,19 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         value={
           route === "groupDetail"
             ? "groups"
-            : SETTINGS_ROUTES.includes(route)
-              ? "home"
-              : route
+            : route === "friendDetail"
+              ? "friends"
+              : SETTINGS_ROUTES.includes(route)
+                ? "home"
+                : route
         }
         onChange={setRoute}
         onFab={() => setRoute("expense")}
         tabs={[
           { label: "Home", value: "home", icon: House },
           { label: "Groups", value: "groups", icon: UsersThree },
-          { label: "Settle", value: "settlement", icon: Scales },
-          { label: "Sync", value: "offline", icon: CloudArrowUp }
+          { label: "Friends", value: "friends", icon: UserCircle },
+          { label: "Settle", value: "settlement", icon: Scales }
         ]}
       />
     </View>

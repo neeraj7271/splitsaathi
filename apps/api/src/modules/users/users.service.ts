@@ -63,6 +63,14 @@ export class UsersService {
     return maskPhoneE164(identity.identifier);
   }
 
+  async getEmailForUser(userId: string): Promise<string | null> {
+    const emailIdentity = await this.identities.findOne({ where: { userId, provider: 'email' } });
+    if (emailIdentity?.identifier) {
+      return emailIdentity.identifier;
+    }
+    return null;
+  }
+
   async updateUser(user: UserEntity, input: UpdateUserInput): Promise<UserEntity> {
     if (input.displayName !== undefined) {
       user.displayName = input.displayName;

@@ -5,19 +5,24 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
+  Optional,
   UnauthorizedException
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ContactAliasEntity } from '@splitsaathi/db';
 import { OAuth2Client } from 'google-auth-library';
 import { randomBytes, randomInt } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { ApiConfigService } from '../../config/api-config.service';
+import { hashPhoneE164, phoneHashPepper } from '../../common/utils/phone-hash';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { UserEntity } from '../users/entities/user.entity';
 import { ConsentsService } from '../consents/consents.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
@@ -52,6 +57,8 @@ import { EmailProviderPort } from './ports/email-provider.port';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(AuthIdentityEntity)
     private readonly identities: Repository<AuthIdentityEntity>,
@@ -63,6 +70,8 @@ export class AuthService {
     private readonly emailCredentials: Repository<EmailCredentialEntity>,
     @InjectRepository(EmailOtpChallengeEntity)
     private readonly emailChallenges: Repository<EmailOtpChallengeEntity>,
+    @InjectRepository(ContactAliasEntity)
+    private readonly contactAliases: Repository<ContactAliasEntity>,
     @Inject(OTP_PROVIDER)
     private readonly otpProvider: OtpProviderPort,
     @Inject(EMAIL_PROVIDER)
@@ -70,7 +79,8 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly consentsService: ConsentsService,
     private readonly jwtService: JwtService,
-    private readonly config: ApiConfigService
+    private readonly config: ApiConfigService,
+    @Optional() private readonly notifications?: NotificationsService
   ) {}
 
   async startOtp(dto: StartOtpDto): Promise<StartOtpResponseDto> {
@@ -184,6 +194,10 @@ export class AuthService {
       );
     }
 
+    await this.notifyContactsOfPhoneJoin(userId, normalized).catch((error) => {
+      this.logger.warn(`contact join notify failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+
     const user = await this.usersService.findByIdOrThrow(userId);
     if (displayName && user.displayName !== displayName) {
       return this.issueAuthResponse(
@@ -207,6 +221,7 @@ export class AuthService {
       throw new UnauthorizedException('Google did not return a verified email address.');
     }
 
+    const email = payload.email.trim().toLowerCase();
     let identity = await this.identities.findOne({ where: { provider: 'google', identifier: payload.sub } });
     let user: UserEntity;
     let returningAccount = false;
@@ -214,9 +229,12 @@ export class AuthService {
       user = await this.usersService.findByIdOrThrow(identity.userId);
       returningAccount = true;
     } else {
-      const email = payload.email.trim().toLowerCase();
+      const emailIdentity = await this.identities.findOne({ where: { provider: 'email', identifier: email } });
       const existingCredential = await this.emailCredentials.findOne({ where: { email } });
-      if (existingCredential) {
+      if (emailIdentity) {
+        user = await this.usersService.findByIdOrThrow(emailIdentity.userId);
+        returningAccount = true;
+      } else if (existingCredential) {
         user = await this.usersService.findByIdOrThrow(existingCredential.userId);
         returningAccount = true;
       } else {
@@ -235,12 +253,29 @@ export class AuthService {
       );
     }
 
+    await this.ensureEmailIdentity(user.id, email);
+
     if (payload.name?.trim() && user.displayName.startsWith('User ')) {
       user = await this.usersService.updateDisplayName(user, payload.name.trim());
     }
-    // Returning Google accounts skip name/consent after reinstall; brand-new accounts still onboard.
+
+    // Returning Google accounts skip name/consent; phone is still required if missing.
     const needsOnboarding = returningAccount ? false : await this.needsOnboarding(user.id);
-    return this.issueAuthResponse(user, 'Google', needsOnboarding);
+    const googlePhone =
+      typeof (payload as { phone_number?: unknown }).phone_number === "string"
+        ? ((payload as { phone_number?: string }).phone_number as string)
+        : null;
+    const suggestedPhone = googlePhone
+      ? (() => {
+          try {
+            return normalizePhoneE164(googlePhone);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+    const response = await this.issueAuthResponse(user, 'Google', needsOnboarding);
+    return { ...response, suggestedPhoneE164: suggestedPhone };
   }
 
   async startEmailSignup(dto: StartEmailSignupDto): Promise<StartEmailOtpResponseDto> {
@@ -277,6 +312,7 @@ export class AuthService {
         verifiedAt: new Date()
       })
     );
+    await this.ensureEmailIdentity(user.id, challenge.email);
     return this.issueAuthResponse(user, undefined, await this.needsOnboarding(user.id));
   }
 
@@ -286,6 +322,7 @@ export class AuthService {
       throw new UnauthorizedException('Email or password is incorrect.');
     }
     const user = await this.usersService.findByIdOrThrow(credential.userId);
+    await this.ensureEmailIdentity(user.id, credential.email);
     return this.issueAuthResponse(user, undefined, false);
   }
 
@@ -521,7 +558,8 @@ export class AuthService {
 
     return {
       user: UserResponseDto.fromEntity(user, {
-        phoneMasked: await this.usersService.getPhoneMaskedForUser(user.id)
+        phoneMasked: await this.usersService.getPhoneMaskedForUser(user.id),
+        email: await this.usersService.getEmailForUser(user.id)
       }),
       tokens: {
         accessToken,
@@ -529,8 +567,77 @@ export class AuthService {
         expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS
       },
       needsOnboarding,
-      needsPhoneLink: !phoneE164
+      needsPhoneLink: !phoneE164,
+      suggestedPhoneE164: null
     };
+  }
+
+  private async ensureEmailIdentity(userId: string, email: string): Promise<void> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      return;
+    }
+    const existingForEmail = await this.identities.findOne({
+      where: { provider: 'email', identifier: normalized }
+    });
+    if (existingForEmail && existingForEmail.userId !== userId) {
+      throw new ConflictException('This email is already linked to another account.');
+    }
+    const existingForUser = await this.identities.findOne({ where: { userId, provider: 'email' } });
+    if (existingForUser) {
+      if (existingForUser.identifier !== normalized) {
+        existingForUser.identifier = normalized;
+        existingForUser.verifiedAt = new Date();
+        await this.identities.save(existingForUser);
+      }
+      return;
+    }
+    if (existingForEmail) {
+      existingForEmail.verifiedAt = new Date();
+      await this.identities.save(existingForEmail);
+      return;
+    }
+    await this.identities.save(
+      this.identities.create({
+        userId,
+        provider: 'email',
+        identifier: normalized,
+        verifiedAt: new Date()
+      })
+    );
+  }
+
+  private async notifyContactsOfPhoneJoin(joinedUserId: string, phoneE164: string): Promise<void> {
+    if (!this.notifications) {
+      return;
+    }
+    const pepper = phoneHashPepper(this.config.env);
+    const phoneHash = hashPhoneE164(phoneE164, pepper);
+    const aliases = await this.contactAliases.find({ where: { phoneHash } });
+    if (!aliases.length) {
+      return;
+    }
+    const joined = await this.usersService.findByIdOrThrow(joinedUserId);
+    const notified = new Set<string>();
+    await Promise.all(
+      aliases.map(async (alias) => {
+        if (alias.ownerUserId === joinedUserId || notified.has(alias.ownerUserId)) {
+          return;
+        }
+        notified.add(alias.ownerUserId);
+        await this.notifications!.create({
+          userId: alias.ownerUserId,
+          type: 'contact_joined',
+          title: 'Contact joined SplitSaathi',
+          body: `${joined.displayName} is now on SplitSaathi — you can add them to a group.`,
+          tone: 'neutral',
+          data: {
+            matchedUserId: joinedUserId,
+            contactAliasId: alias.id
+          }
+        });
+      })
+    );
   }
 
   private async phoneForUser(userId: string): Promise<string> {

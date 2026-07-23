@@ -38,7 +38,9 @@ function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string)
     case 'expense_voided':
       return prefs.emailExpenseEdited !== false;
     case 'settlement_confirmation_requested':
+    case 'settlement_awaiting_confirmation':
     case 'settlement_confirmed':
+    case 'settlement_received_confirmed':
     case 'settlement_rejected':
     case 'settlement_disputed':
       return prefs.emailPaymentReceived !== false;
@@ -51,6 +53,10 @@ function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string)
     case 'membership_exit_locked':
     case 'membership_exit_unlocked':
       return prefs.emailGroupAdded !== false;
+    case 'contact_joined':
+      return prefs.emailFriendAdded !== false;
+    case 'friend_payment_reminder':
+      return prefs.emailExpenseDue !== false;
     case 'reminder_settlement_day':
     case 'reminder_recurring_expense':
     case 'reminder_stale_proof':
