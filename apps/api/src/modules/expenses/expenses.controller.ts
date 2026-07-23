@@ -258,7 +258,7 @@ export class ExpensesController {
               type: input.type,
               title: input.title,
               body: input.body,
-              tone: input.type === 'expense_voided' ? 'warning' : 'neutral',
+              tone: input.type === 'expense_voided' ? 'action_required' : 'neutral',
               data: {
                 groupId: input.groupId,
                 expenseId: input.expenseId
