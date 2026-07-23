@@ -222,7 +222,8 @@ export class AuthService {
     }
 
     const email = payload.email.trim().toLowerCase();
-    let identity = await this.identities.findOne({ where: { provider: 'google', identifier: payload.sub } });
+    const googleSubject = payload.sub;
+    let identity = await this.identities.findOne({ where: { provider: 'google', identifier: googleSubject } });
     let user: UserEntity;
     let returningAccount = false;
     if (identity) {
@@ -243,14 +244,11 @@ export class AuthService {
           defaultCurrencyCode: 'INR'
         });
       }
-      identity = await this.identities.save(
-        this.identities.create({
-          userId: user.id,
-          provider: 'google',
-          identifier: payload.sub,
-          verifiedAt: new Date()
-        })
-      );
+      identity = await this.linkIdentity({
+        userId: user.id,
+        provider: 'google',
+        identifier: googleSubject
+      });
     }
 
     await this.ensureEmailIdentity(user.id, email);
@@ -262,7 +260,7 @@ export class AuthService {
     // Returning Google accounts skip name/consent; phone is still required if missing.
     const needsOnboarding = returningAccount ? false : await this.needsOnboarding(user.id);
     const googlePhone =
-      typeof (payload as { phone_number?: unknown }).phone_number === "string"
+      typeof (payload as { phone_number?: unknown }).phone_number === 'string'
         ? ((payload as { phone_number?: string }).phone_number as string)
         : null;
     const suggestedPhone = googlePhone
@@ -597,14 +595,59 @@ export class AuthService {
       await this.identities.save(existingForEmail);
       return;
     }
-    await this.identities.save(
-      this.identities.create({
-        userId,
-        provider: 'email',
-        identifier: normalized,
-        verifiedAt: new Date()
-      })
-    );
+    await this.linkIdentity({
+      userId,
+      provider: 'email',
+      identifier: normalized
+    });
+  }
+
+  private async linkIdentity(input: {
+    userId: string;
+    provider: AuthIdentityEntity['provider'];
+    identifier: string;
+  }): Promise<AuthIdentityEntity> {
+    const existing = await this.identities.findOne({
+      where: { provider: input.provider, identifier: input.identifier }
+    });
+    if (existing) {
+      if (existing.userId !== input.userId) {
+        throw new ConflictException(`This ${input.provider} identity is already linked to another account.`);
+      }
+      existing.verifiedAt = new Date();
+      return this.identities.save(existing);
+    }
+
+    try {
+      return await this.identities.save(
+        this.identities.create({
+          userId: input.userId,
+          provider: input.provider,
+          identifier: input.identifier,
+          verifiedAt: new Date()
+        })
+      );
+    } catch (error) {
+      if (!this.isUniqueViolation(error)) {
+        throw error;
+      }
+      const raced = await this.identities.findOne({
+        where: { provider: input.provider, identifier: input.identifier }
+      });
+      if (raced && raced.userId === input.userId) {
+        return raced;
+      }
+      throw new ConflictException(`This ${input.provider} identity is already linked to another account.`);
+    }
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const code = (error as { code?: string; driverError?: { code?: string } }).code
+      ?? (error as { driverError?: { code?: string } }).driverError?.code;
+    return code === '23505';
   }
 
   private async notifyContactsOfPhoneJoin(joinedUserId: string, phoneE164: string): Promise<void> {

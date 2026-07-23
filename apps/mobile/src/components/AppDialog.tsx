@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { CheckCircle, WarningCircle, Info, XCircle } from "phosphor-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colorWithAlpha, useTheme } from "../theme";
 import { Button } from "./Button";
@@ -87,9 +88,12 @@ export function useOptionalAppDialog() {
 
 function AppDialogModal({ dialog, onClose }: { dialog: AppDialogOptions | null; onClose: () => void }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const visible = Boolean(dialog);
   const tone = dialog?.tone ?? "info";
   const accent = toneAccent(tone, theme.colors);
+  const maxCardHeight = Math.min(windowHeight * 0.72, windowHeight - insets.top - insets.bottom - 48);
 
   function runAction(action?: AppDialogAction) {
     onClose();
@@ -99,8 +103,16 @@ function AppDialogModal({ dialog, onClose }: { dialog: AppDialogOptions | null; 
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.root}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <View
+        style={[
+          styles.root,
+          {
+            paddingTop: Math.max(insets.top, 24),
+            paddingBottom: Math.max(insets.bottom, 24)
+          }
+        ]}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss dialog"
@@ -113,37 +125,45 @@ function AppDialogModal({ dialog, onClose }: { dialog: AppDialogOptions | null; 
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.hairline,
-              borderRadius: theme.radius.lg
+              borderRadius: theme.radius.lg,
+              maxHeight: maxCardHeight
             }
           ]}
         >
-          <View style={[styles.iconWrap, { backgroundColor: colorWithAlpha(accent, 0.14) }]}>
-            {toneIcon(tone, accent)}
-          </View>
-          <ThemedText variant="title" align="center">
-            {dialog?.title}
-          </ThemedText>
-          {dialog?.message ? (
-            <ThemedText variant="body" tone="muted" align="center" style={styles.message}>
-              {dialog.message}
+          <ScrollView
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.cardContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={[styles.iconWrap, { backgroundColor: colorWithAlpha(accent, 0.14) }]}>
+              {toneIcon(tone, accent)}
+            </View>
+            <ThemedText variant="title" align="center">
+              {dialog?.title}
             </ThemedText>
-          ) : null}
-          <View style={styles.actions}>
-            {dialog?.secondaryAction ? (
+            {dialog?.message ? (
+              <ThemedText variant="body" tone="muted" align="center" style={styles.message}>
+                {dialog.message}
+              </ThemedText>
+            ) : null}
+            <View style={styles.actions}>
+              {dialog?.secondaryAction ? (
+                <Button
+                  label={dialog.secondaryAction.label}
+                  variant={dialog.secondaryAction.variant ?? "secondary"}
+                  onPress={() => runAction(dialog.secondaryAction)}
+                  style={styles.actionButton}
+                />
+              ) : null}
               <Button
-                label={dialog.secondaryAction.label}
-                variant={dialog.secondaryAction.variant ?? "secondary"}
-                onPress={() => runAction(dialog.secondaryAction)}
+                label={dialog?.primaryAction?.label ?? "OK"}
+                variant={dialog?.primaryAction?.variant ?? "primary"}
+                onPress={() => runAction(dialog?.primaryAction)}
                 style={styles.actionButton}
               />
-            ) : null}
-            <Button
-              label={dialog?.primaryAction?.label ?? "OK"}
-              variant={dialog?.primaryAction?.variant ?? "primary"}
-              onPress={() => runAction(dialog?.primaryAction)}
-              style={styles.actionButton}
-            />
-          </View>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -162,6 +182,12 @@ const styles = StyleSheet.create({
   card: {
     zIndex: 1,
     borderWidth: 1,
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    overflow: "hidden"
+  },
+  cardContent: {
     paddingHorizontal: 22,
     paddingTop: 22,
     paddingBottom: 18,

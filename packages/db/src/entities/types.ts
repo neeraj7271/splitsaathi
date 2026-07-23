@@ -1,7 +1,7 @@
 export type JsonObject = Record<string, unknown>;
 
 export type UserStatus = 'active' | 'deactivated' | 'deleted_pending';
-export type AuthProvider = 'phone_otp' | 'google' | 'apple';
+export type AuthProvider = 'phone' | 'phone_otp' | 'google' | 'apple' | 'email';
 export type OtpPurpose = 'login' | 'claim_invite';
 export type DevicePlatform = 'ios' | 'android';
 export type ConsentPurpose =

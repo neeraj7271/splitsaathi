@@ -56,7 +56,7 @@ export class InitialLogicalModel1783641600000 implements MigrationInterface {
       CREATE TABLE auth_identities (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES users(id),
-        provider TEXT NOT NULL CHECK (provider IN ('phone', 'phone_otp', 'google', 'apple')),
+        provider TEXT NOT NULL CHECK (provider IN ('phone', 'phone_otp', 'google', 'apple', 'email')),
         provider_subject TEXT,
         identifier TEXT,
         verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),

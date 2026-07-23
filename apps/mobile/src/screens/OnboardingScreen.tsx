@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Platform, Pressable, StyleSheet, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as WebBrowser from "expo-web-browser";
 import { Bell, Check, EnvelopeSimple, Key, LinkSimple, Phone, ShieldCheck, UsersThree } from "phosphor-react-native";
 import { useMutation } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiClient } from "../api/client";
 import { GoogleSignInButton, isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
@@ -87,6 +96,7 @@ function formatPhoneE164(phone: string) {
 
 export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<OnboardingStep>("welcome");
   const [returningUser, setReturningUser] = useState(false);
   const [phone, setPhone] = useState("+91");
@@ -331,7 +341,27 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       />
-      <View style={[styles.panel, { paddingHorizontal: theme.spacing.screen, gap: theme.spacing.sectionGap }]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+      >
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.panel,
+            step === "welcome" ? styles.panelWelcome : styles.panelForm,
+            {
+              paddingHorizontal: theme.spacing.screen,
+              paddingTop: Math.max(insets.top, 16) + (step === "welcome" ? 12 : 8),
+              paddingBottom: Math.max(insets.bottom, 16) + 24,
+              gap: theme.spacing.sectionGap
+            }
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={step !== "welcome"}
+        >
         {step === "welcome" ? (
           <>
             <View style={styles.heroBrand}>
@@ -628,10 +658,18 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
               loading={loginWithPhone.isPending}
               disabled={!inviteLink.trim() || phone.length < 8}
             />
-            <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
+            <Button
+              label="Back"
+              variant="ghost"
+              onPress={() => {
+                setScanningInvite(false);
+                setStep("welcome");
+              }}
+            />
           </AuthPanel>
         ) : null}
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -696,6 +734,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1
   },
+  flex: {
+    flex: 1
+  },
   gradient: {
     position: "absolute",
     top: 0,
@@ -705,9 +746,13 @@ const styles = StyleSheet.create({
     opacity: 0.92
   },
   panel: {
-    flex: 1,
-    justifyContent: "flex-end",
-    paddingBottom: 48
+    flexGrow: 1
+  },
+  panelWelcome: {
+    justifyContent: "flex-end"
+  },
+  panelForm: {
+    justifyContent: "flex-start"
   },
   heroCopy: {
     gap: 12,
@@ -767,8 +812,11 @@ const styles = StyleSheet.create({
     gap: 12
   },
   authPanel: {
-    gap: 18,
-    borderWidth: 1
+    gap: 14,
+    borderWidth: 1,
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center"
   },
   authBrand: {
     flexDirection: "row",
@@ -821,9 +869,12 @@ const styles = StyleSheet.create({
   cameraBox: {
     overflow: "hidden",
     borderWidth: 1,
-    height: 180
+    height: 160,
+    maxHeight: 160,
+    width: "100%"
   },
   camera: {
-    flex: 1
+    width: "100%",
+    height: 160
   }
 });
