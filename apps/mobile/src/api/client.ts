@@ -4,6 +4,7 @@ import {
   BalanceRow,
   ExportJob,
   ExpenseRow,
+  ExpenseDetail,
   ExpenseExplanation,
   GroupDetail,
   GroupMode,
@@ -134,6 +135,55 @@ function mapExpense(row: Record<string, any>): ExpenseRow {
   };
 }
 
+function mapExpenseDetail(row: Record<string, any>): ExpenseDetail {
+  return {
+    ...mapExpense(row),
+    payers: Array.isArray(row.payers)
+      ? row.payers.map((payer: Record<string, any>) => ({
+          participantId: payer.participantId,
+          amountMinor: payer.amountMinor
+        }))
+      : [],
+    shares: Array.isArray(row.shares)
+      ? row.shares.map((share: Record<string, any>) => ({
+          participantId: share.participantId,
+          amountMinor: share.amountMinor,
+          shareType: share.shareType,
+          roundingDeltaMinor: share.roundingDeltaMinor
+        }))
+      : [],
+    lineItems: Array.isArray(row.lineItems)
+      ? row.lineItems.map((item: Record<string, any>) => ({
+          label: item.label,
+          amountMinor: item.amountMinor,
+          participantIds: Array.isArray(item.participantIds) ? item.participantIds : []
+        }))
+      : [],
+    billAdjustments: Array.isArray(row.billAdjustments)
+      ? row.billAdjustments.map((adjustment: Record<string, any>) => ({
+          adjustmentType: adjustment.adjustmentType,
+          label: adjustment.label,
+          amountMinor: adjustment.amountMinor,
+          allocationBasis: adjustment.allocationBasis
+        }))
+      : [],
+    voidReason: row.voidReason
+  };
+}
+
+function formatExpenseHistorySummary(eventType?: string) {
+  switch (eventType) {
+    case "ExpenseCreated":
+      return "Expense created";
+    case "ExpenseAdjusted":
+      return "Expense updated";
+    case "ExpenseVoided":
+      return "Expense deleted";
+    default:
+      return eventType || "Update";
+  }
+}
+
 function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
   const proofs = Array.isArray(row.proofs)
     ? row.proofs.map((proof: Record<string, any>) => ({
@@ -145,6 +195,18 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     : undefined;
   const proofAttachmentId =
     proofs?.find((proof) => proof.attachmentId)?.attachmentId ?? row.attachmentId ?? row.proofAttachmentId;
+  const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+  const rejectionEntry = [...timeline]
+    .reverse()
+    .find(
+      (entry: Record<string, any>) =>
+        entry?.type === "SettlementRejected" || entry?.state === "rejected" || entry?.type === "SettlementDisputed"
+    );
+  const rejectionReason =
+    (typeof rejectionEntry?.note === "string" && rejectionEntry.note.trim()) ||
+    (typeof row.rejectionReason === "string" && row.rejectionReason.trim()) ||
+    (row.state === "rejected" && typeof row.reason === "string" && row.reason.trim()) ||
+    undefined;
   return {
     id: row.id ?? row.settlementIntentId,
     groupId: row.groupId,
@@ -161,7 +223,8 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     createdAt: row.createdAt,
     proofs,
     proofAttachmentId,
-    proofUrl: proofAttachmentId ? `/v1/attachments/${proofAttachmentId}/content` : undefined
+    proofUrl: proofAttachmentId ? `/v1/attachments/${proofAttachmentId}/content` : undefined,
+    rejectionReason: rejectionReason || undefined
   };
 }
 
@@ -487,7 +550,7 @@ export class SplitSaathiApiClient {
 
   async updateGroup(
     groupId: string,
-    payload: { name?: string; imageAttachmentId?: string | null },
+    payload: { name?: string; imageAttachmentId?: string | null; membersCanEditExpenses?: boolean },
     idempotencyKey = createIdempotencyKey("group.update")
   ) {
     return this.request<GroupDetail>(`/v1/groups/${groupId}`, {
@@ -597,6 +660,11 @@ export class SplitSaathiApiClient {
     return mapExpense(response.expense);
   }
 
+  async getExpense(expenseId: string) {
+    const row = await this.request<Record<string, any>>(`/v1/expenses/${expenseId}`);
+    return mapExpenseDetail(row);
+  }
+
   async reviseExpense(expenseId: string, payload: CreateExpenseRequest & { baseVersion: number; reason: string }) {
     const response = await this.request<ExpenseCommandResponse>(`/v1/expenses/${expenseId}/revisions`, {
       method: "POST",
@@ -622,7 +690,7 @@ export class SplitSaathiApiClient {
       version: row.version,
       actorId: row.actorId,
       actorName: row.actorName ?? row.actorDisplayName,
-      summary: row.eventType ?? row.summary ?? "Update",
+      summary: formatExpenseHistorySummary(row.eventType ?? row.summary),
       reason: row.reason,
       changes: Array.isArray(row.changes)
         ? row.changes.map((change: Record<string, any>) => ({ field: String(change.field), detail: String(change.detail) }))

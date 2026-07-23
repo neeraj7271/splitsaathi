@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CaretDown, CaretUp, CheckCircle, QrCode, ShieldCheck, X } from "phosphor-react-native";
+import { CaretDown, CaretUp, CheckCircle, ImageSquare, QrCode, ShieldCheck, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
@@ -25,6 +25,7 @@ import { SettlementIntent, SettlementState, SettlementSuggestion } from "../type
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
+import { activeGroupParticipants } from "../utils/groupPeople";
 import { openAuthenticatedAttachment } from "../utils/authenticatedAttachment";
 import {
   detectInstalledUpiApps,
@@ -127,6 +128,21 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     () => (suggestionsQuery.data && lookups ? enrichSettlementSuggestions(suggestionsQuery.data, lookups) : suggestionsQuery.data ?? []),
     [lookups, suggestionsQuery.data]
   );
+  const payableSuggestions = useMemo(
+    () => (myParticipantId ? suggestions.filter((row) => row.payerParticipantId === myParticipantId) : []),
+    [myParticipantId, suggestions]
+  );
+  const receivableSuggestions = useMemo(
+    () => (myParticipantId ? suggestions.filter((row) => row.payeeParticipantId === myParticipantId) : []),
+    [myParticipantId, suggestions]
+  );
+
+  function resolvePayeeDefaultVpa(payeeId: string | undefined): string {
+    if (!payeeId || !groupQuery.data?.participants) {
+      return "";
+    }
+    return groupQuery.data.participants.find((participant) => participant.id === payeeId)?.upiVpa?.trim() ?? "";
+  }
 
   // When the group changes, drop stale suggestion/intent/custom draft so amounts refresh.
   useEffect(() => {
@@ -142,6 +158,13 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     setHandoffError(undefined);
     setShowOtherUpiApps(false);
   }, [selectedGroupId]);
+
+  // Current user is always the payer for custom settlements they create.
+  useEffect(() => {
+    if (myParticipantId) {
+      setPayerParticipantId(myParticipantId);
+    }
+  }, [myParticipantId, selectedGroupId]);
 
   // Resume open settlements for the current member (payer handoff or payee confirmation).
   useEffect(() => {
@@ -174,17 +197,30 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   }, [historyQuery.data, intent, myParticipantId]);
 
   useEffect(() => {
-    if (!suggestions.length) {
+    if (!payableSuggestions.length) {
       setSelectedSuggestion(undefined);
       return;
     }
     setSelectedSuggestion((current) => {
-      if (current && suggestions.some((row) => row.id === current.id)) {
+      if (current && payableSuggestions.some((row) => row.id === current.id)) {
         return current;
       }
-      return suggestions[0];
+      return payableSuggestions[0];
     });
-  }, [suggestions]);
+  }, [payableSuggestions]);
+
+  // Prefill payee UPI from the receiver's saved default receive ID.
+  useEffect(() => {
+    if (intent) {
+      return;
+    }
+    const payeeId =
+      mode === "suggested" ? selectedSuggestion?.payeeParticipantId : payeeParticipantId;
+    const defaultVpa = resolvePayeeDefaultVpa(payeeId);
+    if (defaultVpa) {
+      setPayeeVpa(defaultVpa);
+    }
+  }, [intent, mode, selectedSuggestion?.payeeParticipantId, payeeParticipantId, groupQuery.data?.participants]);
 
   const isPayer = Boolean(intent && myParticipantId && intent.payerParticipantId === myParticipantId);
   const isPayee = Boolean(intent && myParticipantId && intent.payeeParticipantId === myParticipantId);
@@ -212,31 +248,41 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       if (!selectedGroupId) {
         throw new Error("Select a group first");
       }
+      if (!myParticipantId) {
+        throw new Error("Your membership in this group could not be resolved.");
+      }
       const payeeName =
         mode === "custom" && lookups ? resolveParticipantDisplayName(payeeParticipantId, lookups) : undefined;
       const payload =
         mode === "suggested" && selectedSuggestion
           ? {
               groupId: selectedGroupId,
-              payerParticipantId: selectedSuggestion.payerParticipantId,
+              payerParticipantId: myParticipantId,
               payeeParticipantId: selectedSuggestion.payeeParticipantId,
               amountMinor: selectedSuggestion.amountMinor,
               currencyCode: selectedSuggestion.currencyCode,
               suggestionId: selectedSuggestion.id,
               paymentMethod,
-              payeeVpa: paymentMethod === "upi" ? payeeVpa : undefined,
+              payeeVpa: paymentMethod === "upi" ? payeeVpa.trim() || undefined : undefined,
               payeeName: selectedSuggestion.payeeName
             }
           : {
               groupId: selectedGroupId,
-              payerParticipantId,
+              payerParticipantId: myParticipantId,
               payeeParticipantId,
               amountMinor: parseAmountToMinor(customAmount),
               currencyCode: "INR",
               paymentMethod,
-              payeeVpa: paymentMethod === "upi" ? payeeVpa : undefined,
+              payeeVpa: paymentMethod === "upi" ? payeeVpa.trim() || undefined : undefined,
               payeeName
             };
+
+      if (payload.payerParticipantId !== myParticipantId) {
+        throw new Error("You can only pay settlements that you owe.");
+      }
+      if (mode === "suggested" && selectedSuggestion && selectedSuggestion.payerParticipantId !== myParticipantId) {
+        throw new Error("This settlement is owed by someone else.");
+      }
 
       return apiClient.createSettlementIntent(payload);
     },
@@ -352,7 +398,20 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     </Pressable>
   );
 
-  const canCreateCustom = payerParticipantId && payeeParticipantId && payerParticipantId !== payeeParticipantId && parseAmountToMinor(customAmount) > 0;
+  const canCreateCustom =
+    Boolean(myParticipantId) &&
+    Boolean(payeeParticipantId) &&
+    payeeParticipantId !== myParticipantId &&
+    parseAmountToMinor(customAmount) > 0;
+  const selectedPayeeHasDefaultVpa = Boolean(
+    resolvePayeeDefaultVpa(mode === "suggested" ? selectedSuggestion?.payeeParticipantId : payeeParticipantId)
+  );
+  const canCreateSuggested =
+    Boolean(selectedSuggestion) &&
+    selectedSuggestion?.payerParticipantId === myParticipantId &&
+    (paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa);
+  const canCreateUpi =
+    paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa;
   const activeAmount = intent?.amountMinor ?? selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
   const refreshing =
     groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching || profileQuery.isRefetching;
@@ -429,14 +488,20 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
           {mode === "suggested" ? (
             <View style={styles.section}>
-              <SectionHeader title="Suggestions" action={<Button label="Explain" variant="ghost" onPress={() => navigation.go("balances")} />} />
+              <SectionHeader title="You need to pay" />
               {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
-              {suggestionsQuery.data?.length ? (
+              {payableSuggestions.length ? (
                 <DataSurface>
-                  {suggestions.map((suggestion) => (
+                  {payableSuggestions.map((suggestion) => (
                     <Pressable
                       key={suggestion.id}
-                      onPress={() => setSelectedSuggestion(suggestion)}
+                      onPress={() => {
+                        setSelectedSuggestion(suggestion);
+                        const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
+                        if (defaultVpa) {
+                          setPayeeVpa(defaultVpa);
+                        }
+                      }}
                       style={[
                         styles.suggestion,
                         {
@@ -446,9 +511,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                       ]}
                     >
                       <View style={styles.titleBlock}>
-                        <ThemedText variant="bodyMedium">
-                          {suggestion.payerName} pays {suggestion.payeeName}
-                        </ThemedText>
+                        <ThemedText variant="bodyMedium">Pay {suggestion.payeeName}</ThemedText>
                         <ThemedText variant="bodySm" tone="muted">
                           {suggestion.explanation}
                         </ThemedText>
@@ -458,15 +521,53 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   ))}
                 </DataSurface>
               ) : (
-                <EmptyState title="No suggestion" body="The backend suggestion projection has no settlement route yet." />
+                <EmptyState title="Nothing to pay" body="You don’t currently owe anyone in this group." />
               )}
-              {paymentMethod === "upi" ? <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" /> : null}
-              <Button
-                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI intent"}
-                onPress={() => createIntent.mutate()}
-                loading={createIntent.isPending}
-                disabled={!selectedSuggestion || (paymentMethod === "upi" && !payeeVpa.trim())}
-              />
+
+              {paymentMethod === "upi" && payableSuggestions.length ? (
+                <View style={styles.section}>
+                  <InputField
+                    label="Receiver UPI ID"
+                    value={payeeVpa}
+                    onChangeText={setPayeeVpa}
+                    autoCapitalize="none"
+                    placeholder="name@okaxis"
+                  />
+                  <ThemedText variant="caption" tone="muted">
+                    {selectedPayeeHasDefaultVpa
+                      ? "Filled from their default receive UPI ID. Edit only if they asked you to use a different ID."
+                      : "They haven’t saved a default UPI ID yet — ask them, or enter it here."}
+                  </ThemedText>
+                </View>
+              ) : null}
+
+              {payableSuggestions.length ? (
+                <Button
+                  label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
+                  onPress={() => createIntent.mutate()}
+                  loading={createIntent.isPending}
+                  disabled={!canCreateSuggested || !canCreateUpi}
+                />
+              ) : null}
+
+              {receivableSuggestions.length ? (
+                <>
+                  <SectionHeader title="Waiting to receive" />
+                  <DataSurface>
+                    {receivableSuggestions.map((suggestion) => (
+                      <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline, borderColor: "transparent" }]}>
+                        <View style={styles.titleBlock}>
+                          <ThemedText variant="bodyMedium">{suggestion.payerName} owes you</ThemedText>
+                          <ThemedText variant="bodySm" tone="muted">
+                            Only they can pay this. You’ll confirm after they send proof.
+                          </ThemedText>
+                        </View>
+                        <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
+                      </View>
+                    ))}
+                  </DataSurface>
+                </>
+              ) : null}
             </View>
           ) : null}
 
@@ -474,18 +575,57 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             <View style={styles.section}>
               <DataSurface>
                 <View style={styles.formBlock}>
-                  <ThemedText variant="bodyMedium">Choose payer and payee</ThemedText>
-                  {groupQuery.data?.participants.map((participant) => (
-                    <View key={participant.id} style={styles.participantChoice}>
-                      <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
-                      <View style={styles.choiceButtons}>
-                        <Button label="Payer" variant={payerParticipantId === participant.id ? "primary" : "secondary"} onPress={() => setPayerParticipantId(participant.id)} />
-                        <Button label="Payee" variant={payeeParticipantId === participant.id ? "primary" : "secondary"} onPress={() => setPayeeParticipantId(participant.id)} />
-                      </View>
-                    </View>
-                  ))}
+                  <ThemedText variant="bodyMedium">You are paying</ThemedText>
+                  <ThemedText variant="bodySm" tone="muted">
+                    Choose who receives the money. You can only settle what you owe.
+                  </ThemedText>
+                  {groupQuery.data
+                    ? activeGroupParticipants(groupQuery.data)
+                        .filter((participant) => participant.id !== myParticipantId)
+                        .map((participant) => (
+                      <Pressable
+                        key={participant.id}
+                        onPress={() => {
+                          setPayeeParticipantId(participant.id);
+                          const defaultVpa = participant.upiVpa?.trim() ?? "";
+                          if (defaultVpa) {
+                            setPayeeVpa(defaultVpa);
+                          }
+                        }}
+                        style={[
+                          styles.suggestion,
+                          {
+                            borderBottomColor: theme.colors.hairline,
+                            borderColor: payeeParticipantId === participant.id ? theme.colors.confirmed : "transparent"
+                          }
+                        ]}
+                      >
+                        <View style={styles.titleBlock}>
+                          <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
+                          <ThemedText variant="bodySm" tone="muted">
+                            {participant.upiVpa?.trim() ? `UPI: ${participant.upiVpa}` : "No default UPI saved"}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    ))
+                    : null}
                   <InputField label="Amount" value={customAmount} onChangeText={setCustomAmount} keyboardType="decimal-pad" amount />
-                  {paymentMethod === "upi" ? <InputField label="Payee UPI ID" value={payeeVpa} onChangeText={setPayeeVpa} autoCapitalize="none" /> : null}
+                  {paymentMethod === "upi" ? (
+                    <>
+                      <InputField
+                        label="Receiver UPI ID"
+                        value={payeeVpa}
+                        onChangeText={setPayeeVpa}
+                        autoCapitalize="none"
+                        placeholder="name@okaxis"
+                      />
+                      <ThemedText variant="caption" tone="muted">
+                        {selectedPayeeHasDefaultVpa
+                          ? "Filled from their profile. Change only if needed."
+                          : "Enter their UPI ID, or ask them to save one in Profile."}
+                      </ThemedText>
+                    </>
+                  ) : null}
                   <NumericKeypad
                     onKey={(key) => {
                       if (key === "backspace") {
@@ -498,10 +638,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 </View>
               </DataSurface>
               <Button
-                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI intent"}
+                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
                 onPress={() => createIntent.mutate()}
                 loading={createIntent.isPending}
-                disabled={!canCreateCustom || (paymentMethod === "upi" && !payeeVpa.trim())}
+                disabled={!canCreateCustom || !canCreateUpi}
               />
             </View>
           ) : null}
@@ -612,39 +752,57 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                     <View style={styles.titleBlock}>
                       <ThemedText variant="bodyMedium">Verify before you confirm</ThemedText>
                       <ThemedText variant="bodySm" tone="muted">
-                        Confirm only after the money has arrived in your account. This settles the balance.
+                        Confirm only after the money has arrived in your account.
                       </ThemedText>
                     </View>
+                    {(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
+                      <Pressable
+                        onPress={() => void openProof(intent)}
+                        disabled={proofLoading}
+                        accessibilityRole="button"
+                        accessibilityLabel="View payment proof"
+                        style={({ pressed }) => [
+                          styles.proofIconButton,
+                          {
+                            borderColor: theme.colors.hairline,
+                            backgroundColor: theme.colors.canvas,
+                            opacity: proofLoading || pressed ? 0.7 : 1
+                          }
+                        ]}
+                      >
+                        <ImageSquare size={22} color={theme.colors.confirmed} weight="duotone" />
+                      </Pressable>
+                    ) : null}
                   </View>
-                  {(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
-                    <Button
-                      label={proofLoading ? "Opening proof…" : "View payment proof"}
-                      variant="secondary"
-                      onPress={() => void openProof(intent)}
-                      loading={proofLoading}
-                    />
-                  ) : (
+                  {!(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
                     <InlineNotice
                       title="No screenshot attached"
                       body="The payer submitted a UTR reference. Confirm if the amount matches your bank credit."
                       tone="info"
                     />
-                  )}
-                  <Button
-                    label="Confirm received"
-                    onPress={() => confirm.mutate()}
-                    loading={confirm.isPending}
-                  />
-                  <InputField label="Reject or dispute reason" value={reason} onChangeText={setReason} />
-                  <Button
-                    label="Reject payment"
-                    variant="destructive"
-                    onPress={() => reject.mutate()}
-                    loading={reject.isPending}
-                    disabled={!reason.trim()}
-                  />
+                  ) : null}
+                  <InputField label="Reject reason (required to reject)" value={reason} onChangeText={setReason} />
+                  <View style={styles.choiceButtons}>
+                    <Button
+                      label="Confirm"
+                      size="compact"
+                      onPress={() => confirm.mutate()}
+                      loading={confirm.isPending}
+                      style={styles.inlineButton}
+                    />
+                    <Button
+                      label="Reject"
+                      size="compact"
+                      variant="destructive"
+                      onPress={() => reject.mutate()}
+                      loading={reject.isPending}
+                      disabled={!reason.trim()}
+                      style={styles.inlineButton}
+                    />
+                  </View>
                   <Button
                     label="Open dispute"
+                    size="compact"
                     variant="ghost"
                     onPress={() => dispute.mutate()}
                     loading={dispute.isPending}
@@ -679,6 +837,22 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 />
               </View>
             </DataSurface>
+          ) : null}
+
+          {intent?.state === "rejected" ? (
+            <InlineNotice
+              title="Payment rejected"
+              body={intent.rejectionReason ? `Reason: ${intent.rejectionReason}` : "The receiver rejected this payment claim."}
+              tone="owe"
+            />
+          ) : null}
+
+          {intent?.state === "disputed" ? (
+            <InlineNotice
+              title="Payment disputed"
+              body={intent.rejectionReason ? `Reason: ${intent.rejectionReason}` : "This settlement is under dispute."}
+              tone="owe"
+            />
           ) : null}
 
           {waitingForPayerProof ? (
@@ -717,6 +891,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             {historyQuery.data.map((row) => {
               const rowIsPayee = Boolean(myParticipantId && row.payeeParticipantId === myParticipantId);
               const rowCanConfirm = rowIsPayee && row.paymentMethod !== "cash" && isConfirmableState(row.state);
+              const hasProof = Boolean(row.proofAttachmentId || row.proofUrl);
               return (
                 <View key={row.id} style={[styles.historyRow, { borderBottomColor: theme.colors.hairline }]}>
                   <View style={styles.titleBlock}>
@@ -726,18 +901,46 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                     <ThemedText variant="bodySm" tone="muted">
                       {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
                     </ThemedText>
-                    {row.proofAttachmentId || row.proofUrl ? (
-                      <Button label="View proof" variant="ghost" onPress={() => void openProof(row)} />
+                    {row.state === "rejected" && row.rejectionReason ? (
+                      <ThemedText variant="bodySm" tone="owe">
+                        Rejected: {row.rejectionReason}
+                      </ThemedText>
+                    ) : null}
+                    {row.state === "disputed" && row.rejectionReason ? (
+                      <ThemedText variant="bodySm" tone="owe">
+                        Dispute: {row.rejectionReason}
+                      </ThemedText>
                     ) : null}
                     {rowCanConfirm ? (
                       <Button
-                        label={intent?.id === row.id ? "Reviewing above" : "Review & confirm"}
+                        label={intent?.id === row.id ? "Reviewing above" : "Review"}
+                        size="compact"
                         variant="secondary"
                         onPress={() => setIntent(row)}
+                        style={styles.historyReviewButton}
                       />
                     ) : null}
                   </View>
                   <View style={styles.trailing}>
+                    {hasProof ? (
+                      <Pressable
+                        onPress={() => void openProof(row)}
+                        disabled={proofLoading}
+                        accessibilityRole="button"
+                        accessibilityLabel="View payment proof"
+                        hitSlop={8}
+                        style={({ pressed }) => [
+                          styles.proofIconButton,
+                          {
+                            borderColor: theme.colors.hairline,
+                            backgroundColor: theme.colors.canvas,
+                            opacity: proofLoading || pressed ? 0.7 : 1
+                          }
+                        ]}
+                      >
+                        <ImageSquare size={18} color={theme.colors.inkMuted} weight="duotone" />
+                      </Pressable>
+                    ) : null}
                     <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
                     <StatusPill state={row.state} />
                   </View>
@@ -840,6 +1043,18 @@ const styles = StyleSheet.create({
   },
   inlineButton: {
     flex: 1
+  },
+  proofIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  historyReviewButton: {
+    alignSelf: "flex-start",
+    marginTop: 4
   },
   proofModalRoot: {
     flex: 1,

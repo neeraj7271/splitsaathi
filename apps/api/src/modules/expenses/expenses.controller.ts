@@ -161,10 +161,13 @@ export class ExpensesController {
       title: 'Expense updated',
       body: await this.expenseNotifyBody(
         dto.groupId,
-        `${dto.description ?? result.expense?.description ?? 'An expense'} was edited.`
+        `${dto.description ?? result.expense?.description ?? 'An expense'} was edited.${
+          dto.reason?.trim() ? ` Reason: ${dto.reason.trim()}` : ''
+        }`
       ),
       groupId: dto.groupId,
-      expenseId
+      expenseId,
+      reason: dto.reason
     });
     return result;
   }
@@ -197,10 +200,16 @@ export class ExpensesController {
     });
     await this.notifyGroupExpense(currentUser.userId, {
       type: 'expense_voided',
-      title: 'Expense voided',
-      body: await this.expenseNotifyBody(dto.groupId, `${existing?.description ?? 'An expense'} was voided.`),
+      title: 'Expense deleted',
+      body: await this.expenseNotifyBody(
+        dto.groupId,
+        `${existing?.description ?? 'An expense'} was deleted.${
+          dto.reason?.trim() ? ` Reason: ${dto.reason.trim()}` : ''
+        }`
+      ),
       groupId: dto.groupId,
-      expenseId
+      expenseId,
+      reason: dto.reason
     });
     return result;
   }
@@ -224,6 +233,19 @@ export class ExpensesController {
       await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
     }
     return this.expenses.listExpenseHistory(expenseId);
+  }
+
+  @Get('expenses/:expenseId')
+  async getExpense(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('expenseId') expenseId: string
+  ): Promise<ReturnType<ExpenseProjector['getExpense']>> {
+    const expense = this.expenses.getExpense(expenseId);
+    if (!expense) {
+      throw new NotFoundException('Expense not found.');
+    }
+    await this.authorization.assertCan(currentUser.userId, expense.groupId, 'read');
+    return expense;
   }
 
   @Get('expenses/:expenseId/explain')
@@ -252,6 +274,7 @@ export class ExpensesController {
       body: string;
       groupId: string;
       expenseId?: string;
+      reason?: string;
     }
   ): Promise<void> {
     if (!this.notifications || !this.groups) {
@@ -259,6 +282,7 @@ export class ExpensesController {
     }
     try {
       const memberIds = await this.groups.listActiveMemberUserIds(input.groupId);
+      const reasonText = input.reason?.trim();
       await Promise.all(
         memberIds
           .filter((userId) => userId !== actorUserId)
@@ -272,7 +296,8 @@ export class ExpensesController {
               tone: input.type === 'expense_voided' ? 'action_required' : 'neutral',
               data: {
                 groupId: input.groupId,
-                expenseId: input.expenseId
+                expenseId: input.expenseId,
+                ...(reasonText ? { reason: reasonText } : {})
               }
             })
           )

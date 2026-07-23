@@ -155,8 +155,22 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
       {isEditing ? (
         <DataSurface>
           <View style={styles.formBlock}>
-            <InputField label="Display name" value={displayName} onChangeText={setDisplayName} placeholder="How you appear in groups" />
-            <InputField label="UPI ID" value={upiVpa} onChangeText={setUpiVpa} placeholder="name@bank" autoCapitalize="none" />
+            <InputField
+              label="Display name"
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="How you appear in groups"
+            />
+            <InputField
+              label="Default receive UPI ID"
+              value={upiVpa}
+              onChangeText={setUpiVpa}
+              placeholder="name@okaxis"
+              autoCapitalize="none"
+            />
+            <ThemedText variant="bodySm" tone="muted">
+              Friends paying you can use this automatically — they won&apos;t need to ask for your UPI ID.
+            </ThemedText>
             <ThemedText variant="bodySm" tone="muted">
               Default currency: {profile?.defaultCurrencyCode ?? "INR"}
             </ThemedText>
@@ -164,7 +178,19 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             {saveProfile.error ? <InlineNotice title="Save failed" body={saveProfile.error.message} tone="owe" /> : null}
           </View>
         </DataSurface>
-      ) : null}
+      ) : (
+        <DataSurface>
+          <View style={styles.formBlock}>
+            <ThemedText variant="caption" tone="muted">
+              Default receive UPI ID
+            </ThemedText>
+            <ThemedText variant="bodyMedium">{savedUpiVpa || "Not set — tap Edit to add"}</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              Used automatically when someone pays you on Settle.
+            </ThemedText>
+          </View>
+        </DataSurface>
+      )}
 
       <View style={styles.section}>
         <SectionHeader title="Preferences" />

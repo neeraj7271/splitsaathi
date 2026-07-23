@@ -40,6 +40,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<MembershipRole, GroupPermission[]>
     'group.invite.create',
     'participant.create',
     'financial.expense.create',
+    'financial.expense.edit.any',
+    'financial.expense.void',
     'financial.settlement.confirm'
   ],
   viewer: ['group.read']

@@ -159,6 +159,15 @@ export class SettlementProjector implements Projector {
     this.addTimeline(row, event, row.state, (event.payload as { reason?: string; note?: string }).reason);
   }
 
+  findIntentByProofAttachmentId(attachmentId: string): SettlementIntentRow | undefined {
+    for (const intent of this.intents.values()) {
+      if (intent.proofs.some((proof) => proof.attachmentId === attachmentId)) {
+        return cloneIntent(intent);
+      }
+    }
+    return undefined;
+  }
+
   getIntent(settlementIntentId: string): SettlementIntentRow | undefined {
     const row = this.intents.get(settlementIntentId);
     return row ? cloneIntent(row) : undefined;

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateGroupDto {
@@ -18,4 +18,12 @@ export class UpdateGroupDto {
   @ValidateIf((_, value) => value !== null)
   @IsUUID()
   imageAttachmentId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When false, members cannot edit or void expenses (owners/admins still can). Defaults to true for new groups.'
+  })
+  @IsOptional()
+  @IsBoolean()
+  membersCanEditExpenses?: boolean;
 }

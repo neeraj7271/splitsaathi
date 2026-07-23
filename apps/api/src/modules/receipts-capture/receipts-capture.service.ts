@@ -166,7 +166,10 @@ export class ReceiptsCaptureService {
 
   async getAttachmentContent(
     attachmentId: string,
-    requesterUserId: string
+    requesterUserId: string,
+    options?: {
+      resolveSharedGroupAccess?: (purpose: string) => Promise<boolean>;
+    }
   ): Promise<{ buffer: Buffer; mimeType: string }> {
     const attachment = this.attachmentRepository
       ? await this.attachmentRepository.findOne({ where: { id: attachmentId } })
@@ -183,7 +186,12 @@ export class ReceiptsCaptureService {
     const mimeType = attachment?.mimeType ?? inMemory!.mimeType ?? 'application/octet-stream';
 
     if (ownerUserId !== requesterUserId && purpose !== 'avatar') {
-      throw new ForbiddenException('You do not have access to this attachment.');
+      const sharedAllowed = options?.resolveSharedGroupAccess
+        ? await options.resolveSharedGroupAccess(String(purpose))
+        : false;
+      if (!sharedAllowed) {
+        throw new ForbiddenException('You do not have access to this attachment.');
+      }
     }
 
     if (!storageKey || !this.objectStorage?.getObjectBuffer) {

@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarBlank, Paperclip } from "phosphor-react-native";
 
 import { ApiError, apiClient, CreateExpenseRequest } from "../api/client";
+import { useOptionalAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
@@ -19,10 +20,11 @@ import { SegmentedControl } from "../components/SegmentedControl";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
-import { SplitType } from "../types/domain";
+import { ExpenseDetail, SplitType } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { enqueueCommand } from "../offline/outbox";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
+import { activeGroupParticipants } from "../utils/groupPeople";
 
 type AdjustmentType = "tax" | "gst_cgst" | "gst_sgst" | "service_charge" | "tip" | "discount" | "rounding";
 type PartyTab = "payers" | "beneficiaries";
@@ -41,7 +43,11 @@ interface DraftAdjustment {
 
 export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const dialog = useOptionalAppDialog();
   const queryClient = useQueryClient();
+  const editingExpenseId = navigation.selectedExpenseId;
+  const isEditing = Boolean(editingExpenseId);
+  const hydratedExpenseId = useRef<string | undefined>(undefined);
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
@@ -49,6 +55,11 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
+  });
+  const expenseQuery = useQuery({
+    queryKey: ["expense", editingExpenseId],
+    queryFn: () => apiClient.getExpense(editingExpenseId as string),
+    enabled: Boolean(editingExpenseId)
   });
 
   const [description, setDescription] = useState("");
@@ -70,13 +81,22 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("gst_cgst");
   const [partyTab, setPartyTab] = useState<PartyTab>("payers");
+  const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [receiptName, setReceiptName] = useState<string>();
 
-  const participants = groupQuery.data?.participants ?? [];
+  const participants = groupQuery.data ? activeGroupParticipants(groupQuery.data) : [];
   const participantNameById = useMemo(() => new Map(participants.map((participant) => [participant.id, participant.displayName])), [participants]);
   const nameForParticipant = (participantId: string) => participantNameById.get(participantId) ?? "Unknown participant";
+  const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
+  const myRole = groupQuery.data?.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.role;
+  const canManageExpense =
+    typeof groupQuery.data?.canManageExpenses === "boolean"
+      ? groupQuery.data.canManageExpenses
+      : myRole === "owner" || myRole === "admin" || myRole === "member";
+  const editingExpense = expenseQuery.data;
+  const isVoided = editingExpense?.state === "voided";
 
   useEffect(() => {
     if (!navigation.selectedGroupId && groups[0]?.id) {
@@ -85,13 +105,45 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   }, [groups, navigation]);
 
   useEffect(() => {
+    if (!editingExpenseId) {
+      hydratedExpenseId.current = undefined;
+      return;
+    }
+    if (!expenseQuery.data || hydratedExpenseId.current === expenseQuery.data.id) {
+      return;
+    }
+    applyExpenseToForm(expenseQuery.data, {
+      setDescription,
+      setCategory,
+      setAmount,
+      setExpenseDate,
+      setSplitType,
+      setSelectedPayers,
+      setPayerAmounts,
+      setSelectedShares,
+      setShareAmounts,
+      setShareWeights,
+      setLineItems,
+      setAdjustments,
+      setShowAdjustments
+    });
+    if (expenseQuery.data.groupId) {
+      navigation.setSelectedGroupId(expenseQuery.data.groupId);
+    }
+    hydratedExpenseId.current = expenseQuery.data.id;
+  }, [editingExpenseId, expenseQuery.data, navigation]);
+
+  useEffect(() => {
+    if (isEditing) {
+      return;
+    }
     if (participants.length && selectedShares.length === 0) {
       setSelectedShares(participants.map((participant) => participant.id));
     }
     if (participants.length && selectedPayers.length === 0) {
       setSelectedPayers([participants[0].id]);
     }
-  }, [participants, selectedPayers.length, selectedShares.length]);
+  }, [participants, selectedPayers.length, selectedShares.length, isEditing]);
 
   const activeAdjustments = showAdjustments ? adjustments : [];
   const totalMinor = splitType === "itemized" ? itemizedTotalMinor(lineItems, activeAdjustments) : parseAmountToMinor(amount);
@@ -174,8 +226,55 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     }
   };
 
+  const invalidateExpenseQueries = async (groupId: string, expenseId?: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["expenses", groupId] }),
+      queryClient.invalidateQueries({ queryKey: ["balances", groupId] }),
+      queryClient.invalidateQueries({ queryKey: ["groupActivity", groupId] }),
+      queryClient.invalidateQueries({ queryKey: ["group", groupId] }),
+      queryClient.invalidateQueries({ queryKey: ["groups"] }),
+      expenseId ? queryClient.invalidateQueries({ queryKey: ["expense", expenseId] }) : Promise.resolve(),
+      expenseId ? queryClient.invalidateQueries({ queryKey: ["expenseHistory", expenseId] }) : Promise.resolve(),
+      expenseId ? queryClient.invalidateQueries({ queryKey: ["expenseExplanation", expenseId] }) : Promise.resolve()
+    ]);
+  };
+
+  const voidExpense = useMutation({
+    mutationFn: async () => {
+      if (!editingExpenseId || !selectedGroupId || !editingExpense) {
+        throw new Error("Expense is not available.");
+      }
+      if (!reason.trim()) {
+        throw new Error("A reason is required to delete an expense.");
+      }
+      await apiClient.voidExpense(editingExpenseId, reason.trim(), selectedGroupId, editingExpense.currentVersion);
+    },
+    onSuccess: async () => {
+      if (selectedGroupId) {
+        await invalidateExpenseQueries(selectedGroupId, editingExpenseId);
+      }
+      navigation.setSelectedExpenseId(undefined);
+      navigation.go("groupDetail");
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "Could not delete expense.");
+    }
+  });
+
   const submit = async () => {
     if (!selectedGroupId) {
+      return;
+    }
+    if (isEditing && !canManageExpense) {
+      setMessage("Only group owners and admins can edit expenses.");
+      return;
+    }
+    if (isEditing && !reason.trim()) {
+      setMessage("Add a short reason so the change is audited.");
+      return;
+    }
+    if (isVoided) {
+      setMessage("This expense is already deleted.");
       return;
     }
     setSubmitting(true);
@@ -199,30 +298,57 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     });
 
     try {
-      await apiClient.createExpense(payload);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["expenses", selectedGroupId] }),
-        queryClient.invalidateQueries({ queryKey: ["balances", selectedGroupId] }),
-        queryClient.invalidateQueries({ queryKey: ["groupActivity", selectedGroupId] }),
-        queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] }),
-        queryClient.invalidateQueries({ queryKey: ["groups"] })
-      ]);
-      setMessage("Expense posted to the ledger.");
-      setDescription("");
-      setAmount("");
-      setLineItems([]);
-      setAdjustments([]);
-      navigation.go("groupDetail");
+      if (isEditing && editingExpenseId && editingExpense) {
+        await apiClient.reviseExpense(editingExpenseId, {
+          ...payload,
+          baseVersion: editingExpense.currentVersion,
+          reason: reason.trim()
+        });
+        await invalidateExpenseQueries(selectedGroupId, editingExpenseId);
+        setMessage("Expense updated. Members were notified and the change is in audit history.");
+        navigation.setSelectedExpenseId(undefined);
+        navigation.go("groupDetail");
+      } else {
+        await apiClient.createExpense(payload);
+        await invalidateExpenseQueries(selectedGroupId);
+        setMessage("Expense posted to the ledger.");
+        setDescription("");
+        setAmount("");
+        setLineItems([]);
+        setAdjustments([]);
+        navigation.setSelectedExpenseId(undefined);
+        navigation.go("groupDetail");
+      }
     } catch (error) {
       if (error instanceof ApiError) {
         setMessage(error.message);
-      } else {
+      } else if (!isEditing) {
         await enqueueCommand("expense.create", payload as unknown as Record<string, unknown>);
         setMessage("Network unavailable. Expense create command was queued for sync.");
+      } else {
+        setMessage(error instanceof Error ? error.message : "Could not update expense.");
       }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const confirmDelete = () => {
+    if (!reason.trim()) {
+      setMessage("Add a delete reason before removing this expense.");
+      return;
+    }
+    dialog?.showDialog({
+      title: "Delete this expense?",
+      message: "Balances will reverse. The delete reason is kept in audit history and other members are notified.",
+      tone: "warning",
+      secondaryAction: { label: "Cancel", variant: "secondary" },
+      primaryAction: {
+        label: "Delete expense",
+        variant: "destructive",
+        onPress: () => voidExpense.mutate()
+      }
+    });
   };
 
   return (
@@ -230,16 +356,44 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       <View style={styles.header}>
         <View style={styles.headerTitle}>
           <ThemedText variant="caption" tone="muted">
-            Expense entry
+            {isEditing ? "Expense edit" : "Expense entry"}
           </ThemedText>
-          <ThemedText variant="title" numberOfLines={1}>Add expense</ThemedText>
+          <ThemedText variant="title" numberOfLines={1}>
+            {isEditing ? "Edit expense" : "Add expense"}
+          </ThemedText>
         </View>
-        <Button label="Queue" variant="secondary" onPress={() => navigation.go("offline")} style={styles.headerButton} />
+        {isEditing ? (
+          <Button
+            label="History"
+            variant="secondary"
+            size="compact"
+            onPress={() => navigation.go("audit")}
+            style={styles.headerButton}
+          />
+        ) : (
+          <Button label="Queue" variant="secondary" onPress={() => navigation.go("offline")} style={styles.headerButton} />
+        )}
       </View>
 
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {groups.length && !isEditing ? (
+        <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
       {!selectedGroupId ? <EmptyState title="No group available" body="Create or import a group before posting expenses." action={{ label: "Groups", onPress: () => navigation.go("groups") }} /> : null}
       {groupQuery.error ? <InlineNotice title="Group could not load" body={groupQuery.error.message} tone="owe" /> : null}
+      {isEditing && expenseQuery.isLoading ? <InlineNotice title="Loading expense" body="Fetching the current snapshot for editing." tone="pending" /> : null}
+      {isEditing && expenseQuery.error ? (
+        <InlineNotice title="Expense could not load" body={expenseQuery.error.message} tone="owe" />
+      ) : null}
+      {isVoided ? (
+        <InlineNotice
+          title="Expense deleted"
+          body={editingExpense?.voidReason ? `Reason: ${editingExpense.voidReason}` : "This expense was voided and can no longer be edited."}
+          tone="owe"
+        />
+      ) : null}
+      {isEditing && !canManageExpense ? (
+        <InlineNotice title="View only" body="Only group owners and admins can edit or delete expenses." tone="info" />
+      ) : null}
 
       {selectedGroupId && participants.length ? (
         <>
@@ -539,7 +693,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
             <InlineNotice
               title="Expense status"
               body={message}
-              tone={message.includes("queued") ? "pending" : message.includes("failed") ? "owe" : "confirmed"}
+              tone={message.includes("queued") ? "pending" : message.includes("failed") || message.includes("required") || message.includes("Could not") ? "owe" : "confirmed"}
             />
           ) : null}
           {!description.trim() ? (
@@ -552,7 +706,29 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
               tone="owe"
             />
           ) : null}
-          <Button label="Review and post expense" onPress={submit} loading={submitting} disabled={!balanced || !description.trim()} />
+          {isEditing ? (
+            <InputField
+              label="Reason for change"
+              value={reason}
+              onChangeText={setReason}
+              placeholder="Corrected amount, wrong split, etc."
+            />
+          ) : null}
+          <Button
+            label={isEditing ? "Save expense changes" : "Review and post expense"}
+            onPress={submit}
+            loading={submitting}
+            disabled={!balanced || !description.trim() || isVoided || (isEditing && (!canManageExpense || !reason.trim()))}
+          />
+          {isEditing && canManageExpense && !isVoided ? (
+            <Button
+              label="Delete expense"
+              variant="destructive"
+              onPress={confirmDelete}
+              loading={voidExpense.isPending}
+              disabled={!reason.trim()}
+            />
+          ) : null}
         </>
       ) : selectedGroupId ? (
         <EmptyState title="No participants" body="Add people to this group before creating expenses." action={{ label: "Manage group", onPress: () => navigation.go("groupDetail") }} />
@@ -703,6 +879,77 @@ function formatExpenseDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function minorToAmountInput(amountMinor: number) {
+  return (amountMinor / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
+function inferSplitType(expense: ExpenseDetail): SplitType {
+  if (expense.lineItems.length) {
+    return "itemized";
+  }
+  const types = [...new Set(expense.shares.map((share) => share.shareType))];
+  if (types.length === 1) {
+    if (types[0] === "equal" || types[0] === "exact" || types[0] === "itemized") {
+      return types[0];
+    }
+    // Weight numerators are not retained after allocation — keep amounts via exact.
+    if (types[0] === "weight") {
+      return "exact";
+    }
+  }
+  return "exact";
+}
+
+function applyExpenseToForm(
+  expense: ExpenseDetail,
+  setters: {
+    setDescription: (value: string) => void;
+    setCategory: (value: string) => void;
+    setAmount: (value: string) => void;
+    setExpenseDate: (value: Date) => void;
+    setSplitType: (value: SplitType) => void;
+    setSelectedPayers: (value: string[]) => void;
+    setPayerAmounts: (value: Record<string, string>) => void;
+    setSelectedShares: (value: string[]) => void;
+    setShareAmounts: (value: Record<string, string>) => void;
+    setShareWeights: (value: Record<string, string>) => void;
+    setLineItems: (value: DraftLineItem[]) => void;
+    setAdjustments: (value: DraftAdjustment[]) => void;
+    setShowAdjustments: (value: boolean) => void;
+  }
+) {
+  const split = inferSplitType(expense);
+  setters.setDescription(expense.description);
+  setters.setCategory(expense.category ?? "");
+  setters.setAmount(minorToAmountInput(expense.totalAmountMinor));
+  const parsedDate = new Date(`${expense.expenseDate}T12:00:00`);
+  setters.setExpenseDate(Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate);
+  setters.setSplitType(split);
+  setters.setSelectedPayers(expense.payers.map((payer) => payer.participantId));
+  setters.setPayerAmounts(
+    Object.fromEntries(expense.payers.map((payer) => [payer.participantId, minorToAmountInput(payer.amountMinor)]))
+  );
+  setters.setSelectedShares(expense.shares.map((share) => share.participantId));
+  setters.setShareAmounts(
+    Object.fromEntries(expense.shares.map((share) => [share.participantId, minorToAmountInput(share.amountMinor)]))
+  );
+  setters.setShareWeights(Object.fromEntries(expense.shares.map((share) => [share.participantId, "1"])));
+  setters.setLineItems(
+    expense.lineItems.map((item) => ({
+      label: item.label,
+      amount: minorToAmountInput(item.amountMinor),
+      participantIds: item.participantIds
+    }))
+  );
+  const nextAdjustments = expense.billAdjustments.map((adjustment) => ({
+    adjustmentType: (adjustment.adjustmentType as AdjustmentType) || "tax",
+    label: adjustment.label,
+    amount: minorToAmountInput(adjustment.amountMinor)
+  }));
+  setters.setAdjustments(nextAdjustments);
+  setters.setShowAdjustments(nextAdjustments.length > 0);
 }
 
 const styles = StyleSheet.create({

@@ -24,13 +24,20 @@ export class ParticipantResponseDto {
   @ApiProperty({ nullable: true, format: 'uuid' })
   linkedUserId!: string | null;
 
-  static fromEntity(entity: ParticipantEntity): ParticipantResponseDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Default UPI VPA for receiving payments, from the linked user profile when available.'
+  })
+  upiVpa!: string | null;
+
+  static fromEntity(entity: ParticipantEntity, upiVpa: string | null = null): ParticipantResponseDto {
     return {
       id: entity.id,
       displayName: entity.displayName,
       phoneE164: entity.phoneE164,
       kind: entity.kind,
-      linkedUserId: entity.linkedUserId
+      linkedUserId: entity.linkedUserId,
+      upiVpa
     };
   }
 }
@@ -109,11 +116,21 @@ export class GroupResponseDto {
   @ApiPropertyOptional({ description: "Current user's net balance in this group (positive = owed money, negative = owes money)" })
   netBalanceMinor?: number;
 
+  @ApiPropertyOptional({ description: 'Whether the current user can edit or void expenses in this group.' })
+  canManageExpenses?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Whether the member role is allowed to edit/void expenses. Admins/owners can change this.'
+  })
+  membersCanEditExpenses?: boolean;
+
   static fromEntities(
     group: GroupEntity,
     participants: ParticipantEntity[],
     memberships: GroupMembershipEntity[],
-    netBalanceMinor = 0
+    netBalanceMinor = 0,
+    upiVpaByParticipantId: Record<string, string | null> = {},
+    options: { canManageExpenses?: boolean; membersCanEditExpenses?: boolean } = {}
   ): GroupResponseDto {
     return {
       id: group.id,
@@ -127,9 +144,13 @@ export class GroupResponseDto {
       imageAttachmentId: group.imageAttachmentId ?? null,
       imageUrl: group.imageAttachmentId ? `/v1/attachments/${group.imageAttachmentId}/content` : null,
       archivedAt: toIso(group.archivedAt),
-      participants: participants.map(ParticipantResponseDto.fromEntity),
+      participants: participants.map((participant) =>
+        ParticipantResponseDto.fromEntity(participant, upiVpaByParticipantId[participant.id] ?? null)
+      ),
       memberships: memberships.map(MembershipResponseDto.fromEntity),
-      netBalanceMinor
+      netBalanceMinor,
+      canManageExpenses: options.canManageExpenses ?? false,
+      membersCanEditExpenses: options.membersCanEditExpenses ?? true
     };
   }
 }

@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Inject,
+  Optional,
   Param,
   Post,
   Res,
@@ -13,14 +14,18 @@ import {
   UseInterceptors
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { InjectRepository } from '@nestjs/typeorm';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Repository } from 'typeorm';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request';
 import type { CreateExpenseCommand } from '../expenses';
+import { GroupEntity } from '../groups/entities/group.entity';
 import { FINANCIAL_AUTHORIZATION, type FinancialAuthorizationPort } from '../ledger/financial-authorization';
+import { SettlementProjector } from '../settlements/settlement.projector';
 import { ReceiptsCaptureService } from './receipts-capture.service';
 
 @ApiTags('receipts-capture')
@@ -30,7 +35,11 @@ import { ReceiptsCaptureService } from './receipts-capture.service';
 export class ReceiptsCaptureController {
   constructor(
     private readonly receipts: ReceiptsCaptureService,
-    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort
+    @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort,
+    private readonly settlements: SettlementProjector,
+    @Optional()
+    @InjectRepository(GroupEntity)
+    private readonly groupRepository?: Repository<GroupEntity>
   ) {}
 
   @Post('attachments')
@@ -65,7 +74,27 @@ export class ReceiptsCaptureController {
     @Param('id') attachmentId: string,
     @Res() response: Response
   ) {
-    const content = await this.receipts.getAttachmentContent(attachmentId, currentUser.userId);
+    const content = await this.receipts.getAttachmentContent(attachmentId, currentUser.userId, {
+      resolveSharedGroupAccess: async (purpose) => {
+        if (purpose === 'payment_proof') {
+          const intent = this.settlements.findIntentByProofAttachmentId(attachmentId);
+          if (!intent) {
+            return false;
+          }
+          await this.authorization.assertCan(currentUser.userId, intent.groupId, 'read');
+          return true;
+        }
+        if (purpose === 'group_image' && this.groupRepository) {
+          const group = await this.groupRepository.findOne({ where: { imageAttachmentId: attachmentId } });
+          if (!group) {
+            return false;
+          }
+          await this.authorization.assertCan(currentUser.userId, group.id, 'read');
+          return true;
+        }
+        return false;
+      }
+    });
     response.setHeader('Content-Type', content.mimeType);
     response.setHeader('Cache-Control', 'private, max-age=3600');
     response.send(content.buffer);

@@ -282,7 +282,10 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
                 : route
         }
         onChange={setRoute}
-        onFab={() => setRoute("expense")}
+        onFab={() => {
+          setSelectedExpenseId(undefined);
+          setRoute("expense");
+        }}
         tabs={[
           { label: "Home", value: "home", icon: House },
           { label: "Groups", value: "groups", icon: UsersThree },

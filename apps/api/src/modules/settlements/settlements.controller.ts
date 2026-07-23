@@ -67,9 +67,17 @@ export class SettlementsController {
     dto: Omit<CreateSettlementIntentCommand, 'actorId' | 'idempotencyKey'>
   ): ReturnType<SettlementCommandService['createIntent']> {
     await this.authorization.assertCan(currentUser.userId, dto.groupId, 'settlement.confirm');
+    await this.assertActorIsPayerForCreate(currentUser.userId, dto);
+
+    let payeeVpa = dto.payeeVpa?.trim() || undefined;
+    if ((dto.paymentMethod ?? 'upi') !== 'cash' && !payeeVpa && this.groups) {
+      payeeVpa = (await this.groups.resolveUpiVpaForParticipant(dto.groupId, dto.payeeParticipantId)) ?? undefined;
+    }
+
     try {
       return await this.commands.createIntent({
         ...dto,
+        payeeVpa,
         actorId: currentUser.userId,
         idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
       });
@@ -188,7 +196,7 @@ export class SettlementsController {
     const result = await this.commands.reject(
       await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto)
     );
-    await this.notifySettlementRejected(result.intent);
+    await this.notifySettlementRejected(result.intent, dto.reason);
     return result;
   }
 
@@ -358,6 +366,19 @@ export class SettlementsController {
     return intent;
   }
 
+  private async assertActorIsPayerForCreate(
+    userId: string,
+    dto: Pick<CreateSettlementIntentCommand, 'groupId' | 'payerParticipantId'>
+  ): Promise<void> {
+    if (!this.groups) {
+      return;
+    }
+    const payerUserId = await this.groups.resolveUserIdForParticipant(dto.groupId, dto.payerParticipantId);
+    if (payerUserId && payerUserId !== userId) {
+      throw new ForbiddenException('Only the person who owes can start this settlement payment.');
+    }
+  }
+
   private async assertActorIsPayee(userId: string, settlementIntentId: string): Promise<SettlementIntentRow> {
     const intent = await this.assertCanActOnIntent(userId, settlementIntentId, 'settlement.confirm');
     if (!intent) {
@@ -461,7 +482,7 @@ export class SettlementsController {
     }
   }
 
-  private async notifySettlementRejected(intent: SettlementIntentRow): Promise<void> {
+  private async notifySettlementRejected(intent: SettlementIntentRow, reason?: string): Promise<void> {
     if (!this.notifications || !this.groups) {
       return;
     }
@@ -472,12 +493,15 @@ export class SettlementsController {
         this.groups.getGroupName(intent.groupId)
       ]);
       const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
+      const reasonText = reason?.trim();
+      const reasonSuffix = reasonText ? ` Reason: ${reasonText}` : '';
       const data = {
         settlementIntentId: intent.settlementIntentId,
         amountMinor: intent.amountMinor,
         currencyCode: intent.currencyCode,
         payerParticipantId: intent.payerParticipantId,
-        payeeParticipantId: intent.payeeParticipantId
+        payeeParticipantId: intent.payeeParticipantId,
+        ...(reasonText ? { reason: reasonText } : {})
       };
       if (payerUserId) {
         await this.notifications.create({
@@ -485,7 +509,7 @@ export class SettlementsController {
           groupId: intent.groupId,
           type: 'settlement_rejected',
           title: 'Payment not confirmed',
-          body: `${groupName} · Your ${amountLabel} payment was rejected by the receiver.`,
+          body: `${groupName} · Your ${amountLabel} payment was rejected by the receiver.${reasonSuffix}`,
           tone: 'action_required',
           data
         });
@@ -496,7 +520,7 @@ export class SettlementsController {
           groupId: intent.groupId,
           type: 'settlement_rejected',
           title: 'Payment rejected',
-          body: `${groupName} · You rejected a ${amountLabel} payment claim.`,
+          body: `${groupName} · You rejected a ${amountLabel} payment claim.${reasonSuffix}`,
           data
         });
       }

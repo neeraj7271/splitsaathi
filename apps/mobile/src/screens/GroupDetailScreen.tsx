@@ -20,6 +20,7 @@ import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
+import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
@@ -28,6 +29,7 @@ import { ExpenseExplanation, GroupDetail, MembershipRole } from "../types/domain
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, resolveParticipantDisplayName } from "../utils/displayNames";
+import { activeGroupMemberships, activeGroupParticipants } from "../utils/groupPeople";
 import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
@@ -71,6 +73,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const [reportDays, setReportDays] = useState<30 | 90 | 180>(90);
   const [logoSheetVisible, setLogoSheetVisible] = useState(false);
   const [membershipActionError, setMembershipActionError] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState(false);
+  const [groupNameDraft, setGroupNameDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [expenseVoidReason, setExpenseVoidReason] = useState("");
+  const [expenseActionError, setExpenseActionError] = useState<string | null>(null);
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
@@ -152,6 +159,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
       queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
+      navigation.setSelectedGroupId(undefined);
+      navigation.go("groups");
     }
   });
   const unarchiveGroup = useMutation({
@@ -161,6 +170,96 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
       queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
     }
   });
+  const renameGroup = useMutation({
+    mutationFn: (name: string) => apiClient.updateGroup(selectedGroupId as string, { name }),
+    onSuccess: (updated) => {
+      setRenameError(null);
+      setEditingGroupName(false);
+      setGroupNameDraft(updated.name);
+      queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+    },
+    onError: (error) => {
+      setRenameError(apiErrorMessage(error, "Could not rename group."));
+    }
+  });
+
+  const setMembersCanEditExpenses = useMutation({
+    mutationFn: (membersCanEditExpenses: boolean) =>
+      apiClient.updateGroup(selectedGroupId as string, { membersCanEditExpenses }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
+    }
+  });
+
+  function beginRenameGroup() {
+    setRenameError(null);
+    setGroupNameDraft(groupQuery.data?.name ?? "");
+    setEditingGroupName(true);
+  }
+
+  function confirmDeleteGroup() {
+    showDialog({
+      title: "Delete this group?",
+      message:
+        "The group will be removed from your active list. Expense and settlement history is kept for audit — you can restore it later.",
+      tone: "warning",
+      secondaryAction: { label: "Cancel", variant: "secondary" },
+      primaryAction: {
+        label: "Delete group",
+        variant: "destructive",
+        onPress: () => archiveGroup.mutate()
+      }
+    });
+  }
+
+  const voidExpense = useMutation({
+    mutationFn: async () => {
+      if (!explainingExpenseId || !selectedGroupId) {
+        throw new Error("Expense is not selected.");
+      }
+      const reason = expenseVoidReason.trim();
+      if (!reason) {
+        throw new Error("Add a reason before deleting this expense.");
+      }
+      const expense = expensesQuery.data?.find((row) => row.id === explainingExpenseId);
+      await apiClient.voidExpense(explainingExpenseId, reason, selectedGroupId, expense?.currentVersion);
+    },
+    onSuccess: async () => {
+      setExpenseActionError(null);
+      setExpenseVoidReason("");
+      setExplainingExpenseId(undefined);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["expenses", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["balances", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["groupActivity", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] }),
+        queryClient.invalidateQueries({ queryKey: ["groups"] })
+      ]);
+    },
+    onError: (error) => {
+      setExpenseActionError(apiErrorMessage(error, "Could not delete expense."));
+    }
+  });
+
+  function confirmVoidExpense() {
+    if (!expenseVoidReason.trim()) {
+      setExpenseActionError("Add a delete reason before removing this expense.");
+      return;
+    }
+    showDialog({
+      title: "Delete this expense?",
+      message: "Balances reverse immediately. The reason is stored in audit history and other members are notified.",
+      tone: "warning",
+      secondaryAction: { label: "Cancel", variant: "secondary" },
+      primaryAction: {
+        label: "Delete expense",
+        variant: "destructive",
+        onPress: () => voidExpense.mutate()
+      }
+    });
+  }
+
   const leaveGroup = useMutation({
     mutationFn: () => apiClient.leaveGroup(selectedGroupId as string),
     onSuccess: () => {
@@ -299,7 +398,25 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     if (!group || !balancesQuery.data) {
       return [];
     }
-    return enrichBalanceRows(balancesQuery.data, buildGroupDisplayLookups(group));
+    const lookups = buildGroupDisplayLookups(group);
+    const activeIds = new Set(activeGroupParticipants(group).map((participant) => participant.id));
+    return enrichBalanceRows(balancesQuery.data, lookups).filter((row) => {
+      const known = activeIds.has(row.participantId) || Boolean(lookups.participantById.get(row.participantId)?.displayName);
+      if (!known && row.balanceMinor === 0) {
+        return false;
+      }
+      if (!row.displayName?.trim() || row.displayName === "Unknown participant") {
+        if (row.balanceMinor === 0) {
+          return false;
+        }
+        return true;
+      }
+      return true;
+    }).map((row) =>
+      row.displayName === "Unknown participant"
+        ? { ...row, displayName: "Former member" }
+        : row
+    );
   }, [balancesQuery.data, group]);
   const myNetPositionMinor = useMemo(() => {
     if (!group) {
@@ -394,9 +511,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
           </ThemedText>
           <ThemedText variant="title">{group?.name ?? "Select group"}</ThemedText>
           {canEditGroup ? (
-            <ThemedText variant="caption" tone="muted">
-              Tap logo to change
-            </ThemedText>
+            <Pressable onPress={beginRenameGroup}>
+              <ThemedText variant="caption" tone="confirmed">
+                Edit name
+              </ThemedText>
+            </Pressable>
           ) : null}
         </View>
         {group?.state === "archived" ? <StatusPill state="expired" /> : null}
@@ -427,7 +546,15 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             </View>
             <View style={[styles.primaryRow, { borderTopColor: theme.colors.hairline }]}>
               <Button label="Settle" onPress={() => navigation.go("settlement")} style={styles.inlineButton} />
-              <Button label="Add expense" variant="secondary" onPress={() => navigation.go("expense")} style={styles.inlineButton} />
+              <Button
+                label="Add expense"
+                variant="secondary"
+                onPress={() => {
+                  navigation.setSelectedExpenseId(undefined);
+                  navigation.go("expense");
+                }}
+                style={styles.inlineButton}
+              />
             </View>
           </DataSurface>
 
@@ -500,7 +627,19 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
           {tab === "expenses" ? (
             <View style={styles.section}>
-              <SectionHeader title="Expenses" action={<Button label="Add" variant="ghost" onPress={() => navigation.go("expense")} />} />
+              <SectionHeader
+                title="Expenses"
+                action={
+                  <Button
+                    label="Add"
+                    variant="ghost"
+                    onPress={() => {
+                      navigation.setSelectedExpenseId(undefined);
+                      navigation.go("expense");
+                    }}
+                  />
+                }
+              />
               {expensesQuery.error ? <InlineNotice title="Expenses could not load" body={expensesQuery.error.message} tone="owe" /> : null}
               {expensesQuery.data?.length ? (
                 <DataSurface>
@@ -508,6 +647,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                     <Pressable
                       key={expense.id}
                       onPress={() => {
+                        setExpenseActionError(null);
+                        setExpenseVoidReason("");
                         setExplainingExpenseId(expense.id);
                       }}
                       onLongPress={() => {
@@ -519,7 +660,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                       <View style={styles.titleBlock}>
                         <ThemedText variant="bodyMedium">{expense.description}</ThemedText>
                         <ThemedText variant="bodySm" tone="muted">
-                          {expense.category || "Expense"} - v{expense.currentVersion} · Tap for split details
+                          {expense.category || "Expense"} - v{expense.currentVersion} · Tap for details
                         </ThemedText>
                       </View>
                       <View style={styles.trailing}>
@@ -530,15 +671,44 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                   ))}
                 </DataSurface>
               ) : (
-                <EmptyState title="No expenses yet" body="Add equal, exact, shares, or itemized expenses with multiple payers." action={{ label: "Add expense", onPress: () => navigation.go("expense") }} />
+                <EmptyState
+                  title="No expenses yet"
+                  body="Add equal, exact, shares, or itemized expenses with multiple payers."
+                  action={{
+                    label: "Add expense",
+                    onPress: () => {
+                      navigation.setSelectedExpenseId(undefined);
+                      navigation.go("expense");
+                    }
+                  }}
+                />
               )}
               {explainingExpenseId ? (
                 <ExpenseExplanationSection
                   explanation={explanationQuery.data}
+                  expense={expensesQuery.data?.find((row) => row.id === explainingExpenseId)}
                   lookups={buildGroupDisplayLookups(group)}
                   loading={explanationQuery.isLoading}
                   error={explanationQuery.error instanceof Error ? explanationQuery.error.message : undefined}
-                  onClose={() => setExplainingExpenseId(undefined)}
+                  canManage={Boolean(group.canManageExpenses)}
+                  voidReason={expenseVoidReason}
+                  onChangeVoidReason={setExpenseVoidReason}
+                  actionError={expenseActionError}
+                  voidPending={voidExpense.isPending}
+                  onEdit={() => {
+                    navigation.setSelectedExpenseId(explainingExpenseId);
+                    navigation.go("expense");
+                  }}
+                  onHistory={() => {
+                    navigation.setSelectedExpenseId(explainingExpenseId);
+                    navigation.go("audit");
+                  }}
+                  onDelete={confirmVoidExpense}
+                  onClose={() => {
+                    setExplainingExpenseId(undefined);
+                    setExpenseVoidReason("");
+                    setExpenseActionError(null);
+                  }}
                 />
               ) : null}
             </View>
@@ -582,7 +752,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               addParticipantPending={addParticipant.isPending}
               createInvite={() => createInvite.mutate()}
               createInvitePending={createInvite.isPending}
-              archiveGroup={() => archiveGroup.mutate()}
+              archiveGroup={confirmDeleteGroup}
               archivePending={archiveGroup.isPending}
               unarchiveGroup={() => unarchiveGroup.mutate()}
               unarchivePending={unarchiveGroup.isPending}
@@ -591,9 +761,27 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               removeMember={confirmRemoveMember}
               removePending={removeMember.isPending}
               membershipActionError={membershipActionError}
-              updateGroupImagePending={updateGroupImage.isPending}
-              updateGroupImageError={updateGroupImage.error instanceof Error ? updateGroupImage.error.message : null}
-              onOpenLogoSheet={() => setLogoSheetVisible(true)}
+              membersCanEditExpenses={group.membersCanEditExpenses !== false}
+              setMembersCanEditExpenses={(value) => setMembersCanEditExpenses.mutate(value)}
+              membersCanEditExpensesPending={setMembersCanEditExpenses.isPending}
+              editingGroupName={editingGroupName}
+              groupNameDraft={groupNameDraft}
+              setGroupNameDraft={setGroupNameDraft}
+              beginRenameGroup={beginRenameGroup}
+              cancelRenameGroup={() => {
+                setEditingGroupName(false);
+                setRenameError(null);
+              }}
+              saveGroupName={() => {
+                const next = groupNameDraft.trim();
+                if (!next) {
+                  setRenameError("Group name is required.");
+                  return;
+                }
+                renameGroup.mutate(next);
+              }}
+              renamePending={renameGroup.isPending}
+              renameError={renameError}
               roleChange={(membershipId, role) => roleChange.mutate({ membershipId, role })}
               lockExit={(membershipId) => lockExit.mutate(membershipId)}
               unlockExit={(membershipId) => unlockExit.mutate(membershipId)}
@@ -648,19 +836,38 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
 function ExpenseExplanationSection({
   explanation,
+  expense,
   lookups,
   loading,
   error,
+  canManage,
+  voidReason,
+  onChangeVoidReason,
+  actionError,
+  voidPending,
+  onEdit,
+  onHistory,
+  onDelete,
   onClose
 }: {
   explanation?: ExpenseExplanation;
+  expense?: { id: string; state: "active" | "voided"; currentVersion: number };
   lookups: ReturnType<typeof buildGroupDisplayLookups>;
   loading: boolean;
   error?: string;
+  canManage: boolean;
+  voidReason: string;
+  onChangeVoidReason: (value: string) => void;
+  actionError?: string | null;
+  voidPending: boolean;
+  onEdit: () => void;
+  onHistory: () => void;
+  onDelete: () => void;
   onClose: () => void;
 }) {
   const theme = useTheme();
   const nameFor = (participantId: string) => resolveParticipantDisplayName(participantId, lookups) ?? "Unknown participant";
+  const isVoided = expense?.state === "voided";
   return (
     <View style={styles.section}>
       <SectionHeader title="How this expense is split" action={<Button label="Close" variant="ghost" onPress={onClose} />} />
@@ -670,17 +877,61 @@ function ExpenseExplanationSection({
         <DataSurface>
           <View style={styles.explanationBlock}>
             <ThemedText variant="bodyMedium">{explanation.explanation}</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">Snapshot version {explanation.snapshotVersion} · {explanation.splitMethod} split</ThemedText>
-            <ThemedText variant="caption" tone="muted">Paid</ThemedText>
-            {explanation.paidBy.map((payer) => <ThemedText key={payer.participantId} variant="bodySm">{nameFor(payer.participantId)}: {payer.formattedAmount}</ThemedText>)}
-            <ThemedText variant="caption" tone="muted">Owed</ThemedText>
-            {explanation.owedBy.map((share) => <ThemedText key={share.participantId} variant="bodySm">{nameFor(share.participantId)}: {share.formattedAmount} ({share.shareType})</ThemedText>)}
+            <ThemedText variant="bodySm" tone="muted">
+              Snapshot version {explanation.snapshotVersion} · {explanation.splitMethod} split
+            </ThemedText>
+            <ThemedText variant="caption" tone="muted">
+              Paid
+            </ThemedText>
+            {explanation.paidBy.map((payer) => (
+              <ThemedText key={payer.participantId} variant="bodySm">
+                {nameFor(payer.participantId)}: {payer.formattedAmount}
+              </ThemedText>
+            ))}
+            <ThemedText variant="caption" tone="muted">
+              Owed
+            </ThemedText>
+            {explanation.owedBy.map((share) => (
+              <ThemedText key={share.participantId} variant="bodySm">
+                {nameFor(share.participantId)}: {share.formattedAmount} ({share.shareType})
+              </ThemedText>
+            ))}
             {explanation.itemizedDetail?.lineItems.map((item) => (
               <View key={`${item.label}-${item.amountMinor}`} style={[styles.explanationItem, { borderTopColor: theme.colors.hairline }]}>
-                <ThemedText variant="bodySm">{item.label}: {item.formattedAmount}</ThemedText>
-                <ThemedText variant="caption" tone="muted">Shared by {participantList(item.participantIds, lookups)}</ThemedText>
+                <ThemedText variant="bodySm">
+                  {item.label}: {item.formattedAmount}
+                </ThemedText>
+                <ThemedText variant="caption" tone="muted">
+                  Shared by {participantList(item.participantIds, lookups)}
+                </ThemedText>
               </View>
             ))}
+            {isVoided ? <InlineNotice title="Deleted expense" body="This expense was voided. Open history to see the audit trail." tone="owe" /> : null}
+            <View style={styles.choiceButtons}>
+              {canManage && !isVoided ? (
+                <Button label="Edit" size="compact" variant="secondary" onPress={onEdit} style={styles.inlineButton} />
+              ) : null}
+              <Button label="History" size="compact" variant="secondary" onPress={onHistory} style={styles.inlineButton} />
+            </View>
+            {canManage && !isVoided ? (
+              <>
+                <InputField
+                  label="Delete reason"
+                  value={voidReason}
+                  onChangeText={onChangeVoidReason}
+                  placeholder="Wrong expense, duplicate, etc."
+                />
+                {actionError ? <InlineNotice title="Delete failed" body={actionError} tone="owe" /> : null}
+                <Button
+                  label="Delete expense"
+                  size="compact"
+                  variant="destructive"
+                  onPress={onDelete}
+                  loading={voidPending}
+                  disabled={!voidReason.trim()}
+                />
+              </>
+            ) : null}
           </View>
         </DataSurface>
       ) : null}
@@ -710,9 +961,17 @@ function PeopleManagement({
   removeMember,
   removePending,
   membershipActionError,
-  updateGroupImagePending,
-  updateGroupImageError,
-  onOpenLogoSheet,
+  membersCanEditExpenses,
+  setMembersCanEditExpenses,
+  membersCanEditExpensesPending,
+  editingGroupName,
+  groupNameDraft,
+  setGroupNameDraft,
+  beginRenameGroup,
+  cancelRenameGroup,
+  saveGroupName,
+  renamePending,
+  renameError,
   roleChange,
   lockExit,
   unlockExit,
@@ -740,9 +999,17 @@ function PeopleManagement({
   removeMember: (membershipId: string, displayName: string) => void;
   removePending: boolean;
   membershipActionError?: string | null;
-  updateGroupImagePending: boolean;
-  updateGroupImageError: string | null;
-  onOpenLogoSheet: () => void;
+  membersCanEditExpenses: boolean;
+  setMembersCanEditExpenses: (value: boolean) => void;
+  membersCanEditExpensesPending: boolean;
+  editingGroupName: boolean;
+  groupNameDraft: string;
+  setGroupNameDraft: (value: string) => void;
+  beginRenameGroup: () => void;
+  cancelRenameGroup: () => void;
+  saveGroupName: () => void;
+  renamePending: boolean;
+  renameError: string | null;
   roleChange: (membershipId: string, role: MembershipRole) => void;
   lockExit: (membershipId: string) => void;
   unlockExit: (membershipId: string) => void;
@@ -760,30 +1027,36 @@ function PeopleManagement({
       {canEditGroup ? (
         <DataSurface>
           <View style={styles.formBlock}>
-            <View style={styles.logoRow}>
-              <UserAvatar
-                displayName={group.name}
-                avatarUrl={group.imageUrl}
-                size={72}
-                editable
-                loading={updateGroupImagePending}
-                onPress={onOpenLogoSheet}
-              />
-              <View style={styles.logoActions}>
-                <ThemedText variant="bodyMedium">Group logo</ThemedText>
-                <ThemedText variant="bodySm" tone="muted">
-                  {group.imageUrl ? "Tap to change or remove" : "Tap the camera to add a logo"}
-                </ThemedText>
-              </View>
-            </View>
-            {updateGroupImageError ? <InlineNotice title="Logo update failed" body={updateGroupImageError} tone="owe" /> : null}
+            <ThemedText variant="bodyMedium">Group name</ThemedText>
+            {editingGroupName ? (
+              <>
+                <InputField label="Name" value={groupNameDraft} onChangeText={setGroupNameDraft} />
+                {renameError ? <InlineNotice title="Rename failed" body={renameError} tone="owe" /> : null}
+                <View style={styles.choiceButtons}>
+                  <Button label="Save name" onPress={saveGroupName} loading={renamePending} disabled={!groupNameDraft.trim()} style={styles.inlineButton} />
+                  <Button label="Cancel" variant="secondary" onPress={cancelRenameGroup} disabled={renamePending} style={styles.inlineButton} />
+                </View>
+              </>
+            ) : (
+              <>
+                <ThemedText variant="title">{group.name}</ThemedText>
+                <Button label="Edit group name" variant="secondary" onPress={beginRenameGroup} />
+              </>
+            )}
+            <SettingsToggleRow
+              label="Members can edit expenses"
+              subtitle="Turn off to restrict edit and delete to owners and admins only."
+              value={membersCanEditExpenses}
+              onValueChange={setMembersCanEditExpenses}
+              disabled={membersCanEditExpensesPending}
+            />
           </View>
         </DataSurface>
       ) : null}
 
       <DataSurface>
-        {group.memberships.map((membership) => {
-          const displayName = resolveParticipantDisplayName(membership.participantId, lookups) ?? "Unknown participant";
+        {activeGroupMemberships(group).map((membership) => {
+          const displayName = resolveParticipantDisplayName(membership.participantId, lookups) ?? "Member";
           const isLocked = membership.status === "locked_for_exit" || membership.status === "inactive_locked";
           const canRemove = canEditGroup && membership.role !== "owner" && membership.status === "active";
           return (
@@ -890,13 +1163,17 @@ function PeopleManagement({
       {canEditGroup ? (
         isArchived ? (
           <>
-            <Button label="Unarchive group" onPress={unarchiveGroup} loading={unarchivePending} />
-            <InlineNotice title="Group is archived" body="Unarchive to allow new expenses and settlements again." tone="pending" />
+            <Button label="Restore group" onPress={unarchiveGroup} loading={unarchivePending} />
+            <InlineNotice title="Group is deleted" body="Restore it to allow new expenses and settlements again." tone="pending" />
           </>
         ) : (
           <>
-            <Button label="Archive group" variant="destructive" onPress={archiveGroup} loading={archivePending} />
-            <InlineNotice title="Archive, do not erase" body="Financial history remains available for audit, balances, and exports." tone="pending" />
+            <Button label="Delete group" variant="destructive" onPress={archiveGroup} loading={archivePending} />
+            <InlineNotice
+              title="Deletes from your active list"
+              body="History stays available for audit and exports. You can restore the group later."
+              tone="pending"
+            />
           </>
         )
       ) : null}
@@ -936,6 +1213,10 @@ const styles = StyleSheet.create({
   },
   inlineButton: {
     flex: 1
+  },
+  choiceButtons: {
+    flexDirection: "row",
+    gap: 10
   },
   section: {
     gap: 12

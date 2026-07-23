@@ -56,11 +56,13 @@ export class UsersService {
   }
 
   async getPhoneMaskedForUser(userId: string): Promise<string | undefined> {
+    const phoneE164 = await this.getPhoneE164ForUser(userId);
+    return phoneE164 ? maskPhoneE164(phoneE164) : undefined;
+  }
+
+  async getPhoneE164ForUser(userId: string): Promise<string | null> {
     const identity = await this.identities.findOne({ where: { userId, provider: 'phone' } });
-    if (!identity?.identifier) {
-      return undefined;
-    }
-    return maskPhoneE164(identity.identifier);
+    return identity?.identifier ?? null;
   }
 
   async getEmailForUser(userId: string): Promise<string | null> {

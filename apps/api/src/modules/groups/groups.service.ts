@@ -183,23 +183,42 @@ export class GroupsService {
   async getGroupForUser(userId: string, groupId: string): Promise<GroupResponseDto> {
     await this.assertPermission(userId, groupId, 'group.read');
     const group = await this.findGroupOrThrow(groupId);
-    const [participants, memberships] = await Promise.all([
+    let [participants, memberships] = await Promise.all([
       this.participants.find({ where: { groupId }, order: { createdAt: 'ASC' } }),
       this.memberships.find({ where: { groupId }, order: { createdAt: 'ASC' } })
     ]);
+
+    // Repair orphan memberships whose participant row is missing from the group query,
+    // and collapse guest shells superseded by a claimed/linked user participant.
+    const repaired = await this.repairGroupPeople(groupId, participants, memberships);
+    participants = repaired.participants;
+    memberships = repaired.memberships;
+
     const membership = memberships.find((row) => row.userId === userId);
     const participantId = membership?.participantId ?? undefined;
     const netBalanceMinor = participantId
       ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
       : 0;
-    return GroupResponseDto.fromEntities(group, participants, memberships, netBalanceMinor);
+    const upiVpaByParticipantId = await this.resolveUpiVpaByParticipantIds(participants);
+    const [currentPermissions, memberPermissions] = await Promise.all([
+      membership ? this.permissionsAllowed(groupId, membership.role) : Promise.resolve([] as GroupPermission[]),
+      this.permissionsAllowed(groupId, 'member')
+    ]);
+    return GroupResponseDto.fromEntities(group, participants, memberships, netBalanceMinor, upiVpaByParticipantId, {
+      canManageExpenses: currentPermissions.includes('financial.expense.edit.any'),
+      membersCanEditExpenses: memberPermissions.includes('financial.expense.edit.any')
+    });
   }
 
   async updateGroup(userId: string, groupId: string, dto: UpdateGroupDto): Promise<GroupResponseDto> {
     await this.assertPermission(userId, groupId, 'group.update');
     const group = await this.findGroupOrThrow(groupId);
 
-    if (dto.name === undefined && dto.imageAttachmentId === undefined) {
+    if (
+      dto.name === undefined &&
+      dto.imageAttachmentId === undefined &&
+      dto.membersCanEditExpenses === undefined
+    ) {
       return this.getGroupForUser(userId, groupId);
     }
 
@@ -214,7 +233,14 @@ export class GroupsService {
       group.imageAttachmentId = dto.imageAttachmentId;
     }
 
-    await this.groups.save(group);
+    if (dto.name !== undefined || dto.imageAttachmentId !== undefined) {
+      await this.groups.save(group);
+    }
+
+    if (dto.membersCanEditExpenses !== undefined) {
+      await this.setMemberExpenseEditAllowed(groupId, dto.membersCanEditExpenses);
+    }
+
     return this.getGroupForUser(userId, groupId);
   }
 
@@ -252,27 +278,69 @@ export class GroupsService {
     }
 
     const user = await this.usersService.findByIdOrThrow(userId);
-    const participant = await this.participants.save(
-      this.participants.create({
-        groupId: invite.groupId,
-        displayName: dto.displayName?.trim() || user.displayName,
-        phoneE164: null,
-        kind: 'user',
-        linkedUserId: userId,
-        invitedByUserId: invite.createdByUserId
-      })
-    );
-    await this.memberships.save(
-      this.memberships.create({
-        groupId: invite.groupId,
-        userId,
-        participantId: participant.id,
-        role: 'member',
-        status: 'active',
-        lockedAt: null,
-        exitLockReason: null
-      })
-    );
+    const phoneE164 = await this.usersService.getPhoneE164ForUser(userId);
+    const displayName = dto.displayName?.trim() || user.displayName;
+
+    // Prefer linking an existing guest placeholder (same phone / unique matching name)
+    // so we do not create a second "Unknown"/duplicate person in the group.
+    const guest = await this.findClaimableGuestParticipant(invite.groupId, phoneE164, displayName);
+    if (guest) {
+      guest.linkedUserId = userId;
+      guest.kind = 'user';
+      guest.displayName = displayName;
+      if (phoneE164) {
+        guest.phoneE164 = phoneE164;
+      }
+      await this.participants.save(guest);
+
+      let membership = await this.memberships.findOne({
+        where: { groupId: invite.groupId, participantId: guest.id }
+      });
+      if (membership) {
+        membership.userId = userId;
+        if (membership.status !== 'active' && membership.status !== 'locked_for_exit') {
+          membership.status = 'active';
+          membership.lockedAt = null;
+          membership.exitLockReason = null;
+        }
+        await this.memberships.save(membership);
+      } else {
+        await this.memberships.save(
+          this.memberships.create({
+            groupId: invite.groupId,
+            userId,
+            participantId: guest.id,
+            role: 'member',
+            status: 'active',
+            lockedAt: null,
+            exitLockReason: null
+          })
+        );
+      }
+    } else {
+      const participant = await this.participants.save(
+        this.participants.create({
+          groupId: invite.groupId,
+          displayName,
+          phoneE164,
+          kind: 'user',
+          linkedUserId: userId,
+          invitedByUserId: invite.createdByUserId
+        })
+      );
+      await this.memberships.save(
+        this.memberships.create({
+          groupId: invite.groupId,
+          userId,
+          participantId: participant.id,
+          role: 'member',
+          status: 'active',
+          lockedAt: null,
+          exitLockReason: null
+        })
+      );
+    }
+
     invite.uses += 1;
     await this.invites.save(invite);
     await this.notificationsService.create({
@@ -555,9 +623,79 @@ export class GroupsService {
     await this.rolePermissions.save(rows);
   }
 
+  private async setMemberExpenseEditAllowed(groupId: string, allowed: boolean): Promise<void> {
+    const existing = await this.rolePermissions.count({ where: { groupId, role: 'member' } });
+    if (existing === 0) {
+      // Materialize member defaults first so toggling does not replace the fallback with a partial set.
+      await this.rolePermissions.save(
+        permissionsForRole('member').map((permission) =>
+          this.rolePermissions.create({
+            groupId,
+            role: 'member',
+            permission,
+            allowed: true
+          })
+        )
+      );
+    }
+
+    const permissions: GroupPermission[] = ['financial.expense.edit.any', 'financial.expense.void'];
+    for (const permission of permissions) {
+      let row = await this.rolePermissions.findOne({
+        where: { groupId, role: 'member', permission }
+      });
+      if (!row) {
+        row = this.rolePermissions.create({
+          groupId,
+          role: 'member',
+          permission,
+          allowed
+        });
+      } else {
+        row.allowed = allowed;
+      }
+      await this.rolePermissions.save(row);
+    }
+  }
+
   async getGroupName(groupId: string): Promise<string> {
     const group = await this.groups.findOne({ where: { id: groupId }, select: ['id', 'name'] });
     return group?.name?.trim() || 'a group';
+  }
+
+  async resolveUpiVpaForParticipant(groupId: string, participantId: string): Promise<string | null> {
+    const userId = await this.resolveUserIdForParticipant(groupId, participantId);
+    if (!userId) {
+      return null;
+    }
+    const user = await this.usersService.findById(userId);
+    const vpa = user?.upiVpa?.trim();
+    return vpa || null;
+  }
+
+  private async resolveUpiVpaByParticipantIds(
+    participants: ParticipantEntity[]
+  ): Promise<Record<string, string | null>> {
+    const linkedUserIds = participants
+      .map((participant) => participant.linkedUserId)
+      .filter((id): id is string => Boolean(id));
+    if (!linkedUserIds.length) {
+      return {};
+    }
+    const uniqueUserIds = [...new Set(linkedUserIds)];
+    const users = await Promise.all(uniqueUserIds.map((id) => this.usersService.findById(id)));
+    const upiByUserId = new Map(
+      users
+        .filter((user): user is NonNullable<typeof user> => Boolean(user))
+        .map((user) => [user.id, user.upiVpa?.trim() || null] as const)
+    );
+    const result: Record<string, string | null> = {};
+    for (const participant of participants) {
+      result[participant.id] = participant.linkedUserId
+        ? upiByUserId.get(participant.linkedUserId) ?? null
+        : null;
+    }
+    return result;
   }
 
   private async findGroupOrThrow(groupId: string): Promise<GroupEntity> {
@@ -656,6 +794,88 @@ export class GroupsService {
     );
 
     return MembershipResponseDto.fromEntity(saved);
+  }
+
+  private async findClaimableGuestParticipant(
+    groupId: string,
+    phoneE164: string | null,
+    displayName: string
+  ): Promise<ParticipantEntity | null> {
+    if (phoneE164) {
+      const byPhoneRows = await this.participants.find({ where: { groupId, phoneE164 } });
+      const phoneGuest = byPhoneRows.find((row) => !row.linkedUserId);
+      if (phoneGuest) {
+        return phoneGuest;
+      }
+    }
+
+    const guests = (await this.participants.find({ where: { groupId } })).filter((row) => !row.linkedUserId);
+    const normalized = displayName.trim().toLowerCase();
+    const nameMatches = guests.filter((row) => row.displayName.trim().toLowerCase() === normalized);
+    if (nameMatches.length === 1) {
+      return nameMatches[0];
+    }
+    return null;
+  }
+
+  private async repairGroupPeople(
+    groupId: string,
+    participants: ParticipantEntity[],
+    memberships: GroupMembershipEntity[]
+  ): Promise<{ participants: ParticipantEntity[]; memberships: GroupMembershipEntity[] }> {
+    const participantById = new Map(participants.map((row) => [row.id, row]));
+    const missingIds = memberships
+      .map((row) => row.participantId)
+      .filter((id): id is string => typeof id === 'string' && !participantById.has(id));
+    if (missingIds.length) {
+      const extras = await this.participants.find({ where: { id: In(missingIds) } });
+      for (const extra of extras) {
+        if (extra.groupId !== groupId) {
+          // Orphan membership pointing outside this group — leave for UI filter.
+          continue;
+        }
+        participants.push(extra);
+        participantById.set(extra.id, extra);
+      }
+    }
+
+    const linked = participants.filter((row) => Boolean(row.linkedUserId));
+    const linkedPhones = new Set(linked.map((row) => row.phoneE164).filter((phone): phone is string => Boolean(phone)));
+    const linkedNames = new Set(linked.map((row) => row.displayName.trim().toLowerCase()));
+
+    let changed = false;
+    for (const membership of memberships) {
+      if (membership.status !== 'active' && membership.status !== 'locked_for_exit') {
+        continue;
+      }
+      if (membership.userId || !membership.participantId) {
+        continue;
+      }
+      const participant = participantById.get(membership.participantId);
+      if (!participant || participant.linkedUserId) {
+        continue;
+      }
+      const supersededByPhone = Boolean(participant.phoneE164 && linkedPhones.has(participant.phoneE164));
+      const supersededByName = linkedNames.has(participant.displayName.trim().toLowerCase());
+      if (!supersededByPhone && !supersededByName) {
+        continue;
+      }
+      const outstanding = this.balanceProjector
+        .listGroupBalances(groupId)
+        .some((row) => row.participantId === participant.id && Math.abs(row.amountMinor) > 0);
+      if (outstanding) {
+        continue;
+      }
+      membership.status = 'removed_zero_balance';
+      await this.memberships.save(membership);
+      changed = true;
+    }
+
+    if (changed) {
+      memberships = await this.memberships.find({ where: { groupId }, order: { createdAt: 'ASC' } });
+    }
+
+    return { participants, memberships };
   }
 
   private async notifyActiveUsers(

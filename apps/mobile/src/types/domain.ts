@@ -33,6 +33,8 @@ export interface Participant {
   phoneE164?: string;
   phoneHash?: string;
   linkedUserId?: string;
+  /** Default UPI ID for receiving payments (from linked user profile). */
+  upiVpa?: string | null;
   participantType?: "individual" | "guest" | "couple" | "household" | "subgroup";
   state?: "active" | "claimed" | "inactive";
 }
@@ -67,6 +69,10 @@ export interface GroupDetail extends GroupSummary {
   participants: Participant[];
   memberships: Membership[];
   inviteUrl?: string;
+  /** Whether the current user can edit or void expenses. */
+  canManageExpenses?: boolean;
+  /** Group setting: members may edit/void expenses (admins can turn this off). */
+  membersCanEditExpenses?: boolean;
 }
 
 export interface BalanceRow {
@@ -88,6 +94,24 @@ export interface ExpenseRow {
   state: "active" | "voided";
   currentVersion: number;
   updatedAt?: string;
+}
+
+export interface ExpenseDetail extends ExpenseRow {
+  payers: Array<{ participantId: string; amountMinor: number }>;
+  shares: Array<{
+    participantId: string;
+    amountMinor: number;
+    shareType: string;
+    roundingDeltaMinor?: number;
+  }>;
+  lineItems: Array<{ label: string; amountMinor: number; participantIds: string[] }>;
+  billAdjustments: Array<{
+    adjustmentType: string;
+    label: string;
+    amountMinor: number;
+    allocationBasis?: string;
+  }>;
+  voidReason?: string;
 }
 
 export interface ReportEnvelope<T> {
@@ -197,6 +221,8 @@ export interface SettlementIntent {
   proofs?: Array<{ id?: string; attachmentId?: string; utr?: string; submittedAt?: string }>;
   proofAttachmentId?: string;
   proofUrl?: string;
+  /** Rejection / dispute reason from the settlement timeline. */
+  rejectionReason?: string;
 }
 
 export interface RecurringSchedule {

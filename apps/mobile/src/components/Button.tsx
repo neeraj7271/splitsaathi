@@ -9,21 +9,32 @@ interface ButtonProps {
   label: string;
   onPress?: () => void;
   variant?: "primary" | "secondary" | "destructive" | "ghost";
+  size?: "default" | "compact";
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-export function Button({ label, onPress, variant = "primary", disabled = false, loading = false, style }: ButtonProps) {
+export function Button({
+  label,
+  onPress,
+  variant = "primary",
+  size = "default",
+  disabled = false,
+  loading = false,
+  style
+}: ButtonProps) {
   const theme = useTheme();
   const isPrimary = variant === "primary";
+  const isCompact = size === "compact";
   const isDisabled = disabled || loading;
   const onGradient = theme.mode === "dark" ? theme.colors.ink : theme.colors.surface;
+  const sizeStyle = isCompact ? styles.compact : styles.base;
   const content = (
     <>
       {loading ? <ActivityIndicator color={isPrimary ? onGradient : theme.colors.confirmed} /> : null}
       <ThemedText
-        variant="button"
+        variant={isCompact ? "bodySm" : "button"}
         tone={variant === "destructive" ? "owe" : isPrimary ? "ink" : "ink"}
         style={[isPrimary ? { color: onGradient } : null, isDisabled ? styles.disabledText : null]}
       >
@@ -39,7 +50,7 @@ export function Button({ label, onPress, variant = "primary", disabled = false, 
           colors={[theme.gradients.current.start, theme.gradients.current.end]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.base, { borderRadius: theme.radius.full }]}
+          style={[sizeStyle, { borderRadius: theme.radius.full }]}
         >
           {content}
         </LinearGradient>
@@ -52,7 +63,7 @@ export function Button({ label, onPress, variant = "primary", disabled = false, 
       onPress={onPress}
       disabled={isDisabled}
       style={({ pressed }) => [
-        styles.base,
+        sizeStyle,
         {
           borderRadius: theme.radius.full,
           borderColor: variant === "destructive" ? theme.colors.owe : variant === "ghost" ? "transparent" : theme.colors.hairline,
@@ -79,6 +90,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
+    borderWidth: 1
+  },
+  compact: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
     borderWidth: 1
   },
   disabledText: {
