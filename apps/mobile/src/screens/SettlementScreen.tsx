@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Image, Modal, Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CaretDown, CaretUp, QrCode, ShieldCheck } from "phosphor-react-native";
+import { CaretDown, CaretUp, CheckCircle, QrCode, ShieldCheck, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
+import { useOptionalAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
@@ -24,7 +25,7 @@ import { SettlementIntent, SettlementState, SettlementSuggestion } from "../type
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
-import { resolveAuthenticatedImageUri } from "../utils/authenticatedImage";
+import { openAuthenticatedAttachment } from "../utils/authenticatedAttachment";
 import {
   detectInstalledUpiApps,
   DetectedUpiApps,
@@ -44,12 +45,22 @@ const CONFIRMABLE_STATES: SettlementState[] = [
   "duplicate_reference_review"
 ];
 
+const WAITING_FOR_PAYER_STATES: SettlementState[] = [
+  "intent_created",
+  "intent_generated",
+  "payer_opened_upi_app",
+  "awaiting_payment_evidence"
+];
+
+const SETTLED_STATES: SettlementState[] = ["confirmed", "ledger_posted"];
+
 function isConfirmableState(state: SettlementState | undefined): boolean {
   return Boolean(state && CONFIRMABLE_STATES.includes(state));
 }
 
 export function SettlementScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const dialog = useOptionalAppDialog();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<SettlementMode>("suggested");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
@@ -65,6 +76,8 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [handoffError, setHandoffError] = useState<string>();
   const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
+  const [proofPreviewUri, setProofPreviewUri] = useState<string>();
+  const [proofLoading, setProofLoading] = useState(false);
 
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
@@ -176,10 +189,14 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const isPayer = Boolean(intent && myParticipantId && intent.payerParticipantId === myParticipantId);
   const isPayee = Boolean(intent && myParticipantId && intent.payeeParticipantId === myParticipantId);
   const canConfirmAsPayee = isPayee && isConfirmableState(intent?.state);
+  const isSettled = Boolean(intent?.state && SETTLED_STATES.includes(intent.state));
+  const waitingForPayerProof =
+    isPayee && Boolean(intent?.state && WAITING_FOR_PAYER_STATES.includes(intent.state)) && !isConfirmableState(intent?.state);
   const canSubmitProofAsPayer =
     isPayer &&
     intent?.paymentMethod !== "cash" &&
-    !["ledger_posted", "confirmed", "rejected", "cancelled", "expired"].includes(intent?.state ?? "");
+    !SETTLED_STATES.includes(intent?.state as SettlementState) &&
+    !["rejected", "cancelled", "expired"].includes(intent?.state ?? "");
   const awaitingPayeeConfirm = isPayer && isConfirmableState(intent?.state);
 
   const invalidateSettlementBalances = (groupId: string) => {
@@ -276,6 +293,20 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     onSuccess: (response) => {
       setIntent(response);
       invalidateSettlementBalances(response.groupId);
+      dialog?.showDialog({
+        title: "Payment confirmed",
+        message: "Settlement is complete. Balances have been updated.",
+        tone: "success",
+        primaryAction: {
+          label: "Done",
+          onPress: () => {
+            setIntent(undefined);
+            setReason("");
+            setUtrText("");
+            setProofAttachment(undefined);
+          }
+        }
+      });
     }
   });
   const reject = useMutation({
@@ -340,17 +371,21 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     if (!pathOrUrl) {
       return;
     }
+    setProofLoading(true);
     try {
-      const localUri = await resolveAuthenticatedImageUri(pathOrUrl);
-      const target = localUri ?? apiClient.resolveUrl(pathOrUrl);
-      if (target) {
-        await Linking.openURL(target);
+      const file = await openAuthenticatedAttachment(pathOrUrl);
+      if (file.isImage) {
+        setProofPreviewUri(file.localUri);
       }
-    } catch {
-      const fallback = apiClient.resolveUrl(pathOrUrl);
-      if (fallback) {
-        await Linking.openURL(fallback);
-      }
+    } catch (error) {
+      dialog?.showDialog({
+        title: "Could not open proof",
+        message: error instanceof Error ? error.message : "Download failed.",
+        tone: "error",
+        primaryAction: { label: "OK" }
+      });
+    } finally {
+      setProofLoading(false);
     }
   }
 
@@ -482,7 +517,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         </DataSurface>
       ) : (
         <View style={styles.section}>
-          {isPayer ? (
+          {isPayer && !isSettled ? (
             <>
               <SectionHeader title="UPI handoff" />
               <DataSurface>
@@ -575,35 +610,42 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   <View style={styles.handoffRow}>
                     <ShieldCheck size={24} color={theme.colors.confirmed} weight="duotone" />
                     <View style={styles.titleBlock}>
-                      <ThemedText variant="bodyMedium">Only you can settle this</ThemedText>
+                      <ThemedText variant="bodyMedium">Verify before you confirm</ThemedText>
                       <ThemedText variant="bodySm" tone="muted">
-                        Confirm only after the money has arrived in your account.
+                        Confirm only after the money has arrived in your account. This settles the balance.
                       </ThemedText>
                     </View>
                   </View>
                   {(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
-                    <Button label="View payment proof" variant="secondary" onPress={() => void openProof(intent)} />
-                  ) : null}
-                  <InputField label="Reject reason (required to reject)" value={reason} onChangeText={setReason} />
-                  <View style={styles.actionRow}>
                     <Button
-                      label="Confirm received"
-                      onPress={() => confirm.mutate()}
-                      loading={confirm.isPending}
-                      style={styles.inlineButton}
+                      label={proofLoading ? "Opening proof…" : "View payment proof"}
+                      variant="secondary"
+                      onPress={() => void openProof(intent)}
+                      loading={proofLoading}
                     />
-                    <Button
-                      label="Reject"
-                      variant="destructive"
-                      onPress={() => reject.mutate()}
-                      loading={reject.isPending}
-                      disabled={!reason.trim()}
-                      style={styles.inlineButton}
+                  ) : (
+                    <InlineNotice
+                      title="No screenshot attached"
+                      body="The payer submitted a UTR reference. Confirm if the amount matches your bank credit."
+                      tone="info"
                     />
-                  </View>
+                  )}
+                  <Button
+                    label="Confirm received"
+                    onPress={() => confirm.mutate()}
+                    loading={confirm.isPending}
+                  />
+                  <InputField label="Reject or dispute reason" value={reason} onChangeText={setReason} />
+                  <Button
+                    label="Reject payment"
+                    variant="destructive"
+                    onPress={() => reject.mutate()}
+                    loading={reject.isPending}
+                    disabled={!reason.trim()}
+                  />
                   <Button
                     label="Open dispute"
-                    variant="secondary"
+                    variant="ghost"
                     onPress={() => dispute.mutate()}
                     loading={dispute.isPending}
                     disabled={!reason.trim()}
@@ -613,7 +655,33 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             </>
           ) : null}
 
-          {isPayee && !canConfirmAsPayee ? (
+          {isSettled ? (
+            <DataSurface>
+              <View style={styles.formBlock}>
+                <View style={styles.handoffRow}>
+                  <CheckCircle size={24} color={theme.colors.confirmed} weight="duotone" />
+                  <View style={styles.titleBlock}>
+                    <ThemedText variant="bodyMedium">Settlement complete</ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">
+                      Payment was confirmed and balances are updated.
+                    </ThemedText>
+                  </View>
+                </View>
+                <Button
+                  label="Start another settlement"
+                  variant="secondary"
+                  onPress={() => {
+                    setIntent(undefined);
+                    setReason("");
+                    setUtrText("");
+                    setProofAttachment(undefined);
+                  }}
+                />
+              </View>
+            </DataSurface>
+          ) : null}
+
+          {waitingForPayerProof ? (
             <InlineNotice
               title="Waiting for payer"
               body="The payer still needs to complete UPI and submit proof before you can confirm."
@@ -622,6 +690,24 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
           ) : null}
         </View>
       )}
+
+      <Modal visible={Boolean(proofPreviewUri)} transparent animationType="fade" onRequestClose={() => setProofPreviewUri(undefined)}>
+        <View style={styles.proofModalRoot}>
+          <Pressable style={styles.proofModalBackdrop} onPress={() => setProofPreviewUri(undefined)} />
+          <View style={[styles.proofModalCard, { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg }]}>
+            <View style={styles.proofModalHeader}>
+              <ThemedText variant="bodyMedium">Payment proof</ThemedText>
+              <Pressable onPress={() => setProofPreviewUri(undefined)} hitSlop={12}>
+                <X size={22} color={theme.colors.ink} weight="bold" />
+              </Pressable>
+            </View>
+            {proofPreviewUri ? (
+              <Image source={{ uri: proofPreviewUri }} style={styles.proofImage} resizeMode="contain" />
+            ) : null}
+            <Button label="Close" variant="secondary" onPress={() => setProofPreviewUri(undefined)} />
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.section}>
         <SectionHeader title="Settlement history" />
@@ -754,6 +840,32 @@ const styles = StyleSheet.create({
   },
   inlineButton: {
     flex: 1
+  },
+  proofModalRoot: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 40
+  },
+  proofModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(11, 14, 20, 0.72)"
+  },
+  proofModalCard: {
+    zIndex: 1,
+    padding: 16,
+    gap: 14,
+    maxHeight: "88%"
+  },
+  proofModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  proofImage: {
+    width: "100%",
+    height: 420,
+    backgroundColor: "#0B0E14"
   },
   historyRow: {
     flexDirection: "row",

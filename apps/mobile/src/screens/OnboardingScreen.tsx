@@ -594,79 +594,109 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         ) : null}
 
         {step === "join" ? (
-          <AuthPanel
-            title="Join a group"
-            body="Sign in with Google, or continue with your phone number. Then we'll claim this invite."
-            icon={<LinkSimple size={24} color={theme.colors.confirmed} weight="duotone" />}
-          >
-            <InputField label="Invite link or token" value={inviteLink} onChangeText={setInviteLink} autoCapitalize="none" />
-            {scanningInvite && !isWeb ? (
-              <View style={[styles.cameraBox, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>
-                <CameraView
-                  style={styles.camera}
-                  barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                  onBarcodeScanned={(result: BarcodeScanningResult) => {
-                    setInviteLink(result.data);
-                    setScanningInvite(false);
+          <View style={styles.joinShell}>
+            <View style={styles.joinHero}>
+              <View style={[styles.joinIconHalo, { backgroundColor: theme.colors.surface }]}>
+                <LinkSimple size={28} color={theme.colors.confirmed} weight="duotone" />
+              </View>
+              <ThemedText variant="title" align="center">
+                Join with invite
+              </ThemedText>
+              <ThemedText variant="bodySm" tone="muted" align="center">
+                Paste a link, scan a QR, then continue with Google. We&apos;ll add you to the group after sign-in.
+              </ThemedText>
+            </View>
+
+            <View
+              style={[
+                styles.joinCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.hairline,
+                  borderRadius: theme.radius.lg
+                }
+              ]}
+            >
+              <InputField
+                label="Invite link or token"
+                value={inviteLink}
+                onChangeText={setInviteLink}
+                autoCapitalize="none"
+                placeholder="https://…/join/… or token"
+              />
+
+              {scanningInvite && !isWeb ? (
+                <View style={[styles.cameraBox, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>
+                  <CameraView
+                    style={styles.camera}
+                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                    onBarcodeScanned={(result: BarcodeScanningResult) => {
+                      setInviteLink(result.data);
+                      setScanningInvite(false);
+                    }}
+                  />
+                </View>
+              ) : null}
+
+              {!isWeb ? (
+                <Button
+                  label={scanningInvite ? "Close scanner" : "Scan invite QR"}
+                  variant="secondary"
+                  onPress={async () => {
+                    if (!cameraPermission?.granted) {
+                      const requested = await requestCameraPermission();
+                      if (!requested.granted) return;
+                    }
+                    setScanningInvite((value) => !value);
                   }}
                 />
-              </View>
-            ) : null}
-            {isWeb ? (
-              <InlineNotice
-                title="Desktop preview"
-                body="QR scanning is available on phone builds. Paste the invite link or token here when testing in the browser."
-                tone="info"
-              />
-            ) : null}
-            <Button
-              label={isWeb ? "QR scan is phone-only" : scanningInvite ? "Close scanner" : "Scan QR"}
-              variant="secondary"
-              disabled={isWeb}
-              onPress={async () => {
-                if (!cameraPermission?.granted) {
-                  const requested = await requestCameraPermission();
-                  if (!requested.granted) return;
-                }
-                setScanningInvite((value) => !value);
-              }}
-            />
+              ) : (
+                <InlineNotice
+                  title="QR on phone only"
+                  body="Paste the invite link here when previewing on desktop."
+                  tone="info"
+                />
+              )}
 
-            {googleConfigured ? (
-              <GoogleSignInButton
-                label="Continue with Google"
-                onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
-                pending={loginWithGoogle.isPending}
-                errorMessage={loginWithGoogle.error?.message}
-                disabled={!inviteLink.trim()}
-              />
-            ) : (
-              <InlineNotice title="Google sign-in not configured" body="Use phone below, or configure Google OAuth client IDs." tone="pending" />
-            )}
+              <View style={[styles.joinDivider, { backgroundColor: theme.colors.hairline }]} />
 
-            <ThemedText variant="caption" tone="muted" style={{ textAlign: "center", marginTop: 4 }}>
-              Or continue with phone (no OTP for now)
-            </ThemedText>
-            <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-            {loginWithPhone.error ? <InlineNotice title="Phone sign-in failed" body={loginWithPhone.error.message} tone="owe" /> : null}
-            <Button
-              label="Continue with phone"
-              onPress={() => {
-                setLinkingPhone(false);
-                loginWithPhone.mutate();
-              }}
-              loading={loginWithPhone.isPending}
-              disabled={!inviteLink.trim() || phone.length < 8}
-            />
-            <Button
-              label="Back"
-              variant="ghost"
-              onPress={() => {
-                setScanningInvite(false);
-                setStep("welcome");
-              }}
-            />
-          </AuthPanel>
+              {googleConfigured ? (
+                <GoogleSignInButton
+                  label="Continue with Google"
+                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+                  pending={loginWithGoogle.isPending}
+                  errorMessage={loginWithGoogle.error?.message}
+                  disabled={!inviteLink.trim()}
+                />
+              ) : (
+                <InlineNotice title="Google sign-in not configured" body="Configure Google OAuth client IDs, or use phone below." tone="pending" />
+              )}
+
+              <ThemedText variant="caption" tone="muted" align="center">
+                Prefer phone instead?
+              </ThemedText>
+              <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+              {loginWithPhone.error ? <InlineNotice title="Phone sign-in failed" body={loginWithPhone.error.message} tone="owe" /> : null}
+              <Button
+                label="Continue with phone"
+                variant="secondary"
+                onPress={() => {
+                  setLinkingPhone(false);
+                  loginWithPhone.mutate();
+                }}
+                loading={loginWithPhone.isPending}
+                disabled={!inviteLink.trim() || phone.length < 8}
+              />
+              <Button
+                label="Back to welcome"
+                variant="ghost"
+                onPress={() => {
+                  setScanningInvite(false);
+                  setStep("welcome");
+                }}
+              />
+            </View>
+          </View>
         ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -876,5 +906,34 @@ const styles = StyleSheet.create({
   camera: {
     width: "100%",
     height: 160
+  },
+  joinShell: {
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
+    gap: 20
+  },
+  joinHero: {
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 8
+  },
+  joinIconHalo: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4
+  },
+  joinCard: {
+    gap: 14,
+    borderWidth: 1,
+    padding: 18
+  },
+  joinDivider: {
+    height: StyleSheet.hairlineWidth,
+    width: "100%",
+    marginVertical: 2
   }
 });
