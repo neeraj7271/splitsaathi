@@ -88,6 +88,7 @@ export interface ExpenseRow {
   groupId: string;
   description: string;
   category?: string;
+  notes?: string;
   expenseDate: string;
   totalAmountMinor: number;
   currencyCode: string;
@@ -166,6 +167,7 @@ export interface ExpenseExplanation {
   expenseId: string;
   groupId: string;
   description: string;
+  notes?: string;
   status: "active" | "voided";
   totalAmountMinor: number;
   currencyCode: string;

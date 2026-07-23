@@ -26,6 +26,7 @@ export interface CreateExpenseCommand {
   expenseId?: string;
   description: string;
   category?: string;
+  notes?: string;
   expenseDate: string;
   currencyCode?: string;
   payers: ExpensePayerInput[];

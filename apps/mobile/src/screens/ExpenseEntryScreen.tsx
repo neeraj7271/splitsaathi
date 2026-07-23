@@ -64,6 +64,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
 
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date());
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -115,6 +116,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     applyExpenseToForm(expenseQuery.data, {
       setDescription,
       setCategory,
+      setNotes,
       setAmount,
       setExpenseDate,
       setSplitType,
@@ -284,6 +286,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       groupId: selectedGroupId,
       description,
       category,
+      notes,
       expenseDate,
       totalMinor,
       selectedPayers,
@@ -314,6 +317,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         setMessage("Expense posted to the ledger.");
         setDescription("");
         setAmount("");
+        setNotes("");
         setLineItems([]);
         setAdjustments([]);
         navigation.setSelectedExpenseId(undefined);
@@ -404,6 +408,14 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                 <InputField label="Total amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" amount />
               ) : null}
               <InputField label="Category optional" value={category} onChangeText={setCategory} />
+              <InputField
+                label="Notes optional"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Extra context for this expense"
+                multiline
+                style={{ minHeight: 72, textAlignVertical: "top", paddingTop: 14 }}
+              />
               <View style={styles.iconActions}>
                 <Pressable
                   accessibilityRole="button"
@@ -828,6 +840,7 @@ function buildExpensePayload(input: {
   groupId: string;
   description: string;
   category?: string;
+  notes?: string;
   expenseDate: Date;
   totalMinor: number;
   selectedPayers: string[];
@@ -844,6 +857,7 @@ function buildExpensePayload(input: {
     groupId: input.groupId,
     description: input.description.trim(),
     category: input.category?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
     expenseDate: formatExpenseDate(input.expenseDate),
     currencyCode: "INR",
     payers: input.selectedPayers.map((participantId) => ({
@@ -907,6 +921,7 @@ function applyExpenseToForm(
   setters: {
     setDescription: (value: string) => void;
     setCategory: (value: string) => void;
+    setNotes: (value: string) => void;
     setAmount: (value: string) => void;
     setExpenseDate: (value: Date) => void;
     setSplitType: (value: SplitType) => void;
@@ -923,6 +938,7 @@ function applyExpenseToForm(
   const split = inferSplitType(expense);
   setters.setDescription(expense.description);
   setters.setCategory(expense.category ?? "");
+  setters.setNotes(expense.notes ?? "");
   setters.setAmount(minorToAmountInput(expense.totalAmountMinor));
   const parsedDate = new Date(`${expense.expenseDate}T12:00:00`);
   setters.setExpenseDate(Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate);

@@ -29,6 +29,7 @@ import {
   VerifyOtpResponse
 } from "../types/domain";
 import { createIdempotencyKey } from "../utils/idempotency";
+import { formatMoney } from "../utils/money";
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "../auth/tokenStore";
 import { logApiConfig, logApiError, logApiRequest, logApiResponse } from "./debugLog";
 
@@ -72,6 +73,7 @@ export interface CreateExpenseRequest {
   groupId: string;
   description: string;
   category?: string;
+  notes?: string;
   expenseDate: string;
   currencyCode: string;
   payers: Array<{ participantId: string; amountMinor: number }>;
@@ -126,6 +128,7 @@ function mapExpense(row: Record<string, any>): ExpenseRow {
     groupId: row.groupId,
     description: row.description,
     category: row.category,
+    notes: row.notes,
     expenseDate: row.expenseDate,
     totalAmountMinor: row.totalAmountMinor,
     currencyCode: row.currencyCode,
@@ -182,6 +185,109 @@ function formatExpenseHistorySummary(eventType?: string) {
     default:
       return eventType || "Update";
   }
+}
+
+function asMinorAmount(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    return Number.parseInt(value.trim(), 10);
+  }
+  return undefined;
+}
+
+function formatMoneyRows(value: unknown, currencyCode: string): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  if (!value.length) {
+    return "none";
+  }
+  if (!value.every((row) => row && typeof row === "object" && "amountMinor" in row)) {
+    return undefined;
+  }
+  return value
+    .map((row: Record<string, any>) => {
+      const amount = asMinorAmount(row.amountMinor) ?? 0;
+      const who = typeof row.label === "string" && row.label.trim() ? row.label.trim() : "member";
+      const share = typeof row.shareType === "string" ? ` (${row.shareType})` : "";
+      return `${who} ${formatMoney(amount, currencyCode)}${share}`;
+    })
+    .join("; ");
+}
+
+function normalizeRawMinorTotals(detail: string, currencyCode: string): string {
+  // Old API: "Created \"Dinner\" for 25000 INR."
+  let next = detail.replace(/\bfor\s+(\d{3,})\s*([A-Z]{3})?\b/g, (_full, amountRaw: string, code?: string) => {
+    const amount = asMinorAmount(amountRaw);
+    if (amount === undefined) {
+      return _full;
+    }
+    return `for ${formatMoney(amount, code || currencyCode)}`;
+  });
+  // Old API: "totalAmountMinor changed from 25000 to 30000."
+  next = next.replace(
+    /\b(?:totalAmountMinor|Total)\b(?:\s+changed\s+from|\s*:)\s*(-?\d+)\s*(?:→|to)\s*(-?\d+)\.?/gi,
+    (_full, left: string, right: string) => {
+      const before = asMinorAmount(left);
+      const after = asMinorAmount(right);
+      if (before === undefined || after === undefined) {
+        return _full;
+      }
+      return `Total: ${formatMoney(before, currencyCode)} → ${formatMoney(after, currencyCode)}`;
+    }
+  );
+  return next;
+}
+
+function formatExpenseHistoryChangeDetail(
+  change: Record<string, any>,
+  currencyCode: string
+): { field: string; detail: string } {
+  const field = String(change.field ?? "change");
+  const labels: Record<string, string> = {
+    expense: "Expense",
+    description: "Description",
+    category: "Category",
+    notes: "Notes",
+    expenseDate: "Date",
+    currencyCode: "Currency",
+    totalAmountMinor: "Total",
+    payers: "Paid by",
+    shares: "Split",
+    lineItems: "Items",
+    billAdjustments: "Adjustments",
+    status: "Status"
+  };
+
+  if (field === "totalAmountMinor") {
+    const before = asMinorAmount(change.before);
+    const after = asMinorAmount(change.after);
+    if (before !== undefined && after !== undefined) {
+      return {
+        field,
+        detail: `${labels.totalAmountMinor}: ${formatMoney(before, currencyCode)} → ${formatMoney(after, currencyCode)}`
+      };
+    }
+  }
+
+  if (field === "payers" || field === "shares" || field === "lineItems" || field === "billAdjustments") {
+    const before = formatMoneyRows(change.before, currencyCode);
+    const after = formatMoneyRows(change.after, currencyCode);
+    if (before !== undefined && after !== undefined) {
+      return {
+        field,
+        detail: `${labels[field] ?? field}: ${before} → ${after}`
+      };
+    }
+  }
+
+  const detail = String(change.detail ?? "");
+  return {
+    field,
+    detail: normalizeRawMinorTotals(detail, currencyCode) || `${labels[field] ?? field} updated`
+  };
 }
 
 function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
@@ -685,18 +791,25 @@ export class SplitSaathiApiClient {
 
   async getExpenseHistory(expenseId: string) {
     const rows = await this.request<Array<Record<string, any>>>(`/v1/expenses/${expenseId}/history`);
-    return rows.map((row) => ({
-      id: row.eventId ?? row.id,
-      version: row.version,
-      actorId: row.actorId,
-      actorName: row.actorName ?? row.actorDisplayName,
-      summary: formatExpenseHistorySummary(row.eventType ?? row.summary),
-      reason: row.reason,
-      changes: Array.isArray(row.changes)
-        ? row.changes.map((change: Record<string, any>) => ({ field: String(change.field), detail: String(change.detail) }))
-        : undefined,
-      createdAt: row.occurredAt ?? row.createdAt
-    }));
+    return rows.map((row) => {
+      const currencyCode =
+        row.after?.currencyCode ||
+        row.before?.currencyCode ||
+        row.currencyCode ||
+        "INR";
+      return {
+        id: row.eventId ?? row.id,
+        version: row.version,
+        actorId: row.actorId,
+        actorName: row.actorName ?? row.actorDisplayName,
+        summary: formatExpenseHistorySummary(row.eventType ?? row.summary),
+        reason: row.reason,
+        changes: Array.isArray(row.changes)
+          ? row.changes.map((change: Record<string, any>) => formatExpenseHistoryChangeDetail(change, currencyCode))
+          : undefined,
+        createdAt: row.occurredAt ?? row.createdAt
+      };
+    });
   }
 
   async explainExpense(expenseId: string) {

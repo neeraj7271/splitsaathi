@@ -31,6 +31,7 @@ export interface ExpenseProjectionRow {
   groupId: string;
   description: string;
   category?: string;
+  notes?: string;
   expenseDate: string;
   currencyCode: string;
   totalAmountMinor: number;
@@ -77,6 +78,7 @@ type ExpenseSnapshotPayload = Omit<
 function cloneExpense(row: ExpenseProjectionRow): ExpenseProjectionRow {
   return {
     ...row,
+    notes: row.notes,
     payers: row.payers.map((payer) => ({ ...payer })),
     shares: row.shares.map((share) => ({ ...share })),
     lineItems: row.lineItems.map((item) => ({ ...item, participantIds: [...item.participantIds] })),
@@ -88,20 +90,93 @@ function equivalent(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function describeValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `${value.length} record${value.length === 1 ? '' : 's'}`;
+function formatMoneyMinor(amountMinor: number, currencyCode = 'INR'): string {
+  const major = (Math.abs(amountMinor) / 100).toFixed(2);
+  const signed = amountMinor < 0 ? '-' : '';
+  return currencyCode === 'INR' ? `${signed}₹${major}` : `${signed}${major} ${currencyCode}`;
+}
+
+function asAmountMinor(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
   }
-  return String(value ?? 'none');
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) {
+    return Number.parseInt(value.trim(), 10);
+  }
+  return undefined;
+}
+
+function describeMoneyRows(
+  value: unknown,
+  currencyCode: string
+): string | undefined {
+  if (!Array.isArray(value) || !value.length) {
+    return Array.isArray(value) && value.length === 0 ? 'none' : undefined;
+  }
+  if (!value.every((row) => row && typeof row === 'object' && 'amountMinor' in (row as object))) {
+    return undefined;
+  }
+  return (value as Array<{ participantId?: string; amountMinor: unknown; shareType?: string; label?: string }>)
+    .map((row) => {
+      const amount = asAmountMinor(row.amountMinor) ?? 0;
+      const who = row.label?.trim() || (row.participantId ? row.participantId.slice(0, 8) : 'member');
+      const share = row.shareType ? ` (${row.shareType})` : '';
+      return `${who} ${formatMoneyMinor(amount, currencyCode)}${share}`;
+    })
+    .join('; ');
+}
+
+function describeValue(value: unknown, currencyCode = 'INR', asMoney = false): string {
+  if (asMoney) {
+    const amount = asAmountMinor(value);
+    if (amount !== undefined) {
+      return formatMoneyMinor(amount, currencyCode);
+    }
+  }
+
+  const moneyRows = describeMoneyRows(value, currencyCode);
+  if (moneyRows !== undefined) {
+    return moneyRows;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length ? `${value.length} record${value.length === 1 ? '' : 's'}` : 'none';
+  }
+  if (value == null || value === '') {
+    return 'none';
+  }
+  return String(value);
 }
 
 function expenseChanges(before: ExpenseProjectionRow | undefined, after: ExpenseProjectionRow): ExpenseChange[] {
   if (!before) {
-    return [{ field: 'expense', after: after.description, detail: `Created "${after.description}" for ${after.totalAmountMinor} ${after.currencyCode}.` }];
+    return [
+      {
+        field: 'expense',
+        after: after.description,
+        detail: `Created "${after.description}" for ${formatMoneyMinor(after.totalAmountMinor, after.currencyCode)}.`
+      }
+    ];
   }
-  const fields: Array<keyof Pick<ExpenseProjectionRow, 'description' | 'category' | 'expenseDate' | 'currencyCode' | 'totalAmountMinor' | 'payers' | 'shares' | 'lineItems' | 'billAdjustments' | 'status'>> = [
+  const fields: Array<
+    keyof Pick<
+      ExpenseProjectionRow,
+      | 'description'
+      | 'category'
+      | 'notes'
+      | 'expenseDate'
+      | 'currencyCode'
+      | 'totalAmountMinor'
+      | 'payers'
+      | 'shares'
+      | 'lineItems'
+      | 'billAdjustments'
+      | 'status'
+    >
+  > = [
     'description',
     'category',
+    'notes',
     'expenseDate',
     'currencyCode',
     'totalAmountMinor',
@@ -111,13 +186,30 @@ function expenseChanges(before: ExpenseProjectionRow | undefined, after: Expense
     'billAdjustments',
     'status'
   ];
+  const labels: Record<string, string> = {
+    description: 'Description',
+    category: 'Category',
+    notes: 'Notes',
+    expenseDate: 'Date',
+    currencyCode: 'Currency',
+    totalAmountMinor: 'Total',
+    payers: 'Paid by',
+    shares: 'Split',
+    lineItems: 'Items',
+    billAdjustments: 'Adjustments',
+    status: 'Status'
+  };
   return fields
     .filter((field) => !equivalent(before[field], after[field]))
     .map((field) => ({
       field,
       before: before[field],
       after: after[field],
-      detail: `${field} changed from ${describeValue(before[field])} to ${describeValue(after[field])}.`
+      detail: `${labels[field] ?? field}: ${describeValue(
+        before[field],
+        after.currencyCode,
+        field === 'totalAmountMinor'
+      )} → ${describeValue(after[field], after.currencyCode, field === 'totalAmountMinor')}`
     }));
 }
 

@@ -183,6 +183,7 @@ export class ExpenseCommandService {
       groupId: command.groupId,
       description: command.description,
       category: command.category,
+      notes: command.notes?.trim() || undefined,
       expenseDate: command.expenseDate,
       currencyCode,
       totalAmountMinor,

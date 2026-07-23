@@ -69,6 +69,7 @@ function explainExpense(expense: ReturnType<ExpenseProjector['getExpense']>) {
     expenseId: expense.expenseId,
     groupId: expense.groupId,
     description: expense.description,
+    notes: expense.notes,
     status: expense.status,
     totalAmountMinor: expense.totalAmountMinor,
     currencyCode: expense.currencyCode,

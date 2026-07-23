@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, Share, StyleSheet, View } from "react-native";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CaretLeft, ImageSquare, LinkSimple, LockKey, LockKeyOpen, Trash, UserMinus, UserPlus } from "phosphor-react-native";
+import { CaretLeft, ImageSquare, LinkSimple, LockKey, LockKeyOpen, PencilSimple, Trash, UserMinus, UserPlus } from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
 import QRCode from "react-native-qrcode-svg";
 
@@ -140,6 +140,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     queryFn: () => apiClient.explainExpense(explainingExpenseId as string),
     enabled: Boolean(explainingExpenseId)
   });
+  const expenseHistoryQuery = useQuery({
+    queryKey: ["expenseHistory", explainingExpenseId],
+    queryFn: () => apiClient.getExpenseHistory(explainingExpenseId as string),
+    enabled: Boolean(explainingExpenseId)
+  });
 
   const addParticipant = useMutation({
     mutationFn: () => apiClient.addParticipant(selectedGroupId as string, newParticipantName, newParticipantPhone || undefined),
@@ -192,10 +197,13 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     }
   });
 
-  function beginRenameGroup() {
+  function beginRenameGroup(options?: { openPeopleTab?: boolean }) {
     setRenameError(null);
     setGroupNameDraft(groupQuery.data?.name ?? "");
     setEditingGroupName(true);
+    if (options?.openPeopleTab) {
+      setTab("people");
+    }
   }
 
   function confirmDeleteGroup() {
@@ -510,8 +518,13 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             Group ledger
           </ThemedText>
           <ThemedText variant="title">{group?.name ?? "Select group"}</ThemedText>
-          {canEditGroup ? (
-            <Pressable onPress={beginRenameGroup}>
+          {canEditGroup && !editingGroupName ? (
+            <Pressable
+              onPress={() => beginRenameGroup()}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Edit group name"
+            >
               <ThemedText variant="caption" tone="confirmed">
                 Edit name
               </ThemedText>
@@ -520,6 +533,56 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
         </View>
         {group?.state === "archived" ? <StatusPill state="expired" /> : null}
       </View>
+      {editingGroupName && canEditGroup ? (
+        <DataSurface>
+          <View style={styles.headerRename}>
+            <InputField
+              label="Group name"
+              value={groupNameDraft}
+              onChangeText={setGroupNameDraft}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                const next = groupNameDraft.trim();
+                if (!next) {
+                  setRenameError("Group name is required.");
+                  return;
+                }
+                renameGroup.mutate(next);
+              }}
+            />
+            {renameError ? <InlineNotice title="Rename failed" body={renameError} tone="owe" /> : null}
+            <View style={styles.choiceButtons}>
+              <Button
+                label="Save name"
+                size="compact"
+                onPress={() => {
+                  const next = groupNameDraft.trim();
+                  if (!next) {
+                    setRenameError("Group name is required.");
+                    return;
+                  }
+                  renameGroup.mutate(next);
+                }}
+                loading={renameGroup.isPending}
+                disabled={!groupNameDraft.trim()}
+                style={styles.inlineButton}
+              />
+              <Button
+                label="Cancel"
+                size="compact"
+                variant="secondary"
+                onPress={() => {
+                  setEditingGroupName(false);
+                  setRenameError(null);
+                }}
+                disabled={renameGroup.isPending}
+                style={styles.inlineButton}
+              />
+            </View>
+          </View>
+        </DataSurface>
+      ) : null}
 
       {groupsQuery.data ? <GroupSelector groups={groupsQuery.data} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Create or import a group before viewing activity." action={{ label: "Create group", onPress: () => navigation.go("groups") }} /> : null}
@@ -644,30 +707,46 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               {expensesQuery.data?.length ? (
                 <DataSurface>
                   {expensesQuery.data.map((expense) => (
-                    <Pressable
-                      key={expense.id}
-                      onPress={() => {
-                        setExpenseActionError(null);
-                        setExpenseVoidReason("");
-                        setExplainingExpenseId(expense.id);
-                      }}
-                      onLongPress={() => {
-                        navigation.setSelectedExpenseId(expense.id);
-                        navigation.go("audit");
-                      }}
-                      style={[styles.dataRow, { borderBottomColor: theme.colors.hairline }]}
-                    >
-                      <View style={styles.titleBlock}>
-                        <ThemedText variant="bodyMedium">{expense.description}</ThemedText>
-                        <ThemedText variant="bodySm" tone="muted">
-                          {expense.category || "Expense"} - v{expense.currentVersion} · Tap for details
-                        </ThemedText>
-                      </View>
-                      <View style={styles.trailing}>
-                        <ThemedText variant="amount">{formatMoney(expense.totalAmountMinor, expense.currencyCode)}</ThemedText>
-                        {expense.state === "voided" ? <StatusPill state="rejected" /> : null}
-                      </View>
-                    </Pressable>
+                    <View key={expense.id} style={[styles.dataRow, { borderBottomColor: theme.colors.hairline }]}>
+                      <Pressable
+                        onPress={() => {
+                          setExpenseActionError(null);
+                          setExpenseVoidReason("");
+                          setExplainingExpenseId(expense.id);
+                        }}
+                        onLongPress={() => {
+                          navigation.setSelectedExpenseId(expense.id);
+                          navigation.go("audit");
+                        }}
+                        style={styles.expenseMain}
+                      >
+                        <View style={styles.titleBlock}>
+                          <ThemedText variant="bodyMedium">{expense.description}</ThemedText>
+                          <ThemedText variant="bodySm" tone="muted">
+                            {expense.category || "Expense"} · v{expense.currentVersion}
+                            {expense.notes ? " · has notes" : ""}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.trailing}>
+                          <ThemedText variant="amount">{formatMoney(expense.totalAmountMinor, expense.currencyCode)}</ThemedText>
+                          {expense.state === "voided" ? <StatusPill state="rejected" /> : null}
+                        </View>
+                      </Pressable>
+                      {group.canManageExpenses && expense.state !== "voided" ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Edit ${expense.description}`}
+                          hitSlop={8}
+                          onPress={() => {
+                            navigation.setSelectedExpenseId(expense.id);
+                            navigation.go("expense");
+                          }}
+                          style={[styles.iconButton, { borderColor: theme.colors.confirmed }]}
+                        >
+                          <PencilSimple size={16} color={theme.colors.confirmed} weight="duotone" />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   ))}
                 </DataSurface>
               ) : (
@@ -687,6 +766,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                 <ExpenseExplanationSection
                   explanation={explanationQuery.data}
                   expense={expensesQuery.data?.find((row) => row.id === explainingExpenseId)}
+                  history={expenseHistoryQuery.data}
+                  historyLoading={expenseHistoryQuery.isLoading}
                   lookups={buildGroupDisplayLookups(group)}
                   loading={explanationQuery.isLoading}
                   error={explanationQuery.error instanceof Error ? explanationQuery.error.message : undefined}
@@ -767,7 +848,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               editingGroupName={editingGroupName}
               groupNameDraft={groupNameDraft}
               setGroupNameDraft={setGroupNameDraft}
-              beginRenameGroup={beginRenameGroup}
+              beginRenameGroup={() => beginRenameGroup({ openPeopleTab: true })}
               cancelRenameGroup={() => {
                 setEditingGroupName(false);
                 setRenameError(null);
@@ -837,6 +918,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 function ExpenseExplanationSection({
   explanation,
   expense,
+  history,
+  historyLoading,
   lookups,
   loading,
   error,
@@ -851,7 +934,17 @@ function ExpenseExplanationSection({
   onClose
 }: {
   explanation?: ExpenseExplanation;
-  expense?: { id: string; state: "active" | "voided"; currentVersion: number };
+  expense?: { id: string; state: "active" | "voided"; currentVersion: number; notes?: string };
+  history?: Array<{
+    id: string;
+    version: number;
+    summary: string;
+    reason?: string;
+    changes?: Array<{ field: string; detail: string }>;
+    actorName?: string;
+    createdAt?: string;
+  }>;
+  historyLoading: boolean;
   lookups: ReturnType<typeof buildGroupDisplayLookups>;
   loading: boolean;
   error?: string;
@@ -868,18 +961,31 @@ function ExpenseExplanationSection({
   const theme = useTheme();
   const nameFor = (participantId: string) => resolveParticipantDisplayName(participantId, lookups) ?? "Unknown participant";
   const isVoided = expense?.state === "voided";
+  const notes = explanation?.notes ?? expense?.notes;
+  const revisions = [...(history ?? [])].sort((left, right) => right.version - left.version);
   return (
     <View style={styles.section}>
-      <SectionHeader title="How this expense is split" action={<Button label="Close" variant="ghost" onPress={onClose} />} />
-      {loading ? <InlineNotice title="Calculating split" body="Reading the immutable expense snapshot." tone="pending" /> : null}
+      <SectionHeader title="Expense details" action={<Button label="Close" variant="ghost" onPress={onClose} />} />
+      {loading ? <InlineNotice title="Loading expense" body="Reading the immutable expense snapshot." tone="pending" /> : null}
       {error ? <InlineNotice title="Explanation unavailable" body={error} tone="owe" /> : null}
       {explanation ? (
         <DataSurface>
           <View style={styles.explanationBlock}>
+            {canManage && !isVoided ? (
+              <Button label="Edit expense" onPress={onEdit} />
+            ) : null}
             <ThemedText variant="bodyMedium">{explanation.explanation}</ThemedText>
             <ThemedText variant="bodySm" tone="muted">
               Snapshot version {explanation.snapshotVersion} · {explanation.splitMethod} split
             </ThemedText>
+            {notes ? (
+              <View style={[styles.explanationItem, { borderTopColor: theme.colors.hairline }]}>
+                <ThemedText variant="caption" tone="muted">
+                  Notes
+                </ThemedText>
+                <ThemedText variant="bodySm">{notes}</ThemedText>
+              </View>
+            ) : null}
             <ThemedText variant="caption" tone="muted">
               Paid
             </ThemedText>
@@ -906,13 +1012,40 @@ function ExpenseExplanationSection({
                 </ThemedText>
               </View>
             ))}
-            {isVoided ? <InlineNotice title="Deleted expense" body="This expense was voided. Open history to see the audit trail." tone="owe" /> : null}
-            <View style={styles.choiceButtons}>
-              {canManage && !isVoided ? (
-                <Button label="Edit" size="compact" variant="secondary" onPress={onEdit} style={styles.inlineButton} />
+
+            <View style={[styles.explanationItem, { borderTopColor: theme.colors.hairline }]}>
+              <ThemedText variant="bodyMedium">Version history</ThemedText>
+              <ThemedText variant="caption" tone="muted">
+                What changed between snapshot versions
+              </ThemedText>
+              {historyLoading ? <ThemedText variant="bodySm" tone="muted">Loading history…</ThemedText> : null}
+              {!historyLoading && !revisions.length ? (
+                <ThemedText variant="bodySm" tone="muted">
+                  History is unavailable for this expense.
+                </ThemedText>
               ) : null}
-              <Button label="History" size="compact" variant="secondary" onPress={onHistory} style={styles.inlineButton} />
+              {revisions.map((entry) => (
+                <View key={entry.id} style={[styles.historyEntry, { borderTopColor: theme.colors.hairline }]}>
+                  <ThemedText variant="bodySm">
+                    v{entry.version} · {entry.summary}
+                    {entry.actorName ? ` · ${entry.actorName}` : ""}
+                  </ThemedText>
+                  {entry.reason ? (
+                    <ThemedText variant="caption" tone="muted">
+                      Reason: {entry.reason}
+                    </ThemedText>
+                  ) : null}
+                  {entry.changes?.map((change, index) => (
+                    <ThemedText key={`${entry.id}-${change.field}-${index}`} variant="caption">
+                      • {change.detail}
+                    </ThemedText>
+                  ))}
+                </View>
+              ))}
+              <Button label="Open full audit" size="compact" variant="secondary" onPress={onHistory} />
             </View>
+
+            {isVoided ? <InlineNotice title="Deleted expense" body="This expense was voided. See version history above for the audit trail." tone="owe" /> : null}
             {canManage && !isVoided ? (
               <>
                 <InputField
@@ -1197,6 +1330,22 @@ const styles = StyleSheet.create({
   titleBlock: {
     flex: 1,
     gap: 4
+  },
+  headerRename: {
+    gap: 12,
+    padding: 14
+  },
+  expenseMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  historyEntry: {
+    gap: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth
   },
   balanceStrip: {
     flexDirection: "row",
