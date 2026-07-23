@@ -9,13 +9,15 @@ import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenBackButton } from "../components/ScreenBackButton";
 import { SectionHeader } from "../components/SectionHeader";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
+import { AppNavigation } from "../types/navigation";
 import { flushOutbox, getOutboxStatus, OutboxCommandRecord } from "../offline/outbox";
 
-export function OfflineSyncScreen() {
+export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const [rows, setRows] = useState<OutboxCommandRecord[]>([]);
   const [status, setStatus] = useState({ queued: 0, syncing: 0, failed: 0, total: 0 });
@@ -48,6 +50,7 @@ export function OfflineSyncScreen() {
 
   return (
     <Screen>
+      <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View>
           <ThemedText variant="caption" tone="muted">

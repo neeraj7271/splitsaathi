@@ -54,10 +54,10 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
 
   return (
     <Screen refreshing={detailQuery.isRefetching} onRefresh={() => void detailQuery.refetch()}>
-      <Pressable onPress={() => navigation.go("friends")} style={styles.backRow}>
+      <Pressable onPress={() => navigation.back() || navigation.go("friends")} style={styles.backRow}>
         <ArrowLeft size={18} color={theme.colors.inkMuted} weight="bold" />
         <ThemedText variant="bodySm" tone="muted">
-          Friends
+          Back
         </ThemedText>
       </Pressable>
 

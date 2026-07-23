@@ -23,9 +23,11 @@ export interface AppNavigation {
   selectedGroupId?: string;
   selectedExpenseId?: string;
   selectedFriendUserId?: string;
+  canGoBack: boolean;
   setSelectedGroupId: (groupId?: string) => void;
   setSelectedExpenseId: (expenseId?: string) => void;
   setSelectedFriendUserId: (userId?: string) => void;
   go: (route: AppRoute) => void;
+  back: () => boolean;
   signOut: () => void;
 }

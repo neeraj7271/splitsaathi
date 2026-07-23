@@ -61,7 +61,7 @@ export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigati
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.go("settings")} style={styles.backButton}>
+        <Pressable onPress={() => navigation.back() || navigation.go("settings")} style={styles.backButton}>
           <ArrowLeft size={22} color={theme.colors.ink} />
         </Pressable>
         <ThemedText variant="title">Contacts</ThemedText>

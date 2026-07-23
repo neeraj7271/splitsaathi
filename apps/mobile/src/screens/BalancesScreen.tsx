@@ -10,6 +10,7 @@ import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenBackButton } from "../components/ScreenBackButton";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
@@ -72,6 +73,7 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
+      <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View style={styles.headerTitle}>
           <ThemedText variant="caption" tone="muted">

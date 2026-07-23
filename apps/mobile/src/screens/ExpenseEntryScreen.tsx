@@ -15,6 +15,7 @@ import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { ParticipantPicker } from "../components/ParticipantPicker";
 import { Screen } from "../components/Screen";
+import { ScreenBackButton } from "../components/ScreenBackButton";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
@@ -256,7 +257,9 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         await invalidateExpenseQueries(selectedGroupId, editingExpenseId);
       }
       navigation.setSelectedExpenseId(undefined);
-      navigation.go("groupDetail");
+      if (!navigation.back()) {
+        navigation.go("groupDetail");
+      }
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "Could not delete expense.");
@@ -310,7 +313,9 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         await invalidateExpenseQueries(selectedGroupId, editingExpenseId);
         setMessage("Expense updated. Members were notified and the change is in audit history.");
         navigation.setSelectedExpenseId(undefined);
-        navigation.go("groupDetail");
+        if (!navigation.back()) {
+          navigation.go("groupDetail");
+        }
       } else {
         await apiClient.createExpense(payload);
         await invalidateExpenseQueries(selectedGroupId);
@@ -321,7 +326,9 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         setLineItems([]);
         setAdjustments([]);
         navigation.setSelectedExpenseId(undefined);
-        navigation.go("groupDetail");
+        if (!navigation.back()) {
+          navigation.go("groupDetail");
+        }
       }
     } catch (error) {
       if (error instanceof ApiError) {
@@ -357,6 +364,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
 
   return (
     <Screen>
+      <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View style={styles.headerTitle}>
           <ThemedText variant="caption" tone="muted">

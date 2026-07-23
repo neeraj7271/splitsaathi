@@ -67,7 +67,7 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.go("profile")} style={styles.backButton}>
+        <Pressable onPress={() => navigation.back() || navigation.go("profile")} style={styles.backButton}>
           <ArrowLeft size={22} color={theme.colors.ink} />
         </Pressable>
         <ThemedText variant="title">Security</ThemedText>

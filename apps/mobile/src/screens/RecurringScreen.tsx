@@ -11,6 +11,7 @@ import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
+import { ScreenBackButton } from "../components/ScreenBackButton";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
@@ -86,6 +87,7 @@ export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen>
+      <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View>
           <ThemedText variant="caption" tone="muted">

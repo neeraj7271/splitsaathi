@@ -11,6 +11,7 @@ import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenBackButton } from "../components/ScreenBackButton";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
@@ -107,6 +108,7 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
 
   return (
     <Screen>
+      <ScreenBackButton navigation={navigation} label="Back" />
       <View style={styles.header}>
         <View>
           <ThemedText variant="caption" tone="muted">

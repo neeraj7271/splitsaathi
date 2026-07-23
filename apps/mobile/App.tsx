@@ -49,12 +49,15 @@ const queryClient = new QueryClient({
   }
 });
 
+const TAB_ROUTES: AppRoute[] = ["home", "groups", "friends", "settlement"];
+
 const SETTINGS_ROUTES: AppRoute[] = [
   "expense",
   "balances",
   "audit",
   "recurring",
   "importExport",
+  "offline",
   "profile",
   "settings",
   "securitySettings",
@@ -95,13 +98,39 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { showDialog } = useAppDialog();
   const [booted, setBooted] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const [route, setRoute] = useState<AppRoute>("home");
+  const [history, setHistory] = useState<AppRoute[]>(["home"]);
+  const route = history[history.length - 1] ?? "home";
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [selectedExpenseId, setSelectedExpenseId] = useState<string>();
   const [selectedFriendUserId, setSelectedFriendUserId] = useState<string>();
   const inviteBusyRef = useRef(false);
   const claimedInviteTokensRef = useRef(new Set<string>());
   const handledInitialInviteUrlRef = useRef(false);
+
+  const go = useCallback((next: AppRoute) => {
+    setHistory((prev) => {
+      if (TAB_ROUTES.includes(next)) {
+        return [next];
+      }
+      const current = prev[prev.length - 1];
+      if (current === next) {
+        return prev;
+      }
+      return [...prev, next];
+    });
+  }, []);
+
+  const back = useCallback(() => {
+    let didPop = false;
+    setHistory((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      didPop = true;
+      return prev.slice(0, -1);
+    });
+    return didPop;
+  }, []);
 
   useEffect(() => {
     async function boot() {
@@ -147,7 +176,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       try {
         const group = await apiClient.claimInvite(token);
         setSelectedGroupId(group.id);
-        setRoute("groupDetail");
+        go("groupDetail");
         await queryClient.invalidateQueries({ queryKey: ["groups"] });
         showDialog({
           title: "Joined group",
@@ -167,7 +196,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         inviteBusyRef.current = false;
       }
     },
-    [authenticated, showDialog]
+    [authenticated, go, showDialog]
   );
 
   useEffect(() => {
@@ -185,31 +214,14 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (SETTINGS_ROUTES.includes(route)) {
-        if (route === "groupDetail") {
-          setRoute("groups");
-          return true;
-        }
-        if (route === "friendDetail") {
-          setRoute("friends");
-          return true;
-        }
-        if (
-          route === "securitySettings" ||
-          route === "notificationSettings" ||
-          route === "appearanceSettings" ||
-          route === "contactsSettings"
-        ) {
-          setRoute("settings");
-          return true;
-        }
-        setRoute("home");
+      if (back()) {
         return true;
       }
+      // On a tab root: allow default (exit app / minimize).
       return false;
     });
     return () => sub.remove();
-  }, [route]);
+  }, [back]);
 
   const navigation = useMemo<AppNavigation>(
     () => ({
@@ -217,10 +229,12 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       selectedGroupId,
       selectedExpenseId,
       selectedFriendUserId,
+      canGoBack: history.length > 1,
       setSelectedGroupId,
       setSelectedExpenseId,
       setSelectedFriendUserId,
-      go: setRoute,
+      go,
+      back,
       signOut: () => {
         apiClient
           .logout()
@@ -230,7 +244,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
             claimedInviteTokensRef.current.clear();
             handledInitialInviteUrlRef.current = false;
             setAuthenticated(false);
-            setRoute("home");
+            setHistory(["home"]);
             setSelectedGroupId(undefined);
             setSelectedExpenseId(undefined);
             setSelectedFriendUserId(undefined);
@@ -238,7 +252,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
           });
       }
     }),
-    [route, selectedExpenseId, selectedFriendUserId, selectedGroupId]
+    [back, go, history.length, route, selectedExpenseId, selectedFriendUserId, selectedGroupId]
   );
 
   if (!fontsLoaded || !booted) {
@@ -263,7 +277,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       {route === "audit" ? <AuditScreen navigation={navigation} /> : null}
       {route === "recurring" ? <RecurringScreen navigation={navigation} /> : null}
       {route === "importExport" ? <ImportExportScreen navigation={navigation} /> : null}
-      {route === "offline" ? <OfflineSyncScreen /> : null}
+      {route === "offline" ? <OfflineSyncScreen navigation={navigation} /> : null}
       {route === "profile" ? <ProfileScreen navigation={navigation} /> : null}
       {route === "settings" ? <SettingsScreen navigation={navigation} /> : null}
       {route === "securitySettings" ? <SecuritySettingsScreen navigation={navigation} /> : null}
@@ -281,10 +295,10 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
                 ? "home"
                 : route
         }
-        onChange={setRoute}
+        onChange={go}
         onFab={() => {
           setSelectedExpenseId(undefined);
-          setRoute("expense");
+          go("expense");
         }}
         tabs={[
           { label: "Home", value: "home", icon: House },

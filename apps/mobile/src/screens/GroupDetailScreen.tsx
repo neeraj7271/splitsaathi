@@ -494,10 +494,10 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
-      <Pressable onPress={() => navigation.go("groups")} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Back to groups">
+      <Pressable onPress={() => navigation.back() || navigation.go("groups")} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Back">
         <CaretLeft size={18} color={theme.colors.inkMuted} weight="bold" />
         <ThemedText variant="bodySm" tone="muted">
-          Groups
+          Back
         </ThemedText>
       </Pressable>
 

@@ -104,7 +104,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.go("home")} style={styles.backButton}>
+        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={styles.backButton}>
           <ArrowLeft size={22} color={theme.colors.ink} />
         </Pressable>
         <View style={styles.titleBlock}>
