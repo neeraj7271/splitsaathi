@@ -352,7 +352,12 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const addContacts = useMutation({
     mutationFn: async (contacts: SyncedContact[]) => {
       for (const contact of contacts) {
-        await apiClient.addParticipant(selectedGroupId as string, contact.displayName, contact.phoneE164);
+        await apiClient.addParticipant(
+          selectedGroupId as string,
+          contact.displayName,
+          contact.phoneE164,
+          contact.matchedUserId ?? undefined
+        );
       }
     },
     onSuccess: () => {

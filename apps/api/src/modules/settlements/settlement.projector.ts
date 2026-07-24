@@ -122,11 +122,15 @@ export class SettlementProjector implements Projector {
         upiUri: string;
         qrPayload: string;
         expiresAt: string;
+        payeeVpa?: string;
       };
       row.providerReference = payload.providerReference;
       row.upiUri = payload.upiUri;
       row.qrPayload = payload.qrPayload;
       row.expiresAt = payload.expiresAt;
+      if (payload.payeeVpa) {
+        row.payeeVpa = payload.payeeVpa;
+      }
     }
 
     if (event.type === 'UpiAppOpened') {

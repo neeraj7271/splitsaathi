@@ -334,6 +334,7 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     state: row.state,
     upiUri: row.upiUri,
     qrPayload: row.qrPayload,
+    payeeVpa: row.payeeVpa,
     clientReference: row.clientReference ?? row.providerReference,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
@@ -699,10 +700,15 @@ export class SplitSaathiApiClient {
     });
   }
 
-  async addParticipant(groupId: string, displayName: string, phoneE164?: string) {
+  async addParticipant(
+    groupId: string,
+    displayName: string,
+    phoneE164?: string,
+    linkedUserId?: string
+  ) {
     return this.request<GroupDetail>(`/v1/groups/${groupId}/participants`, {
       method: "POST",
-      body: { displayName, phoneE164 }
+      body: { displayName, phoneE164, linkedUserId }
     });
   }
 
@@ -929,6 +935,18 @@ export class SplitSaathiApiClient {
       body: { upiApp: appName, platform: "mobile" },
       idempotencyKey: createIdempotencyKey("settlement.upi.opened")
     });
+    return mapSettlementIntent(response.intent);
+  }
+
+  async regenerateSettlementUpi(intentId: string, payeeVpa: string, payeeName?: string) {
+    const response = await this.request<SettlementCommandResponse>(
+      `/v1/settlement-intents/${intentId}/upi/regenerate`,
+      {
+        method: "POST",
+        body: { payeeVpa, payeeName },
+        idempotencyKey: createIdempotencyKey("settlement.upi.regenerate")
+      }
+    );
     return mapSettlementIntent(response.intent);
   }
 

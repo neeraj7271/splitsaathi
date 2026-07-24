@@ -28,6 +28,8 @@ const transitions: Record<SettlementState, Partial<Record<SettlementEventName, S
     expire: 'expired'
   },
   intent_generated: {
+    // Allow regenerating UPI URI when the payer corrects the receiver VPA before proof.
+    generate_intent: 'intent_generated',
     open_upi_app: 'payer_opened_upi_app',
     submit_proof: 'proof_submitted',
     request_confirmation: 'awaiting_receiver_confirmation',
@@ -35,12 +37,18 @@ const transitions: Record<SettlementState, Partial<Record<SettlementEventName, S
     expire: 'expired'
   },
   payer_opened_upi_app: {
+    generate_intent: 'intent_generated',
     submit_proof: 'proof_submitted',
     request_confirmation: 'awaiting_receiver_confirmation',
     cancel: 'cancelled',
     expire: 'expired'
   },
-  awaiting_payment_evidence: { submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
+  awaiting_payment_evidence: {
+    generate_intent: 'intent_generated',
+    submit_proof: 'proof_submitted',
+    cancel: 'cancelled',
+    expire: 'expired'
+  },
   proof_submitted: {
     auto_match: 'auto_matched',
     request_confirmation: 'awaiting_receiver_confirmation',

@@ -8,8 +8,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { MembershipRole } from '@splitsaathi/contracts';
 import { randomBytes } from 'crypto';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { AttachmentEntity } from '@splitsaathi/db';
+import { normalizePhoneE164India, phoneLookupCandidates } from '../../common/utils/phone-hash';
 import { ApiConfigService } from '../../config/api-config.service';
 import { BalanceProjector } from '../ledger/balance.projector';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -111,20 +112,38 @@ export class GroupsService {
     );
 
     for (const participant of dto.participants) {
+      const phoneE164 = participant.phoneE164?.trim()
+        ? normalizePhoneE164India(participant.phoneE164)
+        : null;
+      const linkedUserId =
+        (await this.usersService.findUserIdByPhoneE164(phoneE164)) ?? null;
+      if (linkedUserId === userId) {
+        continue;
+      }
+      if (linkedUserId) {
+        const alreadyMember = await this.memberships.findOne({
+          where: { groupId: group.id, userId: linkedUserId, status: In(['active', 'locked_for_exit']) }
+        });
+        if (alreadyMember) {
+          continue;
+        }
+      }
+
+      const linkedUser = linkedUserId ? await this.usersService.findById(linkedUserId) : null;
       const savedParticipant = await this.participants.save(
         this.participants.create({
           groupId: group.id,
-          displayName: participant.displayName,
-          phoneE164: participant.phoneE164 ?? null,
-          kind: 'guest',
-          linkedUserId: null,
+          displayName: linkedUser?.displayName?.trim() || participant.displayName,
+          phoneE164: phoneE164 || participant.phoneE164?.trim() || null,
+          kind: linkedUserId ? 'user' : 'guest',
+          linkedUserId,
           invitedByUserId: userId
         })
       );
       await this.memberships.save(
         this.memberships.create({
           groupId: group.id,
-          userId: null,
+          userId: linkedUserId,
           participantId: savedParticipant.id,
           role: participant.role,
           status: 'active',
@@ -132,6 +151,17 @@ export class GroupsService {
           exitLockReason: null
         })
       );
+      if (linkedUserId) {
+        const groupName = group.name;
+        await this.notificationsService.create({
+          userId: linkedUserId,
+          groupId: group.id,
+          type: 'participant_added',
+          title: 'Added to a group',
+          body: `You were added to ${groupName}.`,
+          data: { groupId: group.id, participantId: savedParticipant.id }
+        });
+      }
     }
 
     await this.seedDefaultPermissions(group.id);
@@ -139,6 +169,9 @@ export class GroupsService {
   }
 
   async listGroups(userId: string): Promise<GroupSummaryResponseDto[]> {
+    // Link any guest placeholders that already have this user's phone so they see those groups.
+    await this.claimGuestMembershipsForUser(userId);
+
     const currentMemberships = await this.memberships.find({
       where: { userId, status: In(['active', 'locked_for_exit']) }
     });
@@ -362,13 +395,80 @@ export class GroupsService {
     await this.assertPermission(userId, groupId, 'participant.create');
     await this.findGroupOrThrow(groupId);
 
+    const phoneE164 = dto.phoneE164?.trim() ? normalizePhoneE164India(dto.phoneE164) : null;
+    let linkedUserId = dto.linkedUserId ?? null;
+    if (!linkedUserId && phoneE164) {
+      linkedUserId = await this.usersService.findUserIdByPhoneE164(phoneE164);
+    }
+
+    if (linkedUserId === userId) {
+      throw new BadRequestException('You are already in this group.');
+    }
+
+    if (linkedUserId) {
+      const existingMembership = await this.memberships.findOne({
+        where: { groupId, userId: linkedUserId, status: In(['active', 'locked_for_exit']) }
+      });
+      if (existingMembership) {
+        throw new BadRequestException('That person is already in this group.');
+      }
+
+      // Prefer claiming an existing guest shell with the same phone instead of duplicating.
+      const guest = await this.findClaimableGuestParticipant(groupId, phoneE164, dto.displayName);
+      if (guest) {
+        const linkedUser = await this.usersService.findById(linkedUserId);
+        guest.linkedUserId = linkedUserId;
+        guest.kind = 'user';
+        guest.displayName = linkedUser?.displayName?.trim() || dto.displayName;
+        if (phoneE164) {
+          guest.phoneE164 = phoneE164;
+        }
+        await this.participants.save(guest);
+
+        let membership = await this.memberships.findOne({
+          where: { groupId, participantId: guest.id }
+        });
+        if (membership) {
+          membership.userId = linkedUserId;
+          membership.status = 'active';
+          membership.lockedAt = null;
+          membership.exitLockReason = null;
+          await this.memberships.save(membership);
+        } else {
+          await this.memberships.save(
+            this.memberships.create({
+              groupId,
+              userId: linkedUserId,
+              participantId: guest.id,
+              role: dto.role,
+              status: 'active',
+              lockedAt: null,
+              exitLockReason: null
+            })
+          );
+        }
+
+        const groupName = await this.getGroupName(groupId);
+        await this.notificationsService.create({
+          userId: linkedUserId,
+          groupId,
+          type: 'participant_added',
+          title: 'Added to a group',
+          body: `You were added to ${groupName}.`,
+          data: { groupId, participantId: guest.id }
+        });
+        return ParticipantResponseDto.fromEntity(guest);
+      }
+    }
+
+    const linkedUser = linkedUserId ? await this.usersService.findById(linkedUserId) : null;
     const participant = await this.participants.save(
       this.participants.create({
         groupId,
-        displayName: dto.displayName,
-        phoneE164: dto.phoneE164 ?? null,
-        kind: dto.linkedUserId ? 'user' : 'guest',
-        linkedUserId: dto.linkedUserId ?? null,
+        displayName: linkedUser?.displayName?.trim() || dto.displayName,
+        phoneE164: phoneE164 || dto.phoneE164?.trim() || null,
+        kind: linkedUserId ? 'user' : 'guest',
+        linkedUserId,
         invitedByUserId: userId
       })
     );
@@ -376,7 +476,7 @@ export class GroupsService {
     await this.memberships.save(
       this.memberships.create({
         groupId,
-        userId: dto.linkedUserId ?? null,
+        userId: linkedUserId,
         participantId: participant.id,
         role: dto.role,
         status: 'active',
@@ -385,10 +485,10 @@ export class GroupsService {
       })
     );
 
-    if (dto.linkedUserId) {
+    if (linkedUserId) {
       const groupName = await this.getGroupName(groupId);
       await this.notificationsService.create({
-        userId: dto.linkedUserId,
+        userId: linkedUserId,
         groupId,
         type: 'participant_added',
         title: 'Added to a group',
@@ -796,13 +896,76 @@ export class GroupsService {
     return MembershipResponseDto.fromEntity(saved);
   }
 
+  /**
+   * When a registered user lists groups, claim any guest participant shells that
+   * already carry their phone so they can see groups they were added to by number.
+   */
+  private async claimGuestMembershipsForUser(userId: string): Promise<void> {
+    const phoneE164 = await this.usersService.getPhoneE164ForUser(userId);
+    if (!phoneE164) {
+      return;
+    }
+    const candidates = phoneLookupCandidates(normalizePhoneE164India(phoneE164));
+    const guests = await this.participants.find({
+      where: { phoneE164: In(candidates), linkedUserId: IsNull() }
+    });
+    if (!guests.length) {
+      return;
+    }
+
+    const user = await this.usersService.findByIdOrThrow(userId);
+    for (const guest of guests) {
+      const existing = await this.memberships.findOne({
+        where: { groupId: guest.groupId, userId, status: In(['active', 'locked_for_exit']) }
+      });
+      if (existing) {
+        // Already a member under another participant — leave the guest shell for repair.
+        continue;
+      }
+
+      guest.linkedUserId = userId;
+      guest.kind = 'user';
+      if (!guest.displayName?.trim() || guest.displayName.trim().toLowerCase() === 'unknown') {
+        guest.displayName = user.displayName;
+      }
+      guest.phoneE164 = phoneE164;
+      await this.participants.save(guest);
+
+      let membership = await this.memberships.findOne({
+        where: { groupId: guest.groupId, participantId: guest.id }
+      });
+      if (membership) {
+        membership.userId = userId;
+        membership.status = 'active';
+        membership.lockedAt = null;
+        membership.exitLockReason = null;
+        await this.memberships.save(membership);
+      } else {
+        await this.memberships.save(
+          this.memberships.create({
+            groupId: guest.groupId,
+            userId,
+            participantId: guest.id,
+            role: 'member',
+            status: 'active',
+            lockedAt: null,
+            exitLockReason: null
+          })
+        );
+      }
+    }
+  }
+
   private async findClaimableGuestParticipant(
     groupId: string,
     phoneE164: string | null,
     displayName: string
   ): Promise<ParticipantEntity | null> {
     if (phoneE164) {
-      const byPhoneRows = await this.participants.find({ where: { groupId, phoneE164 } });
+      const candidates = phoneLookupCandidates(normalizePhoneE164India(phoneE164));
+      const byPhoneRows = await this.participants.find({
+        where: { groupId, phoneE164: In(candidates) }
+      });
       const phoneGuest = byPhoneRows.find((row) => !row.linkedUserId);
       if (phoneGuest) {
         return phoneGuest;

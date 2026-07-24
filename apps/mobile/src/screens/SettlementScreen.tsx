@@ -55,6 +55,19 @@ const WAITING_FOR_PAYER_STATES: SettlementState[] = [
 
 const SETTLED_STATES: SettlementState[] = ["confirmed", "ledger_posted"];
 
+function vpaFromUpiUri(uri?: string): string {
+  if (!uri) {
+    return "";
+  }
+  try {
+    const query = uri.includes("?") ? uri.slice(uri.indexOf("?") + 1) : "";
+    const params = new URLSearchParams(query);
+    return decodeURIComponent(params.get("pa") ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function isConfirmableState(state: SettlementState | undefined): boolean {
   return Boolean(state && CONFIRMABLE_STATES.includes(state));
 }
@@ -233,6 +246,11 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     intent?.paymentMethod !== "cash" &&
     !SETTLED_STATES.includes(intent?.state as SettlementState) &&
     !["rejected", "cancelled", "expired"].includes(intent?.state ?? "");
+  const canEditPayeeVpa =
+    isPayer &&
+    intent?.paymentMethod !== "cash" &&
+    Boolean(intent?.state && WAITING_FOR_PAYER_STATES.includes(intent.state)) &&
+    !(intent?.proofs?.length);
   const awaitingPayeeConfirm = isPayer && isConfirmableState(intent?.state);
 
   const invalidateSettlementBalances = (groupId: string) => {
@@ -288,12 +306,56 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     },
     onSuccess: (response) => {
       setIntent(response);
+      if (response.payeeVpa) {
+        setPayeeVpa(response.payeeVpa);
+      } else if (response.upiUri) {
+        const fromUri = vpaFromUpiUri(response.upiUri);
+        if (fromUri) {
+          setPayeeVpa(fromUri);
+        }
+      }
       if (response.paymentMethod === "cash" || response.state === "ledger_posted") {
         invalidateSettlementBalances(response.groupId);
         setSelectedSuggestion(undefined);
       } else {
         void queryClient.invalidateQueries({ queryKey: ["settlementHistory", response.groupId] });
       }
+    }
+  });
+
+  const regenerateUpi = useMutation({
+    mutationFn: () => {
+      if (!intent) {
+        throw new Error("Create a settlement intent first");
+      }
+      const nextVpa = payeeVpa.trim();
+      if (!nextVpa) {
+        throw new Error("Enter the receiver UPI ID.");
+      }
+      const payeeName =
+        lookups && intent.payeeParticipantId
+          ? resolveParticipantDisplayName(intent.payeeParticipantId, lookups)
+          : undefined;
+      return apiClient.regenerateSettlementUpi(intent.id, nextVpa, payeeName);
+    },
+    onSuccess: (response) => {
+      setIntent(response);
+      if (response.payeeVpa) {
+        setPayeeVpa(response.payeeVpa);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["settlementHistory", selectedGroupId] });
+      dialog?.showDialog({
+        title: "UPI ID updated",
+        message: "QR and payment links now use the new UPI ID. Open your UPI app again to pay.",
+        tone: "success"
+      });
+    },
+    onError: (error: Error) => {
+      dialog?.showDialog({
+        title: "Could not update UPI ID",
+        message: error.message,
+        tone: "error"
+      });
     }
   });
 
@@ -660,6 +722,29 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
           {isPayer && !isSettled ? (
             <>
               <SectionHeader title="UPI handoff" />
+              {canEditPayeeVpa ? (
+                <DataSurface>
+                  <View style={styles.formBlock}>
+                    <InputField
+                      label="Receiver UPI ID"
+                      value={payeeVpa}
+                      onChangeText={setPayeeVpa}
+                      autoCapitalize="none"
+                      placeholder="name@okaxis"
+                    />
+                    <ThemedText variant="caption" tone="muted">
+                      You can correct the UPI ID before paying. QR and app handoff update after you save.
+                    </ThemedText>
+                    <Button
+                      label="Update UPI ID"
+                      variant="secondary"
+                      onPress={() => regenerateUpi.mutate()}
+                      loading={regenerateUpi.isPending}
+                      disabled={!payeeVpa.trim() || regenerateUpi.isPending}
+                    />
+                  </View>
+                </DataSurface>
+              ) : null}
               <DataSurface>
                 <View style={styles.formBlock}>
                   <View style={styles.handoffRow}>

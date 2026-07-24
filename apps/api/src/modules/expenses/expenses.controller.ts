@@ -116,7 +116,7 @@ export class ExpensesController {
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
-    await this.notifyGroupExpense(currentUser.userId, {
+    await this.notifyExpenseParticipants(currentUser.userId, {
       type: 'expense_created',
       title: 'Expense added',
       body: await this.expenseNotifyBody(
@@ -127,7 +127,8 @@ export class ExpensesController {
         )}`
       ),
       groupId: dto.groupId,
-      expenseId: result.expense?.expenseId ?? dto.expenseId
+      expenseId: result.expense?.expenseId ?? dto.expenseId,
+      participantIds: collectExpenseParticipantIds(dto.payers, dto.shares)
     });
     return result;
   }
@@ -157,7 +158,7 @@ export class ExpensesController {
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
-    await this.notifyGroupExpense(currentUser.userId, {
+    await this.notifyExpenseParticipants(currentUser.userId, {
       type: 'expense_revised',
       title: 'Expense updated',
       body: await this.expenseNotifyBody(
@@ -168,7 +169,11 @@ export class ExpensesController {
       ),
       groupId: dto.groupId,
       expenseId,
-      reason: dto.reason
+      reason: dto.reason,
+      participantIds: collectExpenseParticipantIds(
+        dto.payers ?? result.expense?.payers,
+        dto.shares ?? result.expense?.shares
+      )
     });
     return result;
   }
@@ -199,7 +204,7 @@ export class ExpensesController {
       actorId: currentUser.userId,
       idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
     });
-    await this.notifyGroupExpense(currentUser.userId, {
+    await this.notifyExpenseParticipants(currentUser.userId, {
       type: 'expense_voided',
       title: 'Expense deleted',
       body: await this.expenseNotifyBody(
@@ -210,7 +215,8 @@ export class ExpensesController {
       ),
       groupId: dto.groupId,
       expenseId,
-      reason: dto.reason
+      reason: dto.reason,
+      participantIds: collectExpenseParticipantIds(existing?.payers, existing?.shares)
     });
     return result;
   }
@@ -267,7 +273,8 @@ export class ExpensesController {
     return `${groupName} · ${detail}`;
   }
 
-  private async notifyGroupExpense(
+  /** Notify only people on the expense (payers + split shares), not the whole group. */
+  private async notifyExpenseParticipants(
     actorUserId: string,
     input: {
       type: 'expense_created' | 'expense_revised' | 'expense_voided';
@@ -276,32 +283,39 @@ export class ExpensesController {
       groupId: string;
       expenseId?: string;
       reason?: string;
+      participantIds: string[];
     }
   ): Promise<void> {
-    if (!this.notifications || !this.groups) {
+    if (!this.notifications || !this.groups || input.participantIds.length === 0) {
       return;
     }
     try {
-      const memberIds = await this.groups.listActiveMemberUserIds(input.groupId);
+      const userIds = new Set<string>();
+      await Promise.all(
+        input.participantIds.map(async (participantId) => {
+          const userId = await this.groups!.resolveUserIdForParticipant(input.groupId, participantId);
+          if (userId && userId !== actorUserId) {
+            userIds.add(userId);
+          }
+        })
+      );
       const reasonText = input.reason?.trim();
       await Promise.all(
-        memberIds
-          .filter((userId) => userId !== actorUserId)
-          .map((userId) =>
-            this.notifications!.create({
-              userId,
+        [...userIds].map((userId) =>
+          this.notifications!.create({
+            userId,
+            groupId: input.groupId,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            tone: input.type === 'expense_voided' ? 'action_required' : 'neutral',
+            data: {
               groupId: input.groupId,
-              type: input.type,
-              title: input.title,
-              body: input.body,
-              tone: input.type === 'expense_voided' ? 'action_required' : 'neutral',
-              data: {
-                groupId: input.groupId,
-                expenseId: input.expenseId,
-                ...(reasonText ? { reason: reasonText } : {})
-              }
-            })
-          )
+              expenseId: input.expenseId,
+              ...(reasonText ? { reason: reasonText } : {})
+            }
+          })
+        )
       );
     } catch (error) {
       console.error('[expenses] notification failed', error);
@@ -316,4 +330,22 @@ export class ExpensesController {
     }
     return key;
   }
+}
+
+function collectExpenseParticipantIds(
+  payers?: Array<{ participantId: string }> | null,
+  shares?: Array<{ participantId: string }> | null
+): string[] {
+  const ids = new Set<string>();
+  for (const payer of payers ?? []) {
+    if (payer.participantId) {
+      ids.add(payer.participantId);
+    }
+  }
+  for (const share of shares ?? []) {
+    if (share.participantId) {
+      ids.add(share.participantId);
+    }
+  }
+  return [...ids];
 }

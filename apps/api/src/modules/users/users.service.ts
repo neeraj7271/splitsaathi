@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AttachmentEntity } from '@splitsaathi/db';
+import { normalizePhoneE164India, phoneLookupCandidates } from '../../common/utils/phone-hash';
 import { AuthIdentityEntity } from '../auth/entities/auth-identity.entity';
 import { UserPreferencesEntity } from './entities/user-preferences.entity';
 import { UserEntity } from './entities/user.entity';
@@ -63,6 +64,22 @@ export class UsersService {
   async getPhoneE164ForUser(userId: string): Promise<string | null> {
     const identity = await this.identities.findOne({ where: { userId, provider: 'phone' } });
     return identity?.identifier ?? null;
+  }
+
+  /** Resolve a registered SplitSaathi user from a phone number (E.164 or local formats). */
+  async findUserIdByPhoneE164(phoneRaw: string | null | undefined): Promise<string | null> {
+    if (!phoneRaw?.trim()) {
+      return null;
+    }
+    const normalized = normalizePhoneE164India(phoneRaw);
+    if (!normalized) {
+      return null;
+    }
+    const candidates = phoneLookupCandidates(normalized);
+    const identity = await this.identities.findOne({
+      where: { provider: 'phone', identifier: In(candidates) }
+    });
+    return identity?.userId ?? null;
   }
 
   async getEmailForUser(userId: string): Promise<string | null> {

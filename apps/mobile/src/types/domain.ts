@@ -217,6 +217,7 @@ export interface SettlementIntent {
   state: SettlementState;
   upiUri?: string;
   qrPayload?: string;
+  payeeVpa?: string;
   clientReference?: string;
   expiresAt?: string;
   createdAt?: string;

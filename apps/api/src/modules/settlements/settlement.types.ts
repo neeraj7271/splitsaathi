@@ -15,6 +15,7 @@ export interface SettlementIntentRow {
   providerReference?: string;
   upiUri?: string;
   qrPayload?: string;
+  payeeVpa?: string;
   expiresAt?: string;
   createdBy: string;
   createdAt: string;
@@ -72,6 +73,15 @@ export interface MarkUpiOpenedCommand {
   actorId: string;
   settlementIntentId: string;
   upiApp?: string;
+  expectedVersion: number;
+}
+
+export interface RegenerateUpiIntentCommand {
+  idempotencyKey: string;
+  actorId: string;
+  settlementIntentId: string;
+  payeeVpa: string;
+  payeeName?: string;
   expectedVersion: number;
 }
 

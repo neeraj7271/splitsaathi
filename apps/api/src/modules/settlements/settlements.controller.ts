@@ -24,6 +24,7 @@ import { SettlementSuggestionService } from './settlement-suggestion.service';
 import type {
   CreateSettlementIntentCommand,
   MarkUpiOpenedCommand,
+  RegenerateUpiIntentCommand,
   SettlementIntentRow,
   SettlementTransitionCommand,
   SubmitPaymentProofCommand
@@ -97,6 +98,55 @@ export class SettlementsController {
     @Body() dto: Omit<MarkUpiOpenedCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['markUpiOpened']> {
     return this.upiOpenedAsync(currentUser, idempotencyKey, settlementIntentId, dto);
+  }
+
+  @Post('settlement-intents/:id/upi/regenerate')
+  regenerateUpi(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Param('id') settlementIntentId: string,
+    @Body() dto: { payeeVpa: string; payeeName?: string; expectedVersion?: number }
+  ): ReturnType<SettlementCommandService['regenerateUpiIntent']> {
+    return this.regenerateUpiAsync(currentUser, idempotencyKey, settlementIntentId, dto);
+  }
+
+  private async regenerateUpiAsync(
+    currentUser: AuthenticatedUser,
+    idempotencyKey: string | undefined,
+    settlementIntentId: string,
+    dto: { payeeVpa: string; payeeName?: string; expectedVersion?: number }
+  ): ReturnType<SettlementCommandService['regenerateUpiIntent']> {
+    await this.assertActorIsPayer(currentUser.userId, settlementIntentId);
+    const expectedVersion =
+      dto.expectedVersion ?? (await this.commands.currentVersion(settlementIntentId));
+    const intent = this.settlements.getIntent(settlementIntentId);
+    let payeeName = dto.payeeName?.trim();
+    if (!payeeName && intent && this.groups) {
+      // Fall back to participant display name when client omits it.
+      try {
+        const group = await this.groups.getGroupForUser(currentUser.userId, intent.groupId);
+        payeeName =
+          group.participants.find((p) => p.id === intent.payeeParticipantId)?.displayName ??
+          intent.payeeParticipantId;
+      } catch {
+        payeeName = intent.payeeParticipantId;
+      }
+    }
+    try {
+      return await this.commands.regenerateUpiIntent({
+        settlementIntentId,
+        payeeVpa: dto.payeeVpa,
+        payeeName,
+        expectedVersion,
+        actorId: currentUser.userId,
+        idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
+      } satisfies RegenerateUpiIntentCommand);
+    } catch (error) {
+      if (error instanceof Error && /UPI|VPA|cannot be changed|Only UPI/i.test(error.message)) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   private async upiOpenedAsync(

@@ -7,6 +7,7 @@ import type { GatewayPaymentStatus, PaymentGatewayPort, UpiIntentProviderPort } 
 import type {
   CreateSettlementIntentCommand,
   MarkUpiOpenedCommand,
+  RegenerateUpiIntentCommand,
   SettlementIntentRow,
   SettlementTransitionCommand,
   SubmitPaymentProofCommand
@@ -129,6 +130,7 @@ export class SettlementCommandService {
         actorId: command.actorId,
         payload: {
           settlementIntentId,
+          payeeVpa: command.payeeVpa!,
           ...this.upiIntentProvider.createIntent({
             settlementIntentId,
             payerParticipantId: command.payerParticipantId,
@@ -182,6 +184,67 @@ export class SettlementCommandService {
             upiApp: command.upiApp
           },
           metadata: { command: 'mark_upi_opened' }
+        }
+      ]
+    });
+    return { intent: this.requireIntent(command.settlementIntentId), events };
+  }
+
+  async regenerateUpiIntent(
+    command: RegenerateUpiIntentCommand
+  ): Promise<{ intent: SettlementIntentRow; events: DomainEvent[] }> {
+    const intent = this.requireIntent(command.settlementIntentId);
+    if (intent.paymentMethod !== 'upi') {
+      throw new Error('Only UPI settlement intents can regenerate a UPI ID.');
+    }
+    const payeeVpa = command.payeeVpa.trim();
+    if (!payeeVpa) {
+      throw new Error('A payee UPI ID is required.');
+    }
+    if (intent.proofs.length > 0) {
+      throw new Error('UPI ID cannot be changed after payment proof has been submitted.');
+    }
+    const editableStates = new Set([
+      'intent_created',
+      'intent_generated',
+      'payer_opened_upi_app',
+      'awaiting_payment_evidence'
+    ]);
+    if (!editableStates.has(intent.state)) {
+      throw new Error(`UPI ID cannot be changed while settlement is ${intent.state}.`);
+    }
+    this.assertTransitionsAllowed(intent, ['generate_intent']);
+
+    const payeeName = command.payeeName?.trim() || intent.payeeParticipantId;
+    const events = await this.ledger.appendAndProject({
+      aggregateType: 'settlement_intent',
+      aggregateId: command.settlementIntentId,
+      expectedVersion: command.expectedVersion,
+      idempotencyKey: command.idempotencyKey,
+      idempotencyPayload: command,
+      events: [
+        {
+          type: 'UpiIntentGenerated',
+          aggregateType: 'settlement_intent',
+          aggregateId: command.settlementIntentId,
+          groupId: intent.groupId,
+          actorId: command.actorId,
+          payload: {
+            settlementIntentId: command.settlementIntentId,
+            payeeVpa,
+            ...this.upiIntentProvider.createIntent({
+              settlementIntentId: command.settlementIntentId,
+              payerParticipantId: intent.payerParticipantId,
+              payeeParticipantId: intent.payeeParticipantId,
+              payeeVpa,
+              payeeName,
+              amountMinor: intent.amountMinor,
+              currencyCode: intent.currencyCode,
+              note: intent.note,
+              ledgerReference: `SS-${command.settlementIntentId.replaceAll('-', '').slice(0, 24).toUpperCase()}`
+            })
+          },
+          metadata: { command: 'regenerate_upi_intent' }
         }
       ]
     });
