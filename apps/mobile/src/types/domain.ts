@@ -294,6 +294,7 @@ export interface UserProfile {
   defaultCurrencyCode: string;
   state: string;
   phoneMasked?: string;
+  phoneE164?: string | null;
   email?: string | null;
   avatarAttachmentId?: string | null;
   avatarUrl?: string | null;

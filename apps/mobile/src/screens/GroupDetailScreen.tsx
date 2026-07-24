@@ -32,6 +32,7 @@ import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, partic
 import { activeGroupMemberships, activeGroupParticipants } from "../utils/groupPeople";
 import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
+import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 
 type GroupTab = "activity" | "balances" | "expenses" | "charts" | "people";
@@ -301,8 +302,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
       if (action === "remove") {
         return apiClient.updateGroup(selectedGroupId, { imageAttachmentId: null });
       }
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
+      const granted = await ensureMediaLibraryPermission();
+      if (!granted) {
         throw new Error("Allow photo access to change the group logo.");
       }
       const picked = await ImagePicker.launchImageLibraryAsync({

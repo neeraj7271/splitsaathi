@@ -37,7 +37,7 @@ export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigati
       setError(null);
       await apiClient.recordConsent("contacts_discovery", granted, "settings");
       if (granted) {
-        await syncDeviceContacts();
+        await syncDeviceContacts({ forcePrompt: true });
       }
     },
     onSuccess: async () => {

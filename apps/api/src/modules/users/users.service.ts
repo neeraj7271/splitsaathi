@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { AttachmentEntity } from '@splitsaathi/db';
 import { normalizePhoneE164India, phoneLookupCandidates } from '../../common/utils/phone-hash';
 import { AuthIdentityEntity } from '../auth/entities/auth-identity.entity';
+import { ParticipantEntity } from '../groups/entities/participant.entity';
 import { UserPreferencesEntity } from './entities/user-preferences.entity';
 import { UserEntity } from './entities/user.entity';
 import { UpdateUserPreferencesDto } from './dto/update-user.dto';
@@ -30,7 +31,9 @@ export class UsersService {
     @InjectRepository(AuthIdentityEntity)
     private readonly identities: Repository<AuthIdentityEntity>,
     @InjectRepository(AttachmentEntity)
-    private readonly attachments: Repository<AttachmentEntity>
+    private readonly attachments: Repository<AttachmentEntity>,
+    @InjectRepository(ParticipantEntity)
+    private readonly participants: Repository<ParticipantEntity>
   ) {}
 
   async createUser(input: CreateUserInput): Promise<UserEntity> {
@@ -80,6 +83,11 @@ export class UsersService {
       where: { provider: 'phone', identifier: In(candidates) }
     });
     return identity?.userId ?? null;
+  }
+
+  /** Keep group participant phone fields in sync when the user updates their number. */
+  async syncLinkedParticipantPhones(userId: string, phoneE164: string): Promise<void> {
+    await this.participants.update({ linkedUserId: userId }, { phoneE164 });
   }
 
   async getEmailForUser(userId: string): Promise<string | null> {

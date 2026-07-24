@@ -276,10 +276,10 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         apiClient.recordConsent("upi_proof_storage", consents.proofStorage)
       ]);
       if (consents.contacts) {
-        await syncDeviceContacts().catch(() => undefined);
+        await syncDeviceContacts({ forcePrompt: true }).catch(() => undefined);
       }
       if (consents.notifications) {
-        await registerPushIfPossible();
+        await registerPushIfPossible({ forcePrompt: true });
       }
       if (inviteLink.trim()) {
         await apiClient.claimInvite(inviteLink, displayName.trim());

@@ -152,15 +152,7 @@ export class GroupsService {
         })
       );
       if (linkedUserId) {
-        const groupName = group.name;
-        await this.notificationsService.create({
-          userId: linkedUserId,
-          groupId: group.id,
-          type: 'participant_added',
-          title: 'Added to a group',
-          body: `You were added to ${groupName}.`,
-          data: { groupId: group.id, participantId: savedParticipant.id }
-        });
+        await this.notifyParticipantAdded(linkedUserId, group.id, savedParticipant.id);
       }
     }
 
@@ -448,15 +440,7 @@ export class GroupsService {
           );
         }
 
-        const groupName = await this.getGroupName(groupId);
-        await this.notificationsService.create({
-          userId: linkedUserId,
-          groupId,
-          type: 'participant_added',
-          title: 'Added to a group',
-          body: `You were added to ${groupName}.`,
-          data: { groupId, participantId: guest.id }
-        });
+        await this.notifyParticipantAdded(linkedUserId, groupId, guest.id);
         return ParticipantResponseDto.fromEntity(guest);
       }
     }
@@ -486,15 +470,7 @@ export class GroupsService {
     );
 
     if (linkedUserId) {
-      const groupName = await this.getGroupName(groupId);
-      await this.notificationsService.create({
-        userId: linkedUserId,
-        groupId,
-        type: 'participant_added',
-        title: 'Added to a group',
-        body: `You were added to ${groupName}.`,
-        data: { groupId, participantId: participant.id }
-      });
+      await this.notifyParticipantAdded(linkedUserId, groupId, participant.id);
     }
 
     return ParticipantResponseDto.fromEntity(participant);
@@ -953,6 +929,29 @@ export class GroupsService {
           })
         );
       }
+
+      await this.notifyParticipantAdded(userId, guest.groupId, guest.id);
+    }
+  }
+
+  private async notifyParticipantAdded(
+    userId: string,
+    groupId: string,
+    participantId: string
+  ): Promise<void> {
+    try {
+      const groupName = await this.getGroupName(groupId);
+      await this.notificationsService.create({
+        userId,
+        groupId,
+        type: 'participant_added',
+        title: 'Added to a group',
+        body: `You were added to ${groupName}.`,
+        tone: 'action_required',
+        data: { groupId, participantId, type: 'participant_added' }
+      });
+    } catch (error) {
+      console.error('[groups] participant_added notification failed', error);
     }
   }
 

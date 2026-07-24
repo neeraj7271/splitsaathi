@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, StyleSheet, View } from "react-native";
+import { AppState, Image, Modal, Pressable, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CaretDown, CaretUp, CheckCircle, ImageSquare, QrCode, ShieldCheck, X } from "phosphor-react-native";
@@ -55,6 +55,16 @@ const WAITING_FOR_PAYER_STATES: SettlementState[] = [
 
 const SETTLED_STATES: SettlementState[] = ["confirmed", "ledger_posted"];
 
+const TERMINAL_STATES: SettlementState[] = [
+  "confirmed",
+  "ledger_posted",
+  "rejected",
+  "cancelled",
+  "expired",
+  "reversed",
+  "refunded"
+];
+
 function vpaFromUpiUri(uri?: string): string {
   if (!uri) {
     return "";
@@ -70,6 +80,10 @@ function vpaFromUpiUri(uri?: string): string {
 
 function isConfirmableState(state: SettlementState | undefined): boolean {
   return Boolean(state && CONFIRMABLE_STATES.includes(state));
+}
+
+function isTerminalState(state: SettlementState | undefined): boolean {
+  return Boolean(state && TERMINAL_STATES.includes(state));
 }
 
 export function SettlementScreen({ navigation }: { navigation: AppNavigation }) {
@@ -105,12 +119,16 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const suggestionsQuery = useQuery({
     queryKey: ["settlementSuggestions", selectedGroupId],
     queryFn: () => apiClient.getSettlementSuggestions(selectedGroupId as string),
-    enabled: Boolean(selectedGroupId)
+    enabled: Boolean(selectedGroupId),
+    staleTime: 0,
+    refetchOnMount: "always"
   });
   const historyQuery = useQuery({
     queryKey: ["settlementHistory", selectedGroupId],
     queryFn: () => apiClient.listSettlementHistory(selectedGroupId as string),
-    enabled: Boolean(selectedGroupId)
+    enabled: Boolean(selectedGroupId),
+    staleTime: 0,
+    refetchOnMount: "always"
   });
 
   const myParticipantId = useMemo(
@@ -215,8 +233,11 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       return;
     }
     setSelectedSuggestion((current) => {
-      if (current && payableSuggestions.some((row) => row.id === current.id)) {
-        return current;
+      if (current) {
+        const updated = payableSuggestions.find((row) => row.id === current.id);
+        if (updated) {
+          return updated;
+        }
       }
       return payableSuggestions[0];
     });
@@ -253,12 +274,24 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     !(intent?.proofs?.length);
   const awaitingPayeeConfirm = isPayer && isConfirmableState(intent?.state);
 
-  const invalidateSettlementBalances = (groupId: string) => {
-    void queryClient.invalidateQueries({ queryKey: ["groups"] });
-    void queryClient.invalidateQueries({ queryKey: ["group", groupId] });
-    void queryClient.invalidateQueries({ queryKey: ["balances", groupId] });
-    void queryClient.invalidateQueries({ queryKey: ["settlementSuggestions", groupId] });
-    void queryClient.invalidateQueries({ queryKey: ["settlementHistory", groupId] });
+  const invalidateSettlementBalances = async (groupId: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["groups"] }),
+      queryClient.invalidateQueries({ queryKey: ["group", groupId] }),
+      queryClient.invalidateQueries({ queryKey: ["balances", groupId] }),
+      queryClient.refetchQueries({ queryKey: ["settlementSuggestions", groupId] }),
+      queryClient.refetchQueries({ queryKey: ["settlementHistory", groupId] }),
+      queryClient.refetchQueries({ queryKey: ["groups"] })
+    ]);
+  };
+
+  const resetSettlementForm = () => {
+    setIntent(undefined);
+    setReason("");
+    setUtrText("");
+    setProofAttachment(undefined);
+    setSelectedSuggestion(undefined);
+    setHandoffError(undefined);
   };
 
   const createIntent = useMutation({
@@ -398,9 +431,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const confirm = useMutation({
     mutationFn: () => apiClient.confirmSettlement(intent?.id as string),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       setIntent(response);
-      invalidateSettlementBalances(response.groupId);
+      await invalidateSettlementBalances(response.groupId);
       dialog?.showDialog({
         title: "Payment confirmed",
         message: "Settlement is complete. Balances have been updated.",
@@ -408,10 +441,8 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         primaryAction: {
           label: "Done",
           onPress: () => {
-            setIntent(undefined);
-            setReason("");
-            setUtrText("");
-            setProofAttachment(undefined);
+            resetSettlementForm();
+            void invalidateSettlementBalances(response.groupId);
           }
         }
       });
@@ -419,9 +450,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   });
   const reject = useMutation({
     mutationFn: () => apiClient.rejectSettlement(intent?.id as string, reason),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       setIntent(response);
-      void queryClient.invalidateQueries({ queryKey: ["settlementHistory", selectedGroupId] });
+      await invalidateSettlementBalances(response.groupId);
+      resetSettlementForm();
     }
   });
   const dispute = useMutation({
@@ -474,18 +506,35 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     (paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa);
   const canCreateUpi =
     paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa;
-  const activeAmount = intent?.amountMinor ?? selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
+  const activeAmount =
+    intent && !isTerminalState(intent.state)
+      ? intent.amountMinor
+      : selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
   const refreshing =
     groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching || profileQuery.isRefetching;
 
   async function refreshScreen() {
+    if (isTerminalState(intent?.state)) {
+      resetSettlementForm();
+    }
     await Promise.all([
       groupsQuery.refetch(),
       selectedGroupId ? groupQuery.refetch() : Promise.resolve(),
       selectedGroupId ? suggestionsQuery.refetch() : Promise.resolve(),
-      selectedGroupId ? historyQuery.refetch() : Promise.resolve()
+      selectedGroupId ? historyQuery.refetch() : Promise.resolve(),
+      profileQuery.refetch()
     ]);
   }
+
+  // Keep amounts fresh when returning to the app while sitting on Settle.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active" && selectedGroupId) {
+        void refreshScreen();
+      }
+    });
+    return () => sub.remove();
+  }, [selectedGroupId, intent?.state]);
 
   async function openProof(row: SettlementIntent) {
     const pathOrUrl = row.proofUrl ?? (row.proofAttachmentId ? `/v1/attachments/${row.proofAttachmentId}/content` : null);
@@ -914,10 +963,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   label="Start another settlement"
                   variant="secondary"
                   onPress={() => {
-                    setIntent(undefined);
-                    setReason("");
-                    setUtrText("");
-                    setProofAttachment(undefined);
+                    resetSettlementForm();
+                    if (selectedGroupId) {
+                      void invalidateSettlementBalances(selectedGroupId);
+                    }
                   }}
                 />
               </View>

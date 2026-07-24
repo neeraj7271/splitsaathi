@@ -92,7 +92,7 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
       setSavedSnapshot(preferences);
       if (preferences.pushNotificationsEnabled) {
         await import("../notifications/registerPush").then(({ registerPushIfPossible }) =>
-          registerPushIfPossible().catch(() => undefined)
+          registerPushIfPossible({ forcePrompt: true }).catch(() => undefined)
         );
       }
     }

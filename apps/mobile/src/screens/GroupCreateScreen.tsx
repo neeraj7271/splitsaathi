@@ -21,6 +21,7 @@ import { useTheme } from "../theme";
 import { GroupMode, GroupSummary, GroupType, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
+import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 import { formatSignedMoney } from "../utils/money";
 
 const groupTypes: Array<{ label: string; value: GroupType }> = [
@@ -95,8 +96,8 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   };
 
   async function selectGroupImage() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
+    const granted = await ensureMediaLibraryPermission();
+    if (!granted) {
       showDialog({
         title: "Photos are off",
         message: "Allow photo access to attach a group image.",

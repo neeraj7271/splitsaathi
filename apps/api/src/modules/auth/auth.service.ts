@@ -172,10 +172,7 @@ export class AuthService {
 
     const existingForUser = await this.identities.findOne({ where: { userId, provider: 'phone' } });
     if (existingForUser) {
-      const samePhone = candidates.includes(existingForUser.identifier);
-      if (!samePhone) {
-        throw new ConflictException('This account already has a different phone number linked.');
-      }
+      // Allow changing / correcting the linked phone number from Profile.
       existingForUser.identifier = normalized;
       existingForUser.verifiedAt = new Date();
       await this.identities.save(existingForUser);
@@ -193,6 +190,12 @@ export class AuthService {
         })
       );
     }
+
+    await this.usersService.syncLinkedParticipantPhones(userId, normalized).catch((error) => {
+      this.logger.warn(
+        `participant phone sync failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
 
     await this.notifyContactsOfPhoneJoin(userId, normalized).catch((error) => {
       this.logger.warn(`contact join notify failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -169,6 +169,29 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
       registerPushIfPossible().catch(() => undefined)
     );
+
+    let receivedSub: { remove: () => void } | undefined;
+    let responseSub: { remove: () => void } | undefined;
+    void import("expo-notifications").then(async (Notifications) => {
+      const { invalidateQueriesForPush } = await import("./src/notifications/invalidateOnPush");
+      receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+        invalidateQueriesForPush(
+          queryClient,
+          notification.request.content.data as Record<string, unknown> | undefined
+        );
+      });
+      responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        invalidateQueriesForPush(
+          queryClient,
+          response.notification.request.content.data as Record<string, unknown> | undefined
+        );
+      });
+    });
+
+    return () => {
+      receivedSub?.remove();
+      responseSub?.remove();
+    };
   }, [authenticated, theme]);
 
   const claimInviteFromUrl = useCallback(

@@ -1,11 +1,15 @@
 import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import { apiClient } from "../api/client";
 import { configurePushNotifications } from "./configurePush";
 
+const PUSH_ASKED_KEY = "splitsaathi.pushPermissionAsked.v1";
+
 type NotificationPermissionShape = {
   granted?: boolean;
   status?: string;
+  canAskAgain?: boolean;
   ios?: { status?: number };
 };
 
@@ -13,11 +17,40 @@ function isExpoGo() {
   return Constants.appOwnership === "expo";
 }
 
+async function getFlag(key: string) {
+  if (Platform.OS === "web") {
+    return typeof window !== "undefined" && window.localStorage.getItem(key) === "1";
+  }
+  return (await SecureStore.getItemAsync(key)) === "1";
+}
+
+async function setFlag(key: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, "1");
+    }
+    return;
+  }
+  await SecureStore.setItemAsync(key, "1");
+}
+
+function allowsNotifications(
+  permission: NotificationPermissionShape,
+  IosAuthorizationStatus: { PROVISIONAL?: number }
+) {
+  return (
+    Boolean(permission.granted) ||
+    permission.status === "granted" ||
+    permission.ios?.status === IosAuthorizationStatus.PROVISIONAL
+  );
+}
+
 /**
  * Registers the native FCM (Android) / APNs (iOS) device token with the API.
- * Requires a dev/production build with `google-services.json` (Android) — not Expo Go.
+ * Only shows the system permission dialog when status is still undetermined
+ * (or when `forcePrompt` is set from Settings). Never re-asks after a prior decision.
  */
-export async function registerPushIfPossible() {
+export async function registerPushIfPossible(options?: { forcePrompt?: boolean }) {
   if (Platform.OS === "web") {
     return { status: "skipped" as const, reason: "push_not_supported_on_web_preview" };
   }
@@ -29,25 +62,27 @@ export async function registerPushIfPossible() {
   await configurePushNotifications();
 
   const Notifications = await import("expo-notifications");
-
-  function allowsNotifications(permission: NotificationPermissionShape) {
-    return (
-      Boolean(permission.granted) ||
-      permission.status === "granted" ||
-      permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-    );
-  }
-
   const permissions = await Notifications.getPermissionsAsync();
-  const granted = allowsNotifications(permissions as NotificationPermissionShape)
-    ? permissions
-    : await Notifications.requestPermissionsAsync();
-  if (!allowsNotifications(granted as NotificationPermissionShape)) {
-    return { status: "skipped" as const, reason: "permission_denied" };
+
+  if (!allowsNotifications(permissions as NotificationPermissionShape, Notifications.IosAuthorizationStatus)) {
+    const previouslyAsked = await getFlag(PUSH_ASKED_KEY);
+    const undetermined = permissions.status === "undetermined" || permissions.status === undefined;
+    const canAsk = permissions.canAskAgain !== false;
+
+    if (!options?.forcePrompt && (previouslyAsked || !undetermined || !canAsk)) {
+      return { status: "skipped" as const, reason: "permission_previously_decided" };
+    }
+
+    const requested = await Notifications.requestPermissionsAsync();
+    await setFlag(PUSH_ASKED_KEY);
+    if (!allowsNotifications(requested as NotificationPermissionShape, Notifications.IosAuthorizationStatus)) {
+      return { status: "skipped" as const, reason: "permission_denied" };
+    }
+  } else {
+    await setFlag(PUSH_ASKED_KEY);
   }
 
   try {
-    // Native FCM/APNs token (not Expo push token) — API delivers via FCM HTTP v1.
     const deviceToken = await Notifications.getDevicePushTokenAsync();
     const pushToken = deviceToken.data;
     if (!pushToken || typeof pushToken !== "string") {

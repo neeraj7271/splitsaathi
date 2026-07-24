@@ -18,9 +18,12 @@ export class UsersController {
   @ApiOkResponse({ type: UserResponseDto })
   async me(@CurrentUser() currentUser: AuthenticatedUser): Promise<UserResponseDto> {
     const user = await this.usersService.findByIdOrThrow(currentUser.userId);
-    const phoneMasked = await this.usersService.getPhoneMaskedForUser(currentUser.userId);
+    const phoneE164 = await this.usersService.getPhoneE164ForUser(currentUser.userId);
+    const phoneMasked = phoneE164
+      ? (await this.usersService.getPhoneMaskedForUser(currentUser.userId))
+      : undefined;
     const email = await this.usersService.getEmailForUser(currentUser.userId);
-    return UserResponseDto.fromEntity(user, { phoneMasked, email });
+    return UserResponseDto.fromEntity(user, { phoneMasked, phoneE164, email });
   }
 
   @Patch('me')
@@ -35,9 +38,12 @@ export class UsersController {
       avatarAttachmentId: dto.avatarAttachmentId,
       upiVpa: dto.upiVpa
     });
-    const phoneMasked = await this.usersService.getPhoneMaskedForUser(currentUser.userId);
+    const phoneE164 = await this.usersService.getPhoneE164ForUser(currentUser.userId);
+    const phoneMasked = phoneE164
+      ? (await this.usersService.getPhoneMaskedForUser(currentUser.userId))
+      : undefined;
     const email = await this.usersService.getEmailForUser(currentUser.userId);
-    return UserResponseDto.fromEntity(updated, { phoneMasked, email });
+    return UserResponseDto.fromEntity(updated, { phoneMasked, phoneE164, email });
   }
 
   @Get('me/preferences')

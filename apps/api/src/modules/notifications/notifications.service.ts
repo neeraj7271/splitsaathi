@@ -45,6 +45,8 @@ function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string)
     case 'settlement_disputed':
       return prefs.emailPaymentReceived !== false;
     case 'participant_added':
+      // Always notify when someone is added to a group (still gated by push master switch).
+      return true;
     case 'invite_claimed':
     case 'group_archived':
     case 'group_unarchived':

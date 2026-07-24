@@ -19,6 +19,7 @@ import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { pickAndCompressAvatar } from "../utils/avatarUpload";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
+import { normalizePhoneE164 } from "../utils/phoneHash";
 
 export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -28,6 +29,8 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   const [savedDisplayName, setSavedDisplayName] = useState("");
   const [upiVpa, setUpiVpa] = useState("");
   const [savedUpiVpa, setSavedUpiVpa] = useState("");
+  const [phoneE164, setPhoneE164] = useState("");
+  const [savedPhoneE164, setSavedPhoneE164] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
@@ -39,18 +42,38 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
       setSavedDisplayName(profileQuery.data.displayName);
       setUpiVpa(profileQuery.data.upiVpa ?? "");
       setSavedUpiVpa(profileQuery.data.upiVpa ?? "");
+      const phone = profileQuery.data.phoneE164 ?? "";
+      setPhoneE164(phone);
+      setSavedPhoneE164(phone);
     }
-  }, [profileQuery.data?.displayName, profileQuery.data?.upiVpa]);
+  }, [profileQuery.data?.displayName, profileQuery.data?.upiVpa, profileQuery.data?.phoneE164]);
 
   const saveProfile = useMutation({
-    mutationFn: () => apiClient.updateMe({ displayName: displayName.trim(), upiVpa: upiVpa.trim() || null }),
-    onSuccess: (profile) => {
-      queryClient.setQueryData(["me"], profile);
-      queryClient.invalidateQueries({ queryKey: ["me"] });
-      setDisplayName(profile.displayName);
-      setSavedDisplayName(profile.displayName);
-      setUpiVpa(profile.upiVpa ?? "");
-      setSavedUpiVpa(profile.upiVpa ?? "");
+    mutationFn: async () => {
+      const nextPhone = normalizePhoneE164(phoneE164.trim()) || phoneE164.trim();
+      const phoneChanged = nextPhone !== savedPhoneE164;
+      if (phoneChanged) {
+        if (!nextPhone || nextPhone.replace(/\D/g, "").length < 10) {
+          throw new Error("Enter a valid phone number with country code, e.g. +9198XXXXXXXX.");
+        }
+        await apiClient.linkPhone(nextPhone, displayName.trim() || undefined);
+      }
+      return apiClient.updateMe({
+        displayName: displayName.trim(),
+        upiVpa: upiVpa.trim() || null
+      });
+    },
+    onSuccess: async (profile) => {
+      const refreshed = await apiClient.getMe().catch(() => profile);
+      queryClient.setQueryData(["me"], refreshed);
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+      setDisplayName(refreshed.displayName);
+      setSavedDisplayName(refreshed.displayName);
+      setUpiVpa(refreshed.upiVpa ?? "");
+      setSavedUpiVpa(refreshed.upiVpa ?? "");
+      setPhoneE164(refreshed.phoneE164 ?? "");
+      setSavedPhoneE164(refreshed.phoneE164 ?? "");
       setIsEditing(false);
     }
   });
@@ -89,7 +112,11 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   });
 
   const profile = profileQuery.data;
-  const hasChanges = displayName.trim() !== savedDisplayName || upiVpa.trim() !== savedUpiVpa;
+  const normalizedDraftPhone = normalizePhoneE164(phoneE164.trim()) || phoneE164.trim();
+  const hasChanges =
+    displayName.trim() !== savedDisplayName ||
+    upiVpa.trim() !== savedUpiVpa ||
+    normalizedDraftPhone !== savedPhoneE164;
   const hasAvatar = Boolean(localAvatarUri || profile?.avatarUrl);
 
   async function pickAndUploadAvatar() {
@@ -130,14 +157,23 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           />
           <View style={styles.identity}>
             <ThemedText variant="title">{profile?.displayName ?? "Your profile"}</ThemedText>
-              <ThemedText variant="bodySm" tone="muted">
-                {profile?.email ?? "Email unavailable"}
-              </ThemedText>
-              <ThemedText variant="bodySm" tone="muted">
-                {profile?.phoneMasked ?? "Phone number unavailable"}
-              </ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              {profile?.email ?? "Email unavailable"}
+            </ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              {profile?.phoneE164 || profile?.phoneMasked || "Phone number unavailable"}
+            </ThemedText>
           </View>
-          <Pressable onPress={() => setIsEditing((value) => !value)}>
+          <Pressable
+            onPress={() => {
+              if (isEditing) {
+                setDisplayName(savedDisplayName);
+                setUpiVpa(savedUpiVpa);
+                setPhoneE164(savedPhoneE164);
+              }
+              setIsEditing((value) => !value);
+            }}
+          >
             <ThemedText variant="bodySm" tone="confirmed">
               {isEditing ? "Cancel" : "Edit"}
             </ThemedText>
@@ -162,6 +198,17 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
               placeholder="How you appear in groups"
             />
             <InputField
+              label="Phone number"
+              value={phoneE164}
+              onChangeText={setPhoneE164}
+              placeholder="+9198XXXXXXXX"
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+            />
+            <ThemedText variant="bodySm" tone="muted">
+              Used so friends can find you and add you to groups. Include +91 for Indian numbers.
+            </ThemedText>
+            <InputField
               label="Default receive UPI ID"
               value={upiVpa}
               onChangeText={setUpiVpa}
@@ -174,13 +221,24 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             <ThemedText variant="bodySm" tone="muted">
               Default currency: {profile?.defaultCurrencyCode ?? "INR"}
             </ThemedText>
-            <Button label="Save profile" onPress={() => saveProfile.mutate()} loading={saveProfile.isPending} disabled={!displayName.trim() || !hasChanges} />
+            <Button
+              label="Save profile"
+              onPress={() => saveProfile.mutate()}
+              loading={saveProfile.isPending}
+              disabled={!displayName.trim() || !hasChanges}
+            />
             {saveProfile.error ? <InlineNotice title="Save failed" body={saveProfile.error.message} tone="owe" /> : null}
           </View>
         </DataSurface>
       ) : (
         <DataSurface>
           <View style={styles.formBlock}>
+            <ThemedText variant="caption" tone="muted">
+              Phone number
+            </ThemedText>
+            <ThemedText variant="bodyMedium">
+              {savedPhoneE164 || profile?.phoneMasked || "Not set — tap Edit to add"}
+            </ThemedText>
             <ThemedText variant="caption" tone="muted">
               Default receive UPI ID
             </ThemedText>
