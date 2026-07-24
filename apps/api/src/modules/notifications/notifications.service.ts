@@ -47,10 +47,12 @@ function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string)
     case 'participant_added':
       // Always notify when someone is added to a group (still gated by push master switch).
       return true;
+    case 'membership_removed':
+      // Always notify remaining members when someone leaves / is removed after settling.
+      return true;
     case 'invite_claimed':
     case 'group_archived':
     case 'group_unarchived':
-    case 'membership_removed':
     case 'membership_role_changed':
     case 'membership_exit_locked':
     case 'membership_exit_unlocked':

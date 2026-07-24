@@ -544,7 +544,7 @@ export class GroupsService {
     if (!membership) {
       throw new ForbiddenException('You are not a member of this group.');
     }
-    return this.removeMembershipWithBalanceCheck(groupId, membership);
+    return this.removeMembershipWithBalanceCheck(groupId, membership, { leftVoluntarily: true });
   }
 
   async removeMembership(
@@ -554,7 +554,10 @@ export class GroupsService {
   ): Promise<MembershipResponseDto> {
     await this.assertPermission(userId, groupId, 'membership.exit.lock');
     const membership = await this.findMembershipInGroupOrThrow(groupId, membershipId);
-    return this.removeMembershipWithBalanceCheck(groupId, membership);
+    return this.removeMembershipWithBalanceCheck(groupId, membership, {
+      leftVoluntarily: false,
+      removedByUserId: userId
+    });
   }
 
   async resolveUserIdForParticipant(groupId: string, participantId: string): Promise<string | null> {
@@ -818,7 +821,8 @@ export class GroupsService {
 
   private async removeMembershipWithBalanceCheck(
     groupId: string,
-    membership: GroupMembershipEntity
+    membership: GroupMembershipEntity,
+    options: { leftVoluntarily: boolean; removedByUserId?: string } = { leftVoluntarily: true }
   ): Promise<MembershipResponseDto> {
     if (membership.role === 'owner') {
       throw new ForbiddenException(
@@ -855,21 +859,56 @@ export class GroupsService {
 
     const group = await this.findGroupOrThrow(groupId);
     const leavingUserId = membership.userId;
+    const leavingName = await this.resolveMembershipDisplayName(membership);
+
     membership.status = 'removed_zero_balance';
     const saved = await this.memberships.save(membership);
 
-    await this.notifyActiveUsers(
-      groupId,
-      {
-        type: 'membership_removed',
-        title: 'Member left the group',
-        body: `A member left ${group.name}.`,
-        data: { groupId, membershipId: saved.id, participantId: saved.participantId }
-      },
-      leavingUserId ? new Set([leavingUserId]) : undefined
-    );
+    const title = options.leftVoluntarily ? 'Member left the group' : 'Member removed from group';
+    const body = options.leftVoluntarily
+      ? `${leavingName} left ${group.name}.`
+      : `${leavingName} was removed from ${group.name}.`;
+
+    try {
+      await this.notifyActiveUsers(
+        groupId,
+        {
+          type: 'membership_removed',
+          title,
+          body,
+          data: {
+            groupId,
+            membershipId: saved.id,
+            participantId: saved.participantId,
+            leftVoluntarily: options.leftVoluntarily,
+            removedByUserId: options.removedByUserId ?? null,
+            displayName: leavingName,
+            type: 'membership_removed'
+          }
+        },
+        leavingUserId ? new Set([leavingUserId]) : undefined
+      );
+    } catch (error) {
+      console.error('[groups] membership_removed notification failed', error);
+    }
 
     return MembershipResponseDto.fromEntity(saved);
+  }
+
+  private async resolveMembershipDisplayName(membership: GroupMembershipEntity): Promise<string> {
+    if (membership.participantId) {
+      const participant = await this.participants.findOne({ where: { id: membership.participantId } });
+      if (participant?.displayName?.trim()) {
+        return participant.displayName.trim();
+      }
+    }
+    if (membership.userId) {
+      const user = await this.usersService.findById(membership.userId);
+      if (user?.displayName?.trim()) {
+        return user.displayName.trim();
+      }
+    }
+    return 'A member';
   }
 
   /**
@@ -1065,6 +1104,7 @@ export class GroupsService {
             type: input.type,
             title: input.title,
             body: input.body,
+            tone: input.type === 'membership_removed' ? 'action_required' : 'neutral',
             data: input.data
           })
         )

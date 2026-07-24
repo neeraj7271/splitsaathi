@@ -23,7 +23,12 @@ export function invalidateQueriesForPush(
     void queryClient.invalidateQueries({ queryKey: ["groupActivity", groupId] });
   }
 
-  if (type === "participant_added" || type === "invite_claimed" || type === "contact_joined") {
+  if (
+    type === "participant_added" ||
+    type === "invite_claimed" ||
+    type === "contact_joined" ||
+    type === "membership_removed"
+  ) {
     void queryClient.invalidateQueries({ queryKey: ["groups"] });
     void queryClient.invalidateQueries({ queryKey: ["contacts"] });
   }
