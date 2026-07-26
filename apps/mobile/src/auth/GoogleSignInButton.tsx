@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -8,8 +8,10 @@ import {
 } from "@react-native-google-signin/google-signin";
 
 import { AuthIconButton } from "../components/AuthIconButton";
-import { Button } from "../components/Button";
+import { GoogleMark } from "../components/GoogleMark";
 import { InlineNotice } from "../components/InlineNotice";
+import { WELCOME_BRAND } from "../components/welcomeTokens";
+import { useTheme } from "../theme";
 
 function resolveWebClientId(): string | null {
   return process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || null;
@@ -28,10 +30,6 @@ type Props = {
   disabled?: boolean;
 };
 
-/**
- * Native Google Sign-In (ID token → API /v1/auth/google).
- * Requires a dev/release build with the Google Sign-In native module — not Expo Go.
- */
 export function GoogleSignInButton({
   onIdToken,
   pending,
@@ -40,6 +38,7 @@ export function GoogleSignInButton({
   label = "Continue with Google",
   disabled: disabledProp
 }: Props) {
+  const theme = useTheme();
   const webClientId = resolveWebClientId();
   const [localError, setLocalError] = useState<string>();
   const [configured, setConfigured] = useState(false);
@@ -100,6 +99,7 @@ export function GoogleSignInButton({
 
   const disabled = !configured || pending || Boolean(disabledProp);
   const shownError = localError || errorMessage;
+  const isLight = theme.mode === "light";
 
   if (variant === "icon") {
     return (
@@ -112,8 +112,49 @@ export function GoogleSignInButton({
 
   return (
     <>
-      <Button label={label} variant="secondary" onPress={() => void signIn()} disabled={disabled} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        disabled={disabled}
+        onPress={() => void signIn()}
+        style={({ pressed }) => [
+          styles.googleBtn,
+          {
+            borderColor: isLight ? "rgba(15,23,42,0.08)" : "transparent",
+            borderWidth: isLight ? 1 : 0,
+            opacity: disabled ? 0.55 : pressed ? 0.92 : 1
+          }
+        ]}
+      >
+        {pending ? <ActivityIndicator color={WELCOME_BRAND.GOOGLE_TEXT} /> : <GoogleMark size={22} />}
+        <Text style={styles.googleLabel}>{label}</Text>
+      </Pressable>
       {shownError ? <InlineNotice title="Google sign-in failed" body={shownError} tone="owe" /> : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  googleBtn: {
+    height: 56,
+    borderRadius: 28,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4
+  },
+  googleLabel: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 16,
+    lineHeight: 22,
+    color: WELCOME_BRAND.GOOGLE_TEXT
+  }
+});

@@ -24,6 +24,7 @@ import { Button } from "../components/Button";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { ThemedText } from "../components/ThemedText";
+import { WelcomeLoginScreen } from "../components/WelcomeLoginScreen";
 import { registerPushIfPossible } from "../notifications/registerPush";
 import { syncDeviceContacts } from "../utils/contactDiscovery";
 import { useTheme } from "../theme";
@@ -118,7 +119,6 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const isWeb = Platform.OS === "web";
-  const onGradient = theme.mode === "dark" ? theme.colors.ink : theme.colors.surface;
   const [consents, setConsents] = useState({
     contacts: false,
     notifications: true,
@@ -333,6 +333,21 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     finishSetup.reset();
   }
 
+  const isWelcome = step === "welcome";
+
+  if (isWelcome) {
+    return (
+      <WelcomeLoginScreen
+        returningUser={returningUser}
+        googleConfigured={googleConfigured}
+        onGoogleIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
+        googlePending={loginWithGoogle.isPending}
+        googleError={loginWithGoogle.error?.message}
+        onJoinInvite={() => setStep("join")}
+      />
+    );
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
       <LinearGradient
@@ -350,67 +365,17 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           style={styles.flex}
           contentContainerStyle={[
             styles.panel,
-            step === "welcome" ? styles.panelWelcome : styles.panelForm,
+            styles.panelForm,
             {
               paddingHorizontal: theme.spacing.screen,
-              paddingTop: Math.max(insets.top, 16) + (step === "welcome" ? 12 : 8),
+              paddingTop: Math.max(insets.top, 16) + 8,
               paddingBottom: Math.max(insets.bottom, 16) + 24,
               gap: theme.spacing.sectionGap
             }
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          bounces={step !== "welcome"}
         >
-        {step === "welcome" ? (
-          <>
-            <View style={styles.heroBrand}>
-              <View style={[styles.brandCard, { backgroundColor: "#FFFFFF", borderRadius: theme.radius.lg }]}>
-                <BrandLogo variant="mark" size={112} />
-              </View>
-              <View style={styles.heroWordmark}>
-                <BrandLogo variant="wordmark" size={28} />
-              </View>
-              <ThemedText variant="body" style={{ color: onGradient, opacity: 0.88, textAlign: "center" }}>
-                {returningUser
-                  ? "Welcome back. Continue with Google to open your groups."
-                  : "Split expenses with proof-backed UPI settlements for flats, trips, and groups."}
-              </ThemedText>
-            </View>
-            <View style={[styles.welcomeCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.lg }]}>
-              {googleConfigured ? (
-                <GoogleSignInButton
-                  variant="button"
-                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
-                  pending={loginWithGoogle.isPending}
-                  errorMessage={loginWithGoogle.error?.message}
-                />
-              ) : (
-                <InlineNotice
-                  title="Google sign-in not configured"
-                  body="Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to enable signup."
-                  tone="pending"
-                />
-              )}
-
-              {/* Phone OTP login / email signup temporarily disabled — Google only for signup.
-              <View style={styles.welcomePhoneHeader}>
-                <Phone ... />
-                <InputField ... />
-                <Button label="Send OTP" ... />
-                <AuthIconButton method="email" ... />
-              </View>
-              */}
-
-              <ThemedText variant="caption" tone="muted" style={{ textAlign: "center", marginTop: 8 }}>
-                After Google sign-in we&apos;ll ask for your phone number once to help friends find you.
-              </ThemedText>
-
-              <Button label="Join with invite" variant="ghost" onPress={() => setStep("join")} />
-            </View>
-          </>
-        ) : null}
-
         {/* Email auth steps kept in code but unreachable from welcome while Google-only mode is on.
         {step === "emailGate" ? ( ... ) : null}
         */}
@@ -781,40 +746,8 @@ const styles = StyleSheet.create({
   panel: {
     flexGrow: 1
   },
-  panelWelcome: {
-    justifyContent: "flex-end"
-  },
   panelForm: {
     justifyContent: "flex-start"
-  },
-  heroCopy: {
-    gap: 12,
-    paddingBottom: 20
-  },
-  heroBrand: {
-    gap: 16,
-    paddingBottom: 12,
-    alignItems: "center"
-  },
-  brandCard: {
-    width: 148,
-    height: 148,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    overflow: "hidden"
-  },
-  heroWordmark: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 8
-  },
-  welcomeCard: {
-    gap: 14,
-    borderWidth: 1,
-    padding: 16
   },
   welcomePhoneHeader: {
     flexDirection: "row",

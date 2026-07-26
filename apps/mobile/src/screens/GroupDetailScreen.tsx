@@ -1,7 +1,28 @@
-import React, { useMemo, useState } from "react";
-import { Pressable, Share, StyleSheet, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CaretLeft, ImageSquare, LinkSimple, LockKey, LockKeyOpen, PencilSimple, Trash, UserMinus, UserPlus } from "phosphor-react-native";
+import {
+  AddressBook,
+  CaretDown,
+  CaretLeft,
+  CaretRight,
+  ChartBar,
+  ClockCountdown,
+  DotsThreeVertical,
+  Handshake,
+  ImageSquare,
+  LinkSimple,
+  LockKey,
+  LockKeyOpen,
+  PencilSimple,
+  PlusCircle,
+  QrCode,
+  Scales,
+  Trash,
+  UserMinus,
+  UsersThree,
+  Wallet
+} from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
 import QRCode from "react-native-qrcode-svg";
 
@@ -13,18 +34,16 @@ import { Button } from "../components/Button";
 import { ContactPicker } from "../components/ContactPicker";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
-import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { SpendingCharts } from "../components/SpendingCharts";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
-import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
 import { ExpenseExplanation, GroupDetail, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
@@ -34,9 +53,11 @@ import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
+import { participantColor } from "../utils/participantColor";
 
 type GroupTab = "activity" | "balances" | "expenses" | "charts" | "people";
-const ACTIVITY_PAGE_SIZE = 20;
+const ACTIVITY_PAGE_SIZE = 5;
+const ACTIVITY_PREVIEW_COUNT = 5;
 
 function apiErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
@@ -64,8 +85,6 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<GroupTab>("activity");
   const [explainingExpenseId, setExplainingExpenseId] = useState<string>();
-  const [newParticipantName, setNewParticipantName] = useState("");
-  const [newParticipantPhone, setNewParticipantPhone] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string>();
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
@@ -73,6 +92,8 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const [contactError, setContactError] = useState<string | null>(null);
   const [reportDays, setReportDays] = useState<30 | 90 | 180>(90);
   const [logoSheetVisible, setLogoSheetVisible] = useState(false);
+  const [menuSheetVisible, setMenuSheetVisible] = useState(false);
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const [membershipActionError, setMembershipActionError] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState("");
@@ -83,6 +104,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const selectedGroupId = navigation.selectedGroupId ?? groupsQuery.data?.[0]?.id;
+
+  useEffect(() => {
+    setShowAllActivity(false);
+  }, [selectedGroupId]);
+
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
@@ -147,15 +173,6 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     enabled: Boolean(explainingExpenseId)
   });
 
-  const addParticipant = useMutation({
-    mutationFn: () => apiClient.addParticipant(selectedGroupId as string, newParticipantName, newParticipantPhone || undefined),
-    onSuccess: () => {
-      setNewParticipantName("");
-      setNewParticipantPhone("");
-      queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
-      queryClient.invalidateQueries({ queryKey: ["groups"] });
-    }
-  });
   const createInvite = useMutation({
     mutationFn: () => apiClient.createInvite(selectedGroupId as string),
     onSuccess: (response) => setInviteUrl(response.inviteUrl)
@@ -451,6 +468,9 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     }
     return enrichActivityRows(activityItems, buildGroupDisplayLookups(group), group.name);
   }, [activityItems, group]);
+  const visibleActivity = showAllActivity ? enrichedActivity : enrichedActivity.slice(0, ACTIVITY_PREVIEW_COUNT);
+  const canSeeAllActivity =
+    !showAllActivity && (enrichedActivity.length > ACTIVITY_PREVIEW_COUNT || Boolean(activityQuery.hasNextPage));
   const refreshing =
     groupsQuery.isRefetching ||
     groupQuery.isRefetching ||
@@ -500,12 +520,24 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
-      <Pressable onPress={() => navigation.back() || navigation.go("groups")} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Back">
-        <CaretLeft size={18} color={theme.colors.inkMuted} weight="bold" />
-        <ThemedText variant="bodySm" tone="muted">
-          Back
-        </ThemedText>
-      </Pressable>
+      <View style={styles.topBar}>
+        <Pressable
+          onPress={() => navigation.back() || navigation.go("groups")}
+          style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <CaretLeft size={18} color={theme.colors.ink} weight="bold" />
+        </Pressable>
+        <Pressable
+          onPress={() => setMenuSheetVisible(true)}
+          style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
+          accessibilityRole="button"
+          accessibilityLabel="Group options"
+        >
+          <DotsThreeVertical size={18} color={theme.colors.ink} weight="bold" />
+        </Pressable>
+      </View>
 
       <View style={styles.header}>
         <Pressable
@@ -517,7 +549,12 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             setLogoSheetVisible(true);
           }}
         >
-          <UserAvatar displayName={group?.name ?? "Group"} avatarUrl={group?.imageUrl} size={48} />
+          <UserAvatar
+            displayName={group?.name ?? "Group"}
+            avatarUrl={group?.imageUrl}
+            size={64}
+            accentColor={theme.colors.confirmed}
+          />
         </Pressable>
         <View style={styles.titleBlock}>
           <ThemedText variant="caption" tone="muted">
@@ -530,7 +567,9 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Edit group name"
+              style={styles.editName}
             >
+              <PencilSimple size={14} color={theme.colors.confirmed} weight="duotone" />
               <ThemedText variant="caption" tone="confirmed">
                 Edit name
               </ThemedText>
@@ -540,7 +579,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
         {group?.state === "archived" ? <StatusPill state="expired" /> : null}
       </View>
       {editingGroupName && canEditGroup ? (
-        <DataSurface>
+        <DataSurface elevated>
           <View style={styles.headerRename}>
             <InputField
               label="Group name"
@@ -590,19 +629,64 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
         </DataSurface>
       ) : null}
 
-      {groupsQuery.data ? <GroupSelector groups={groupsQuery.data} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Create or import a group before viewing activity." action={{ label: "Create group", onPress: () => navigation.go("groups") }} /> : null}
       {groupQuery.error ? <InlineNotice title="Group could not load" body={groupQuery.error.message} tone="owe" /> : null}
 
       {group ? (
         <>
-          <DataSurface>
+          {enrichedBalances.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.summaryRow}>
+              {enrichedBalances.map((row) => {
+                const accent = participantColor(row.participantId);
+                const tone = row.balanceMinor >= 0 ? "receive" : "owe";
+                const caption =
+                  row.balanceMinor > 0 ? "You will get back" : row.balanceMinor < 0 ? "You owe" : "Settled up";
+                return (
+                  <Pressable
+                    key={`${row.participantId}-${row.currencyCode}`}
+                    onPress={() => setTab("balances")}
+                    style={[
+                      styles.summaryCard,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.hairline,
+                        borderRadius: theme.radius.md,
+                        borderWidth: theme.mode === "light" ? 0 : 1
+                      },
+                      theme.cardShadow
+                    ]}
+                  >
+                    <View style={[styles.summaryIcon, { backgroundColor: colorWithAlpha(accent, theme.mode === "dark" ? 0.22 : 0.14) }]}>
+                      <UsersThree size={16} color={accent} weight="duotone" />
+                    </View>
+                    <ThemedText variant="bodyMedium" numberOfLines={1}>
+                      {row.displayName}
+                    </ThemedText>
+                    <ThemedText variant="amountSm" tone={tone}>
+                      {formatSignedMoney(row.balanceMinor, row.currencyCode)}
+                    </ThemedText>
+                    <View style={styles.summaryFooter}>
+                      <ThemedText variant="caption" tone="muted" numberOfLines={1} style={styles.summaryCaption}>
+                        {caption}
+                      </ThemedText>
+                      <CaretRight size={14} color={theme.colors.inkFaint} weight="bold" />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+
+          <DataSurface elevated>
             <View style={styles.balanceStrip}>
-              <View>
+              <View style={styles.currencyBlock}>
                 <ThemedText variant="caption" tone="muted">
                   Base currency
                 </ThemedText>
-                <ThemedText variant="amount">{group.baseCurrencyCode}</ThemedText>
+                <View style={styles.currencyValue}>
+                  <ThemedText variant="amount">{group.baseCurrencyCode}</ThemedText>
+                  <CaretDown size={14} color={theme.colors.inkMuted} weight="bold" />
+                </View>
               </View>
               <View>
                 <ThemedText variant="caption" tone="muted" align="right">
@@ -614,10 +698,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               </View>
             </View>
             <View style={[styles.primaryRow, { borderTopColor: theme.colors.hairline }]}>
-              <Button label="Settle" onPress={() => navigation.go("settlement")} style={styles.inlineButton} />
+              <Button label="Settle up" Icon={Handshake} onPress={() => navigation.go("settlement")} style={styles.inlineButton} />
               <Button
                 label="Add expense"
                 variant="secondary"
+                Icon={PlusCircle}
                 onPress={() => {
                   navigation.setSelectedExpenseId(undefined);
                   navigation.go("expense");
@@ -630,27 +715,50 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
           <SegmentedControl
             value={tab}
             options={[
-              { label: "Activity", value: "activity" },
-              { label: "Balances", value: "balances" },
-              { label: "Expenses", value: "expenses" },
-              { label: "Charts", value: "charts" },
-              { label: "People", value: "people" }
+              { label: "Activity", value: "activity", Icon: ClockCountdown },
+              { label: "Balances", value: "balances", Icon: Scales },
+              { label: "Expenses", value: "expenses", Icon: Wallet },
+              { label: "Charts", value: "charts", Icon: ChartBar },
+              { label: "People", value: "people", Icon: UsersThree }
             ]}
             onChange={setTab}
           />
 
           {tab === "activity" ? (
             <View style={styles.section}>
-              <SectionHeader title="Activity" action={<Button label="Audit" variant="ghost" onPress={() => navigation.go("audit")} />} />
+              <SectionHeader
+                title="Activity"
+                action={
+                  <Pressable onPress={() => navigation.go("audit")} style={styles.auditLink} hitSlop={8}>
+                    <ClockCountdown size={14} color={theme.colors.confirmed} weight="duotone" />
+                    <ThemedText variant="caption" tone="confirmed">
+                      Audit log
+                    </ThemedText>
+                  </Pressable>
+                }
+              />
               {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
               {enrichedActivity.length ? (
                 <>
-                  <DataSurface>
-                    {enrichedActivity.map((item) => (
+                  <DataSurface elevated>
+                    {visibleActivity.map((item) => (
                       <ActivityRow key={item.id} item={item} groupName={group.name} groupImageUrl={group.imageUrl} />
                     ))}
                   </DataSurface>
-                  {activityQuery.hasNextPage ? (
+                  {canSeeAllActivity ? (
+                    <Button
+                      label="See all"
+                      variant="secondary"
+                      loading={activityQuery.isFetchingNextPage}
+                      onPress={() => {
+                        setShowAllActivity(true);
+                        if (activityQuery.hasNextPage) {
+                          void activityQuery.fetchNextPage();
+                        }
+                      }}
+                    />
+                  ) : null}
+                  {showAllActivity && activityQuery.hasNextPage ? (
                     <Button
                       label="Load more"
                       variant="secondary"
@@ -831,12 +939,6 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               canEditGroup={canEditGroup}
               isOwner={Boolean(isOwner)}
               inviteUrl={inviteUrl}
-              newParticipantName={newParticipantName}
-              newParticipantPhone={newParticipantPhone}
-              setNewParticipantName={setNewParticipantName}
-              setNewParticipantPhone={setNewParticipantPhone}
-              addParticipant={() => addParticipant.mutate()}
-              addParticipantPending={addParticipant.isPending}
               createInvite={() => createInvite.mutate()}
               createInvitePending={createInvite.isPending}
               archiveGroup={confirmDeleteGroup}
@@ -848,27 +950,6 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               removeMember={confirmRemoveMember}
               removePending={removeMember.isPending}
               membershipActionError={membershipActionError}
-              membersCanEditExpenses={group.membersCanEditExpenses !== false}
-              setMembersCanEditExpenses={(value) => setMembersCanEditExpenses.mutate(value)}
-              membersCanEditExpensesPending={setMembersCanEditExpenses.isPending}
-              editingGroupName={editingGroupName}
-              groupNameDraft={groupNameDraft}
-              setGroupNameDraft={setGroupNameDraft}
-              beginRenameGroup={() => beginRenameGroup({ openPeopleTab: true })}
-              cancelRenameGroup={() => {
-                setEditingGroupName(false);
-                setRenameError(null);
-              }}
-              saveGroupName={() => {
-                const next = groupNameDraft.trim();
-                if (!next) {
-                  setRenameError("Group name is required.");
-                  return;
-                }
-                renameGroup.mutate(next);
-              }}
-              renamePending={renameGroup.isPending}
-              renameError={renameError}
               roleChange={(membershipId, role) => roleChange.mutate({ membershipId, role })}
               lockExit={(membershipId) => lockExit.mutate(membershipId)}
               unlockExit={(membershipId) => unlockExit.mutate(membershipId)}
@@ -915,6 +996,70 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                 }
               ]
             : [])
+        ]}
+      />
+
+      <ActionSheet
+        visible={menuSheetVisible}
+        title="Group options"
+        onClose={() => setMenuSheetVisible(false)}
+        toggles={
+          canEditGroup && group
+            ? [
+                {
+                  key: "membersEdit",
+                  label: "Members can edit expenses",
+                  subtitle: "Turn off to restrict edit and delete to owners and admins only.",
+                  value: group.membersCanEditExpenses !== false,
+                  disabled: setMembersCanEditExpenses.isPending,
+                  onValueChange: (value) => setMembersCanEditExpenses.mutate(value)
+                }
+              ]
+            : undefined
+        }
+        actions={[
+          ...(canEditGroup
+            ? [
+                {
+                  key: "logo",
+                  label: "Group logo",
+                  subtitle: "Change or remove photo",
+                  icon: <ImageSquare size={20} color={theme.colors.confirmed} weight="duotone" />,
+                  tone: "confirmed" as const,
+                  onPress: () => setLogoSheetVisible(true)
+                },
+                {
+                  key: "rename",
+                  label: "Edit name",
+                  icon: <PencilSimple size={20} color={theme.colors.confirmed} weight="duotone" />,
+                  tone: "confirmed" as const,
+                  onPress: () => beginRenameGroup()
+                }
+              ]
+            : []),
+          {
+            key: "audit",
+            label: "Audit log",
+            icon: <ClockCountdown size={20} color={theme.colors.confirmed} weight="duotone" />,
+            tone: "confirmed",
+            onPress: () => navigation.go("audit")
+          },
+          ...(group
+            ? [
+                {
+                  key: "share",
+                  label: "Share balances",
+                  icon: <LinkSimple size={20} color={theme.colors.info} weight="duotone" />,
+                  onPress: () => shareBalanceSummary(group, enrichedBalances)
+                }
+              ]
+            : []),
+          {
+            key: "people",
+            label: "People",
+            icon: <UsersThree size={20} color={theme.colors.info} weight="duotone" />,
+            onPress: () => setTab("people")
+          }
         ]}
       />
     </Screen>
@@ -1088,12 +1233,6 @@ function PeopleManagement({
   canEditGroup,
   isOwner,
   inviteUrl,
-  newParticipantName,
-  newParticipantPhone,
-  setNewParticipantName,
-  setNewParticipantPhone,
-  addParticipant,
-  addParticipantPending,
   createInvite,
   createInvitePending,
   archiveGroup,
@@ -1105,17 +1244,6 @@ function PeopleManagement({
   removeMember,
   removePending,
   membershipActionError,
-  membersCanEditExpenses,
-  setMembersCanEditExpenses,
-  membersCanEditExpensesPending,
-  editingGroupName,
-  groupNameDraft,
-  setGroupNameDraft,
-  beginRenameGroup,
-  cancelRenameGroup,
-  saveGroupName,
-  renamePending,
-  renameError,
   roleChange,
   lockExit,
   unlockExit,
@@ -1126,12 +1254,6 @@ function PeopleManagement({
   canEditGroup: boolean;
   isOwner: boolean;
   inviteUrl?: string;
-  newParticipantName: string;
-  newParticipantPhone: string;
-  setNewParticipantName: (value: string) => void;
-  setNewParticipantPhone: (value: string) => void;
-  addParticipant: () => void;
-  addParticipantPending: boolean;
   createInvite: () => void;
   createInvitePending: boolean;
   archiveGroup: () => void;
@@ -1143,17 +1265,6 @@ function PeopleManagement({
   removeMember: (membershipId: string, displayName: string) => void;
   removePending: boolean;
   membershipActionError?: string | null;
-  membersCanEditExpenses: boolean;
-  setMembersCanEditExpenses: (value: boolean) => void;
-  membersCanEditExpensesPending: boolean;
-  editingGroupName: boolean;
-  groupNameDraft: string;
-  setGroupNameDraft: (value: string) => void;
-  beginRenameGroup: () => void;
-  cancelRenameGroup: () => void;
-  saveGroupName: () => void;
-  renamePending: boolean;
-  renameError: string | null;
   roleChange: (membershipId: string, role: MembershipRole) => void;
   lockExit: (membershipId: string) => void;
   unlockExit: (membershipId: string) => void;
@@ -1167,36 +1278,6 @@ function PeopleManagement({
   return (
     <View style={styles.section}>
       <SectionHeader title="People and roles" />
-
-      {canEditGroup ? (
-        <DataSurface>
-          <View style={styles.formBlock}>
-            <ThemedText variant="bodyMedium">Group name</ThemedText>
-            {editingGroupName ? (
-              <>
-                <InputField label="Name" value={groupNameDraft} onChangeText={setGroupNameDraft} />
-                {renameError ? <InlineNotice title="Rename failed" body={renameError} tone="owe" /> : null}
-                <View style={styles.choiceButtons}>
-                  <Button label="Save name" onPress={saveGroupName} loading={renamePending} disabled={!groupNameDraft.trim()} style={styles.inlineButton} />
-                  <Button label="Cancel" variant="secondary" onPress={cancelRenameGroup} disabled={renamePending} style={styles.inlineButton} />
-                </View>
-              </>
-            ) : (
-              <>
-                <ThemedText variant="title">{group.name}</ThemedText>
-                <Button label="Edit group name" variant="secondary" onPress={beginRenameGroup} />
-              </>
-            )}
-            <SettingsToggleRow
-              label="Members can edit expenses"
-              subtitle="Turn off to restrict edit and delete to owners and admins only."
-              value={membersCanEditExpenses}
-              onValueChange={setMembersCanEditExpenses}
-              disabled={membersCanEditExpensesPending}
-            />
-          </View>
-        </DataSurface>
-      ) : null}
 
       <DataSurface>
         {activeGroupMemberships(group).map((membership) => {
@@ -1256,49 +1337,78 @@ function PeopleManagement({
       </DataSurface>
 
       {canEditGroup ? (
-        <DataSurface>
+        <DataSurface elevated>
           <View style={styles.formBlock}>
             <View style={styles.formHeader}>
-              <UserPlus size={20} color={theme.colors.inkMuted} weight="duotone" />
-              <ThemedText variant="bodyMedium">Add manual or guest participant</ThemedText>
-            </View> 
-            <InputField label="Name" value={newParticipantName} onChangeText={setNewParticipantName} />
-            <InputField label="Phone optional" value={newParticipantPhone} onChangeText={setNewParticipantPhone} keyboardType="phone-pad" />
-            <Button label="Add participant" variant="secondary" onPress={addParticipant} loading={addParticipantPending} disabled={!newParticipantName.trim()} />
-            <Button label="Add from contacts" variant="secondary" onPress={onAddFromContacts} />
+              <AddressBook size={20} color={theme.colors.confirmed} weight="duotone" />
+              <View style={styles.formHeaderText}>
+                <ThemedText variant="bodyMedium">Invite people</ThemedText>
+                <ThemedText variant="bodySm" tone="muted">
+                  Add contacts with a phone number, or share a link / QR for others to join.
+                </ThemedText>
+              </View>
+            </View>
+            <Button label="Add from contacts" variant="soft" Icon={AddressBook} onPress={onAddFromContacts} />
+            <View style={styles.inviteActions}>
+              <Button
+                label={inviteUrl ? "Refresh link" : "Create link"}
+                variant="secondary"
+                tone="info"
+                Icon={LinkSimple}
+                onPress={createInvite}
+                loading={createInvitePending}
+                style={styles.inlineButton}
+              />
+              {inviteUrl ? (
+                <Button
+                  label="Share"
+                  variant="secondary"
+                  Icon={LinkSimple}
+                  onPress={() => Share.share({ message: `Join ${group.name} on SplitSaathi: ${inviteUrl}` })}
+                  style={styles.inlineButton}
+                />
+              ) : null}
+            </View>
+            {inviteUrl ? (
+              <View style={styles.inviteBlock}>
+                <ThemedText variant="caption" tone="muted">
+                  Invite link
+                </ThemedText>
+                <ThemedText variant="bodySm" tone="confirmed" selectable>
+                  {inviteUrl}
+                </ThemedText>
+                <View style={styles.qrHeader}>
+                  <QrCode size={16} color={theme.colors.confirmed} weight="duotone" />
+                  <ThemedText variant="bodyMedium">Scan to join</ThemedText>
+                </View>
+                <ThemedText variant="bodySm" tone="muted">
+                  Friends can scan this QR from Join with invite.
+                </ThemedText>
+                <View
+                  style={[
+                    styles.qrBox,
+                    {
+                      backgroundColor: "#FFFFFF",
+                      borderRadius: theme.radius.md,
+                      borderColor: theme.colors.hairline,
+                      borderWidth: 1
+                    }
+                  ]}
+                >
+                  <QRCode value={inviteUrl} size={148} backgroundColor="#FFFFFF" color="#171922" />
+                </View>
+              </View>
+            ) : (
+              <ThemedText variant="bodySm" tone="muted">
+                Create a link to show a scannable QR and share via WhatsApp or SMS.
+              </ThemedText>
+            )}
           </View>
         </DataSurface>
       ) : null}
 
       {contactError ? <InlineNotice title="Contacts unavailable" body={contactError} tone="owe" /> : null}
       {membershipActionError ? <InlineNotice title="Membership action failed" body={membershipActionError} tone="owe" /> : null}
-
-      {canEditGroup ? (
-        <DataSurface>
-          <View style={styles.formBlock}>
-            <View style={styles.formHeader}>
-              <LinkSimple size={20} color={theme.colors.inkMuted} weight="duotone" />
-              <ThemedText variant="bodyMedium">Invite link</ThemedText>
-            </View>
-            {inviteUrl ? (
-              <View style={styles.inviteBlock}>
-                <ThemedText variant="bodySm" tone="confirmed">
-                  {inviteUrl}
-                </ThemedText>
-                <View style={[styles.qrBox, { backgroundColor: theme.colors.ink, borderRadius: theme.radius.sm }]}>
-                  <QRCode value={inviteUrl} size={116} backgroundColor="transparent" color={theme.colors.canvas} />
-                </View>
-                <Button label="Share invite" variant="secondary" onPress={() => Share.share({ message: `Join ${group.name} on SplitSaathi: ${inviteUrl}` })} />
-              </View>
-            ) : (
-              <ThemedText variant="bodySm" tone="muted">
-                Generate a link for WhatsApp, SMS, or QR sharing.
-              </ThemedText>
-            )}
-            <Button label="Generate invite" variant="secondary" onPress={createInvite} loading={createInvitePending} />
-          </View>
-        </DataSurface>
-      ) : null}
 
       {!isOwner ? (
         <Button label="Leave group" variant="destructive" onPress={leaveGroup} loading={leavePending} />
@@ -1326,25 +1436,61 @@ function PeopleManagement({
 }
 
 const styles = StyleSheet.create({
-  backRow: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start"
+    justifyContent: "space-between"
+  },
+  navIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center"
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
+    gap: 14
   },
   titleBlock: {
     flex: 1,
     gap: 4
   },
+  editName: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2
+  },
   headerRename: {
     gap: 12,
     padding: 14
+  },
+  summaryRow: {
+    gap: 10,
+    paddingRight: 8
+  },
+  summaryCard: {
+    width: 148,
+    padding: 12,
+    gap: 6
+  },
+  summaryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  summaryFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  summaryCaption: {
+    flex: 1
   },
   expenseMain: {
     flex: 1,
@@ -1365,9 +1511,17 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12
   },
+  currencyBlock: {
+    gap: 2
+  },
+  currencyValue: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
   primaryRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     padding: 14,
     borderTopWidth: 1
   },
@@ -1380,6 +1534,11 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: 12
+  },
+  auditLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
   },
   reportFilters: {
     flexDirection: "row",
@@ -1443,8 +1602,30 @@ const styles = StyleSheet.create({
   },
   formHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 8
+  },
+  formHeaderText: {
+    flex: 1,
+    gap: 4
+  },
+  inviteActions: {
+    flexDirection: "row",
+    gap: 10
+  },
+  inviteBlock: {
+    gap: 10,
+    alignItems: "flex-start"
+  },
+  qrHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4
+  },
+  qrBox: {
+    padding: 12,
+    alignSelf: "flex-start"
   },
   logoRow: {
     flexDirection: "row",
@@ -1454,13 +1635,6 @@ const styles = StyleSheet.create({
   logoActions: {
     flex: 1,
     gap: 8
-  },
-  inviteBlock: {
-    gap: 12,
-    alignItems: "flex-start"
-  },
-  qrBox: {
-    padding: 10
   }
 });
 

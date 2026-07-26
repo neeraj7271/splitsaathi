@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Switch, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colorWithAlpha, useTheme } from "../theme";
@@ -17,11 +17,21 @@ export type ActionSheetAction = {
   onPress: () => void;
 };
 
+export type ActionSheetToggle = {
+  key: string;
+  label: string;
+  subtitle?: string;
+  value: boolean;
+  disabled?: boolean;
+  onValueChange: (value: boolean) => void;
+};
+
 type ActionSheetProps = {
   visible: boolean;
   title: string;
   message?: string;
   actions: ActionSheetAction[];
+  toggles?: ActionSheetToggle[];
   cancelLabel?: string;
   onClose: () => void;
 };
@@ -41,6 +51,7 @@ export function ActionSheet({
   title,
   message,
   actions,
+  toggles,
   cancelLabel = "Cancel",
   onClose
 }: ActionSheetProps) {
@@ -88,6 +99,37 @@ export function ActionSheet({
               </ThemedText>
             ) : null}
           </View>
+
+          {toggles?.length ? (
+            <View style={[styles.actions, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}>
+              {toggles.map((toggle, index) => (
+                <View
+                  key={toggle.key}
+                  style={[
+                    styles.toggleRow,
+                    index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.hairline } : null,
+                    toggle.disabled ? styles.disabled : null
+                  ]}
+                >
+                  <View style={styles.actionCopy}>
+                    <ThemedText variant="bodyMedium">{toggle.label}</ThemedText>
+                    {toggle.subtitle ? (
+                      <ThemedText variant="bodySm" tone="muted">
+                        {toggle.subtitle}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                  <Switch
+                    value={toggle.value}
+                    onValueChange={toggle.onValueChange}
+                    disabled={toggle.disabled}
+                    trackColor={{ false: theme.colors.hairline, true: theme.colors.confirmed }}
+                    thumbColor={theme.colors.surfaceRaised}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           <View style={[styles.actions, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}>
             {actions.map((action, index) => {
@@ -177,6 +219,14 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   actionRow: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12
+  },
+  toggleRow: {
     minHeight: 64,
     flexDirection: "row",
     alignItems: "center",

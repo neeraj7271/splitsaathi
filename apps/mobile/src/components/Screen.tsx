@@ -22,8 +22,8 @@ export function Screen({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const paddingTop = Math.max(48, insets.top + 16);
-  const paddingBottom = Math.max(24, insets.bottom + 16);
+  const paddingTop = Math.max(40, insets.top + 12);
+  const paddingBottom = Math.max(16, insets.bottom + 12);
   const scrollBottomPadding = paddingBottom + TAB_BAR_HEIGHT;
 
   const content = (

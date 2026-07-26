@@ -52,7 +52,7 @@ const queryClient = new QueryClient({
 const TAB_ROUTES: AppRoute[] = ["home", "groups", "friends", "settlement"];
 
 /** Keep branded splash on screen long enough for the intro animation (not just boot I/O). */
-const MIN_SPLASH_MS = 2800;
+const MIN_SPLASH_MS = 3200;
 
 const SETTINGS_ROUTES: AppRoute[] = [
   "expense",
@@ -161,10 +161,6 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     if (!authenticated) {
       return;
     }
-    apiClient
-      .getPreferences()
-      .then((preferences) => theme.setRequestedMode(preferences.appearance))
-      .catch(() => undefined);
     // Refresh FCM token on every authenticated session (not only onboarding).
     void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
       registerPushIfPossible().catch(() => undefined)
@@ -192,7 +188,22 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       receivedSub?.remove();
       responseSub?.remove();
     };
-  }, [authenticated, theme]);
+  }, [authenticated]);
+
+  // Apply server appearance only after splash finishes — prevents dark→light double splash.
+  useEffect(() => {
+    if (!authenticated || !splashMinElapsed) {
+      return;
+    }
+    apiClient
+      .getPreferences()
+      .then((preferences) => {
+        if (preferences.appearance !== theme.requestedMode) {
+          theme.setRequestedMode(preferences.appearance);
+        }
+      })
+      .catch(() => undefined);
+  }, [authenticated, splashMinElapsed, theme]);
 
   const claimInviteFromUrl = useCallback(
     async (url: string | null) => {
@@ -289,9 +300,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   if (!fontsLoaded || !booted || !splashMinElapsed) {
     return (
-      <AnimatedBrandLoader
-        message={!booted || !fontsLoaded ? "Loading your ledger" : "Welcome"}
-      />
+      <AnimatedBrandLoader />
     );
   }
 

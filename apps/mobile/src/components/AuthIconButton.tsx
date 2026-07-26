@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { EnvelopeSimple, Phone } from "phosphor-react-native";
 
 import { useTheme } from "../theme";
+import { GoogleMark } from "./GoogleMark";
 import { ThemedText } from "./ThemedText";
 
 type AuthIconMethod = "phone" | "email" | "google";
@@ -14,16 +15,6 @@ type AuthIconButtonProps = {
   disabled?: boolean;
   selected?: boolean;
 };
-
-function GoogleMark() {
-  return (
-    <View style={styles.googleMark}>
-      <ThemedText variant="button" style={styles.googleG}>
-        G
-      </ThemedText>
-    </View>
-  );
-}
 
 export function AuthIconButton({ method, label, onPress, disabled, selected }: AuthIconButtonProps) {
   const theme = useTheme();
@@ -47,7 +38,7 @@ export function AuthIconButton({ method, label, onPress, disabled, selected }: A
       <View style={[styles.iconWrap, { backgroundColor: theme.colors.surfaceRaised }]}>
         {method === "phone" ? <Phone size={22} color={iconColor} weight="duotone" /> : null}
         {method === "email" ? <EnvelopeSimple size={22} color={iconColor} weight="duotone" /> : null}
-        {method === "google" ? <GoogleMark /> : null}
+        {method === "google" ? <GoogleMark size={22} /> : null}
       </View>
       <ThemedText variant="caption" tone="muted" align="center">
         {label}
@@ -74,20 +65,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-  googleMark: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DADCE0"
-  },
-  googleG: {
-    color: "#4285F4",
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "700"
-  }
 });

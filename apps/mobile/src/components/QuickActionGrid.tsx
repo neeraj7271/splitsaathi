@@ -2,15 +2,17 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
 import { ThemedText } from "./ThemedText";
 
-type IconComponent = React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "regular" }>;
+type IconComponent = React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "regular" | "fill" }>;
 
 export interface QuickAction {
   label: string;
   icon: IconComponent;
   onPress: () => void;
+  /** Accent used for the soft icon well. */
+  tint?: string;
 }
 
 export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
@@ -20,6 +22,7 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
     <View style={styles.grid}>
       {actions.map((action) => {
         const Icon = action.icon;
+        const tint = action.tint ?? theme.colors.info;
         return (
           <Pressable
             key={action.label}
@@ -29,10 +32,18 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
             }}
             style={styles.item}
           >
-            <View style={[styles.circle, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}>
-              <Icon size={22} color={theme.colors.ink} weight="duotone" />
+            <View
+              style={[
+                styles.well,
+                {
+                  backgroundColor: colorWithAlpha(tint, theme.mode === "dark" ? 0.22 : 0.12),
+                  borderRadius: theme.radius.md
+                }
+              ]}
+            >
+              <Icon size={22} color={tint} weight="duotone" />
             </View>
-            <ThemedText variant="caption" align="center">
+            <ThemedText variant="caption" align="center" numberOfLines={2}>
               {action.label}
             </ThemedText>
           </Pressable>
@@ -46,19 +57,17 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 8
+    gap: 4
   },
   item: {
     flex: 1,
     alignItems: "center",
-    gap: 8
+    gap: 6
   },
-  circle: {
-    width: 52,
-    height: 52,
-    borderRadius: 999,
+  well: {
+    width: 46,
+    height: 46,
     alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1
+    justifyContent: "center"
   }
 });

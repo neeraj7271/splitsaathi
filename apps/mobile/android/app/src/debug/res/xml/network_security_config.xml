@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- Metro / Expo tunnel use cleartext HTTP for the JS packager. -->
+  <base-config cleartextTrafficPermitted="true" />
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="true">exp.direct</domain>
+    <domain includeSubdomains="true">65.20.81.44</domain>
+    <domain includeSubdomains="true">localhost</domain>
+  </domain-config>
+</network-security-config>

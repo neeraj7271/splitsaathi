@@ -32,9 +32,11 @@ export function ScreenBackButton({
       <View style={[styles.icon, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}>
         <CaretLeft size={18} color={theme.colors.ink} weight="bold" />
       </View>
-      <ThemedText variant="bodySm" tone="muted">
-        {label}
-      </ThemedText>
+      {label ? (
+        <ThemedText variant="bodySm" tone="muted">
+          {label}
+        </ThemedText>
+      ) : null}
     </Pressable>
   );
 }

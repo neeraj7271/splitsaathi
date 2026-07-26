@@ -184,7 +184,11 @@ export class FriendsService {
         groupId: pair.group.id,
         groupName: pair.group.name,
         pairNetMinor: pairNet,
-        currencyCode: pair.group.baseCurrencyCode || currencyCode
+        currencyCode: pair.group.baseCurrencyCode || currencyCode,
+        groupType: pair.group.groupType || 'other',
+        imageUrl: pair.group.imageAttachmentId
+          ? `/v1/attachments/${pair.group.imageAttachmentId}/content`
+          : null
       });
     }
 

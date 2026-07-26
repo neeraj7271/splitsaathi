@@ -326,6 +326,8 @@ export interface FriendSharedGroup {
   groupName: string;
   pairNetMinor: number;
   currencyCode: string;
+  groupType?: GroupType;
+  imageUrl?: string | null;
 }
 
 export interface FriendSummary {

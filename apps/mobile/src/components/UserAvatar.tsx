@@ -3,8 +3,8 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, View } from "react-nat
 import { Camera } from "phosphor-react-native";
 
 import { resolveAuthenticatedImageUri } from "../utils/authenticatedImage";
+import { colorWithAlpha, useTheme } from "../theme";
 import { ThemedText } from "./ThemedText";
-import { useTheme } from "../theme";
 
 interface UserAvatarProps {
   displayName: string;
@@ -14,6 +14,7 @@ interface UserAvatarProps {
   editable?: boolean;
   onPress?: () => void;
   loading?: boolean;
+  accentColor?: string;
 }
 
 export function UserAvatar({
@@ -23,12 +24,14 @@ export function UserAvatar({
   size = 56,
   editable = false,
   onPress,
-  loading = false
+  loading = false,
+  accentColor
 }: UserAvatarProps) {
   const theme = useTheme();
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const badgeSize = Math.max(22, Math.round(size * 0.36));
+  const tint = accentColor ?? theme.colors.confirmed;
 
   useEffect(() => {
     let active = true;
@@ -90,11 +93,13 @@ export function UserAvatar({
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: theme.colors.surfaceRaised
+            backgroundColor: accentColor
+              ? colorWithAlpha(tint, theme.mode === "dark" ? 0.22 : 0.14)
+              : theme.colors.surfaceRaised
           }
         ]}
       >
-        {showSpinner ? <ActivityIndicator size="small" color={theme.colors.confirmed} /> : null}
+        {showSpinner ? <ActivityIndicator size="small" color={tint} /> : null}
         {!showSpinner && !showInitial && resolvedUri ? (
           <Image
             source={{ uri: resolvedUri }}
@@ -103,7 +108,13 @@ export function UserAvatar({
           />
         ) : null}
         {!showSpinner && showInitial ? (
-          <ThemedText variant="title" style={{ fontSize: Math.max(18, size * 0.36) }}>
+          <ThemedText
+            variant="title"
+            style={{
+              fontSize: Math.max(18, size * 0.36),
+              color: accentColor ? tint : theme.colors.ink
+            }}
+          >
             {displayName.slice(0, 1).toUpperCase() || "?"}
           </ThemedText>
         ) : null}
@@ -116,14 +127,14 @@ export function UserAvatar({
               width: badgeSize,
               height: badgeSize,
               borderRadius: badgeSize / 2,
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.hairline,
+              backgroundColor: theme.colors.ink,
+              borderColor: theme.colors.surface,
               right: -2,
               bottom: -2
             }
           ]}
         >
-          <Camera size={Math.max(12, Math.round(badgeSize * 0.55))} color={theme.colors.ink} weight="fill" />
+          <Camera size={Math.max(12, Math.round(badgeSize * 0.55))} color={theme.colors.surface} weight="fill" />
         </View>
       ) : null}
     </Pressable>
@@ -141,7 +152,7 @@ const styles = StyleSheet.create({
   },
   cameraBadge: {
     position: "absolute",
-    borderWidth: 1,
+    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2,

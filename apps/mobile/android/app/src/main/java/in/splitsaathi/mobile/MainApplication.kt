@@ -30,9 +30,8 @@ class MainApplication : Application(), ReactApplication {
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
 
-          // Packaged debug APK embeds JS (see debuggableVariants = [] in build.gradle).
-          // Keep Metro off so the app loads the embedded bundle on a physical phone.
-          override fun getUseDeveloperSupport(): Boolean = false
+          // Live reload: load JS from Metro on the VM (proxied at :8099).
+          override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
 
           override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
       }
@@ -66,11 +65,12 @@ class MainApplication : Application(), ReactApplication {
 
   private fun pinMetroHost() {
     if (!BuildConfig.DEBUG) return
-    // Same port phones already use to download APKs (deploy/metro-apk-proxy.js).
+    // Expo tunnel hostname — reachable over mobile data (not LAN/VM IP ports).
+    // Keep in sync with: curl -s http://127.0.0.1:4041/api/tunnels
     @Suppress("DEPRECATION")
     android.preference.PreferenceManager.getDefaultSharedPreferences(this)
       .edit()
-      .putString("debug_http_host", "65.20.81.44:8099")
+      .putString("debug_http_host", "hbysny4-anonymous-8088.exp.direct:80")
       .commit()
   }
 }

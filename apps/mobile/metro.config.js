@@ -15,7 +15,12 @@ const config = getDefaultConfig(projectRoot);
 // Keep Metro scoped to the mobile app. Without this, npm workspaces can
 // make Expo treat the monorepo root as the project and crawl everything.
 config.projectRoot = projectRoot;
-config.watchFolders = [projectRoot];
+// Watch only app source — avoid android/build + node_modules codegen (ENOSPC).
+config.watchFolders = [
+  path.join(projectRoot, "src"),
+  path.join(projectRoot, "assets"),
+  projectRoot
+];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
   path.resolve(workspaceRoot, "node_modules")
@@ -24,21 +29,22 @@ config.resolver.nodeModulesPaths = [
 config.resolver.blockList = [
   new RegExp(`${path.resolve(workspaceRoot, "apps/api").replace(/\\/g, "/")}/.*`),
   new RegExp(`${path.resolve(workspaceRoot, "packages").replace(/\\/g, "/")}/.*`),
+  /\/android\/build\/.*/,
+  /\/android\/\.gradle\/.*/,
+  /\/ios\/build\/.*/,
+  /\/\.expo\/.*/,
   /\.git\/.*/,
   /terminals\/.*/
 ];
 
-// Windows file watcher often times out when Metro crawls too many folders.
-if (process.platform === "win32") {
-  config.resolver.useWatchman = false;
-  config.watcher = {
-    ...config.watcher,
-    healthCheck: {
-      enabled: true,
-      interval: 30000,
-      timeout: 10000
-    }
-  };
-}
+config.watcher = {
+  ...config.watcher,
+  additionalExts: config.watcher?.additionalExts,
+  healthCheck: {
+    enabled: true,
+    interval: 30000,
+    timeout: 10000
+  }
+};
 
 module.exports = config;

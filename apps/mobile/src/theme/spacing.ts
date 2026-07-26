@@ -3,14 +3,14 @@ export const spacing = {
   xs: 8,
   sm: 12,
   md: 16,
-  screen: 20,
+  screen: 16,
   lg: 24,
   xl: 32,
   xxl: 40,
   xxxl: 48,
-  cardPadding: 16,
-  rowVertical: 14,
-  sectionGap: 24,
+  cardPadding: 14,
+  rowVertical: 12,
+  sectionGap: 16,
   elementGapTight: 8,
-  elementGapDefault: 12
+  elementGapDefault: 10
 } as const;

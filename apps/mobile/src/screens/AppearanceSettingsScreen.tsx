@@ -31,10 +31,12 @@ export function AppearanceSettingsScreen({ navigation }: { navigation: AppNaviga
   });
 
   useEffect(() => {
-    if (preferencesQuery.data?.appearance) {
-      theme.setRequestedMode(preferencesQuery.data.appearance);
+    const appearance = preferencesQuery.data?.appearance;
+    if (!appearance || appearance === theme.requestedMode) {
+      return;
     }
-  }, [preferencesQuery.data?.appearance]);
+    theme.setRequestedMode(appearance);
+  }, [preferencesQuery.data?.appearance, theme.requestedMode, theme.setRequestedMode]);
 
   return (
     <Screen>

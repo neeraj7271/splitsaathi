@@ -53,7 +53,7 @@ export function ParticipantPicker({
                   {participant.phoneE164 || participant.participantType || "guest or invite"}
                 </ThemedText>
               </View>
-              <View style={[styles.checkbox, { borderColor: selected ? ring : theme.colors.inkFaint, backgroundColor: selected ? ring : "transparent" }]}>
+              <View style={[styles.checkbox, { borderColor: selected ? ring : theme.colors.inkFaint, backgroundColor: selected ? ring : "transparent", borderRadius: 999 }]}>
                 {selected ? <Check size={14} color={onColor} weight="bold" /> : null}
               </View>
             </Pressable>

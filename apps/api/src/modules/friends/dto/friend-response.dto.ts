@@ -14,6 +14,12 @@ export class FriendSharedGroupDto {
 
   @ApiProperty({ example: 'INR' })
   currencyCode!: string;
+
+  @ApiProperty({ enum: ['trip', 'couple', 'home', 'event', 'business', 'other'], default: 'other' })
+  groupType!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  imageUrl?: string | null;
 }
 
 export class FriendSummaryDto {

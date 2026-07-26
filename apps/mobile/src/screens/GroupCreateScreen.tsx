@@ -1,7 +1,16 @@
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, LinkSimple, UserPlus } from "phosphor-react-native";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  AddressBook,
+  Clock,
+  ListBullets,
+  SquaresFour,
+  UserPlus,
+  UsersThree
+} from "phosphor-react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { apiClient } from "../api/client";
@@ -10,19 +19,19 @@ import { Button } from "../components/Button";
 import { ContactPicker } from "../components/ContactPicker";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
+import { groupTypeAccent, groupTypeIcon } from "../components/GroupTypeAvatar";
+import { GroupSummaryCard } from "../components/GroupSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
 import { SegmentedControl } from "../components/SegmentedControl";
-import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
 import { GroupMode, GroupSummary, GroupType, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
-import { formatSignedMoney } from "../utils/money";
 
 const groupTypes: Array<{ label: string; value: GroupType }> = [
   { label: "Trip", value: "trip" },
@@ -34,10 +43,27 @@ const groupTypes: Array<{ label: string; value: GroupType }> = [
 ];
 
 type GroupsTab = "create" | "list";
+type BalanceFilter = "all" | "outstanding" | "you_owe" | "owes_you";
 
-const tabOptions: Array<{ label: string; value: GroupsTab }> = [
-  { label: "Create group", value: "create" },
-  { label: "Group list", value: "list" }
+const tabOptions: Array<{
+  label: string;
+  value: GroupsTab;
+  Icon: React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "fill" | "regular" }>;
+}> = [
+  { label: "Create group", value: "create", Icon: UserPlus },
+  { label: "Group list", value: "list", Icon: ListBullets }
+];
+
+const balanceFilters: Array<{
+  label: string;
+  value: BalanceFilter;
+  Icon: typeof SquaresFour;
+  accent: "confirmed" | "pending" | "info" | "receive";
+}> = [
+  { label: "All", value: "all", Icon: SquaresFour, accent: "confirmed" },
+  { label: "Outstanding", value: "outstanding", Icon: Clock, accent: "pending" },
+  { label: "You owe", value: "you_owe", Icon: ArrowUpRight, accent: "info" },
+  { label: "Owes you", value: "owes_you", Icon: ArrowDownLeft, accent: "receive" }
 ];
 
 export function GroupCreateScreen({ navigation }: { navigation: AppNavigation }) {
@@ -48,8 +74,7 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GroupMode>("flat");
   const [groupType, setGroupType] = useState<GroupType>("home");
-  const [participantName, setParticipantName] = useState("");
-  const [participants, setParticipants] = useState<Array<{ displayName: string; phoneE164?: string; role: Exclude<MembershipRole, "owner"> }>>([]);
+  const [participants, setParticipants] = useState<Array<{ displayName: string; phoneE164: string; role: Exclude<MembershipRole, "owner"> }>>([]);
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
   const [availableContacts, setAvailableContacts] = useState<SyncedContact[]>([]);
@@ -80,20 +105,6 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
       navigation.go("groupDetail");
     }
   });
-
-  const addDraftParticipant = () => {
-    if (!participantName.trim()) {
-      return;
-    }
-    setParticipants((current) => [
-      ...current,
-      {
-        displayName: participantName.trim(),
-        role: "member"
-      }
-    ]);
-    setParticipantName("");
-  };
 
   async function selectGroupImage() {
     const granted = await ensureMediaLibraryPermission();
@@ -150,9 +161,9 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
 
   function addContactsToDraft(selected: SyncedContact[]) {
     setParticipants((current) => {
-      const existing = new Set(current.map((participant) => participant.phoneE164 ?? participant.displayName.toLowerCase()));
+      const existing = new Set(current.map((participant) => participant.phoneE164));
       const additions = selected
-        .filter((contact) => !existing.has(contact.phoneE164) && !existing.has(contact.displayName.toLowerCase()))
+        .filter((contact) => Boolean(contact.phoneE164) && !existing.has(contact.phoneE164))
         .map((contact) => ({
           displayName: contact.displayName,
           phoneE164: contact.phoneE164,
@@ -163,10 +174,32 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   }
 
   return (
-    <Screen>
+    <Screen refreshing={groupsQuery.isRefetching} onRefresh={() => void groupsQuery.refetch()}>
       <View style={styles.header}>
-        <ThemedText variant="title">Groups</ThemedText>
-        <Button label="Import CSV" variant="secondary" onPress={() => navigation.go("importExport")} />
+        <View style={styles.headerCopy}>
+          <ThemedText variant="title">Groups</ThemedText>
+          <ThemedText variant="bodySm" tone="muted">
+            {activeTab === "create" ? "Create a new group" : "Manage your groups and balances."}
+          </ThemedText>
+        </View>
+        <Pressable
+          onPress={() => navigation.go("importExport")}
+          accessibilityRole="button"
+          accessibilityLabel="Import CSV"
+          style={[
+            styles.importChip,
+            {
+              borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
+              backgroundColor: theme.colors.surface,
+              borderRadius: theme.radius.full
+            }
+          ]}
+        >
+          <UserPlus size={16} color={theme.colors.info} weight="duotone" />
+          <ThemedText variant="caption" tone="info">
+            Import CSV
+          </ThemedText>
+        </Pressable>
       </View>
 
       <SegmentedControl value={activeTab} options={tabOptions} onChange={setActiveTab} />
@@ -182,9 +215,6 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
           selectGroupImage={selectGroupImage}
           setGroupImage={setGroupImage}
           createGroup={createGroup}
-          participantName={participantName}
-          setParticipantName={setParticipantName}
-          addDraftParticipant={addDraftParticipant}
           openContactPicker={openContactPicker}
           participants={participants}
           setParticipants={setParticipants}
@@ -222,9 +252,6 @@ function CreateGroupTab({
   selectGroupImage,
   setGroupImage,
   createGroup,
-  participantName,
-  setParticipantName,
-  addDraftParticipant,
   openContactPicker,
   participants,
   setParticipants,
@@ -239,86 +266,115 @@ function CreateGroupTab({
   selectGroupImage: () => Promise<void>;
   setGroupImage: (value: null) => void;
   createGroup: { mutate: () => void; isPending: boolean; error: Error | null };
-  participantName: string;
-  setParticipantName: (value: string) => void;
-  addDraftParticipant: () => void;
   openContactPicker: () => Promise<void>;
-  participants: Array<{ displayName: string; phoneE164?: string; role: Exclude<MembershipRole, "owner"> }>;
-  setParticipants: React.Dispatch<React.SetStateAction<Array<{ displayName: string; phoneE164?: string; role: Exclude<MembershipRole, "owner"> }>>>;
+  participants: Array<{ displayName: string; phoneE164: string; role: Exclude<MembershipRole, "owner"> }>;
+  setParticipants: React.Dispatch<
+    React.SetStateAction<Array<{ displayName: string; phoneE164: string; role: Exclude<MembershipRole, "owner"> }>>
+  >;
   contactError: string | null;
 }) {
   const theme = useTheme();
 
   return (
     <View style={styles.section}>
-      <View style={styles.imagePicker}>
-        <UserAvatar
-          displayName={name.trim() || "Group"}
-          localUri={groupImage?.uri}
-          size={80}
-          editable
-          onPress={() => void selectGroupImage()}
-        />
-        <View style={styles.imagePickerCopy}>
-          <ThemedText variant="bodyMedium">{groupImage ? "Group logo" : "Add group logo"}</ThemedText>
-          <ThemedText variant="bodySm" tone="muted">
-            {groupImage ? "Tap the photo to change it" : "Optional · tap the camera icon"}
-          </ThemedText>
-          {groupImage ? (
-            <Pressable onPress={() => setGroupImage(null)} accessibilityRole="button" accessibilityLabel="Remove group logo">
-              <ThemedText variant="caption" tone="disputed">
-                Remove
-              </ThemedText>
-            </Pressable>
-          ) : null}
+      <DataSurface elevated padded>
+        <View style={styles.imagePicker}>
+          <UserAvatar
+            displayName={name.trim() || "Group"}
+            localUri={groupImage?.uri}
+            size={80}
+            editable
+            accentColor={theme.colors.confirmed}
+            onPress={() => void selectGroupImage()}
+          />
+          <View style={styles.imagePickerCopy}>
+            <ThemedText variant="bodyMedium">{groupImage ? "Group logo" : "Add group logo"}</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              {groupImage ? "Tap the photo to change it" : "Optional · tap the camera icon"}
+            </ThemedText>
+            {groupImage ? (
+              <Pressable onPress={() => setGroupImage(null)} accessibilityRole="button" accessibilityLabel="Remove group logo">
+                <ThemedText variant="caption" tone="disputed">
+                  Remove
+                </ThemedText>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
-      <InputField label="Group name" value={name} onChangeText={setName} placeholder="Flat 3B rent and groceries" />
-      <ThemedText variant="bodyMedium">Choose a group type</ThemedText>
-      <ThemedText variant="bodySm" tone="muted">This helps organize your groups. You can change other details later.</ThemedText>
-      <GroupTypePicker
-        selected={groupType}
-        onSelect={(type) => {
-          setGroupType(type);
-          setMode(type === "home" ? "flat" : type === "other" ? "custom" : type);
-        }}
+      </DataSurface>
+
+      <InputField
+        label="Group name"
+        value={name}
+        onChangeText={setName}
+        placeholder="Flat 3B rent and groceries"
+        Icon={UsersThree}
       />
 
-      <DataSurface>
+      <View style={styles.typeBlock}>
+        <ThemedText variant="bodyMedium">Choose a group type</ThemedText>
+        <ThemedText variant="bodySm" tone="muted">
+          This helps organize your groups. You can change other details later.
+        </ThemedText>
+        <GroupTypePicker
+          selected={groupType}
+          onSelect={(type) => {
+            setGroupType(type);
+            setMode(type === "home" ? "flat" : type === "other" ? "custom" : type);
+          }}
+        />
+      </View>
+
+      <DataSurface elevated>
         <View style={styles.formBlock}>
           <View style={styles.formHeader}>
-            <UserPlus size={20} color={theme.colors.inkMuted} weight="duotone" />
+            <AddressBook size={20} color={theme.colors.confirmed} weight="duotone" />
             <View style={styles.formHeaderText}>
-              <ThemedText variant="bodyMedium">Add people by name</ThemedText>
+              <ThemedText variant="bodyMedium">Invite people</ThemedText>
               <ThemedText variant="bodySm" tone="muted">
-                Type a name manually or pick from your phone contacts.
+                Add contacts with a phone number so they can be invited to the group.
               </ThemedText>
             </View>
           </View>
-          <InputField label="Name" value={participantName} onChangeText={setParticipantName} placeholder="e.g. Priya" />
-          <Button label="Add name" variant="secondary" onPress={addDraftParticipant} disabled={!participantName.trim()} />
-          <Button label="Add from contacts" variant="secondary" onPress={() => void openContactPicker()} />
+          <Button
+            label={participants.length ? "Add more contacts" : "Add from contacts"}
+            variant="soft"
+            Icon={AddressBook}
+            onPress={() => void openContactPicker()}
+          />
         </View>
-        {participants.map((participant, index) => (
-          <View key={`${participant.displayName}-${index}`} style={[styles.draftRow, { borderTopColor: theme.colors.hairline }]}>
-            <View>
-              <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
-              {participant.phoneE164 ? (
+        {participants.length ? (
+          participants.map((participant, index) => (
+            <View key={participant.phoneE164} style={[styles.draftRow, { borderTopColor: theme.colors.hairline }]}>
+              <View style={styles.participantCopy}>
+                <ThemedText variant="bodyMedium">{participant.displayName}</ThemedText>
                 <ThemedText variant="bodySm" tone="muted">
                   {participant.phoneE164}
                 </ThemedText>
-              ) : null}
+              </View>
+              <Pressable onPress={() => setParticipants((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                <ThemedText variant="caption" tone="disputed">
+                  Remove
+                </ThemedText>
+              </Pressable>
             </View>
-            <Pressable onPress={() => setParticipants((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-              <ThemedText variant="caption" tone="disputed">
-                Remove
-              </ThemedText>
-            </Pressable>
+          ))
+        ) : (
+          <View style={[styles.emptyPeople, { borderTopColor: theme.colors.hairline }]}>
+            <ThemedText variant="bodySm" tone="muted">
+              No one invited yet. You can also create the group alone and invite later.
+            </ThemedText>
           </View>
-        ))}
+        )}
       </DataSurface>
 
-      <Button label="Create group" onPress={() => createGroup.mutate()} loading={createGroup.isPending} disabled={!name.trim()} />
+      <Button
+        label="Create group"
+        Icon={UsersThree}
+        onPress={() => createGroup.mutate()}
+        loading={createGroup.isPending}
+        disabled={!name.trim()}
+      />
       {createGroup.error ? <InlineNotice title="Group could not be created" body={createGroup.error.message} tone="owe" /> : null}
       {contactError ? <InlineNotice title="Contacts unavailable" body={contactError} tone="owe" /> : null}
     </View>
@@ -340,14 +396,13 @@ function GroupListTab({
   onCreateGroup: () => void;
 }) {
   const theme = useTheme();
-  const [filter, setFilter] = useState<"all" | "outstanding" | "you_owe" | "owes_you">("all");
+  const [filter, setFilter] = useState<BalanceFilter>("all");
   const groups = groupsQuery.data ?? [];
   const activeGroups = groups.filter((group) => group.state !== "archived");
   const settledGroups = activeGroups.filter((group) => (group.netBalanceMinor ?? 0) === 0);
   const filtered = activeGroups.filter((group) => {
     const net = group.netBalanceMinor ?? 0;
     if (filter === "all") {
-      // Outstanding only in the main list; settled groups have their own section.
       return net !== 0;
     }
     if (filter === "outstanding") {
@@ -362,16 +417,7 @@ function GroupListTab({
   return (
     <View style={styles.section}>
       {groupsQuery.error ? <InlineNotice title="Groups could not load" body={groupsQuery.error.message} tone="owe" /> : null}
-      <SegmentedControl
-        value={filter}
-        options={[
-          { label: "All", value: "all" },
-          { label: "Outstanding", value: "outstanding" },
-          { label: "You owe", value: "you_owe" },
-          { label: "Owes you", value: "owes_you" }
-        ]}
-        onChange={setFilter}
-      />
+      <BalanceFilterChips value={filter} onChange={setFilter} />
       {groupsQuery.isLoading ? (
         <View style={styles.loading}>
           <ActivityIndicator color={theme.colors.inkMuted} />
@@ -399,22 +445,48 @@ function GroupListTab({
       {filter === "all" && settledGroups.length ? (
         <GroupSection title="Settled up groups" groups={settledGroups} onOpenGroup={onOpenGroup} />
       ) : null}
-
-      <View style={styles.managementNotes}>
-        <View style={styles.noteRow}>
-          <LinkSimple size={18} color={theme.colors.inkMuted} weight="duotone" />
-          <ThemedText variant="bodySm" tone="muted">
-            Invite links are generated inside each group.
-          </ThemedText>
-        </View>
-        <View style={styles.noteRow}>
-          <Archive size={18} color={theme.colors.inkMuted} weight="duotone" />
-          <ThemedText variant="bodySm" tone="muted">
-            Financial groups are archived instead of deleted.
-          </ThemedText>
-        </View>
-      </View>
     </View>
+  );
+}
+
+function BalanceFilterChips({
+  value,
+  onChange
+}: {
+  value: BalanceFilter;
+  onChange: (value: BalanceFilter) => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+      {balanceFilters.map((option) => {
+        const active = option.value === value;
+        const accent = theme.colors[option.accent];
+        const Icon = option.Icon;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={[
+              styles.filterChip,
+              {
+                borderRadius: theme.radius.full,
+                borderColor: active ? accent : theme.colors.hairline,
+                backgroundColor: active
+                  ? colorWithAlpha(accent, theme.mode === "dark" ? 0.16 : 0.08)
+                  : theme.colors.surface
+              }
+            ]}
+          >
+            <Icon size={14} color={accent} weight="duotone" />
+            <ThemedText variant="caption" style={{ color: active ? accent : theme.colors.inkMuted }}>
+              {option.label}
+            </ThemedText>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -427,63 +499,62 @@ function GroupSection({
   groups: GroupSummary[];
   onOpenGroup: (groupId: string) => void;
 }) {
-  const theme = useTheme();
+  const countLabel = `${groups.length} group${groups.length === 1 ? "" : "s"}`;
 
   return (
     <View style={styles.listSection}>
-      <ThemedText variant="bodyMedium">{title}</ThemedText>
-      <DataSurface>
-        {groups.map((group, index) => (
-          <Pressable
+      <View style={styles.sectionHeader}>
+        <ThemedText variant="bodyMedium">{title}</ThemedText>
+        <ThemedText variant="caption" tone="muted">
+          {countLabel}
+        </ThemedText>
+      </View>
+      <View style={styles.groupStack}>
+        {groups.map((group) => (
+          <GroupSummaryCard
             key={group.id}
+            group={group}
+            subtitle={groupMetaLabel(group)}
             onPress={() => onOpenGroup(group.id)}
-            style={[
-              styles.groupRow,
-              index < groups.length - 1 ? { borderBottomColor: theme.colors.hairline, borderBottomWidth: 1 } : null
-            ]}
-          >
-            <UserAvatar displayName={group.name} avatarUrl={group.imageUrl} size={40} />
-            <View style={styles.groupText}>
-              <ThemedText variant="bodyMedium">{group.name}</ThemedText>
-              <ThemedText variant="bodySm" tone="muted">
-                {group.groupType ? `${formatGroupType(group.groupType)} · ` : ""}
-                {group.participantCount ?? 0} members
-              </ThemedText>
-            </View>
-            <View style={styles.trailing}>
-              {group.state === "archived" ? <StatusPill state="expired" /> : null}
-              <ThemedText variant="amountSm" tone={(group.netBalanceMinor ?? 0) >= 0 ? "receive" : "owe"}>
-                {formatSignedMoney(group.netBalanceMinor, group.baseCurrencyCode)}
-              </ThemedText>
-            </View>
-          </Pressable>
+          />
         ))}
-      </DataSurface>
+      </View>
     </View>
   );
+}
+
+function groupMetaLabel(group: GroupSummary) {
+  const typeLabel = group.groupType ? formatGroupType(group.groupType) : null;
+  const members = `${group.participantCount ?? 0} Members`;
+  return typeLabel ? `${typeLabel} · ${members}` : members;
 }
 
 function GroupTypePicker({ selected, onSelect }: { selected: GroupType; onSelect: (value: GroupType) => void }) {
   const theme = useTheme();
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
-      {groupTypes.map((groupType) => {
-        const active = selected === groupType.value;
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeRow}>
+      {groupTypes.map((option) => {
+        const active = selected === option.value;
+        const tint = groupTypeAccent(option.value);
+        const Icon = groupTypeIcon(option.value);
         return (
           <Pressable
-            key={groupType.value}
-            onPress={() => onSelect(groupType.value)}
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: theme.radius.sm,
-              borderWidth: 1,
-              borderColor: active ? theme.colors.confirmed : theme.colors.hairline,
-              backgroundColor: active ? theme.colors.surface : theme.colors.surfaceRaised
-            }}
+            key={option.value}
+            onPress={() => onSelect(option.value)}
+            style={[
+              styles.typeChip,
+              {
+                borderRadius: theme.radius.full,
+                borderColor: active ? tint : theme.colors.hairline,
+                backgroundColor: active
+                  ? colorWithAlpha(tint, theme.mode === "dark" ? 0.18 : 0.1)
+                  : theme.colors.surface
+              }
+            ]}
           >
-            <ThemedText variant="caption" tone={active ? "confirmed" : "muted"}>
-              {groupType.label}
+            <Icon size={14} color={tint} weight="duotone" />
+            <ThemedText variant="caption" style={{ color: tint }}>
+              {option.label}
             </ThemedText>
           </Pressable>
         );
@@ -500,13 +571,62 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 4
+  },
+  importChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1
   },
   section: {
-    gap: 12
+    gap: 16
+  },
+  typeBlock: {
+    gap: 8
+  },
+  typeRow: {
+    gap: 8,
+    paddingRight: 8,
+    paddingTop: 4
+  },
+  typeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1
+  },
+  filterRow: {
+    gap: 8,
+    paddingRight: 8
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1
   },
   listSection: {
+    gap: 10
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  groupStack: {
     gap: 8
   },
   loading: {
@@ -543,27 +663,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: 12
   },
-  groupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 14,
-    gap: 12
-  },
-  groupText: {
+  participantCopy: {
     flex: 1,
-    gap: 4
+    gap: 2
   },
-  trailing: {
-    alignItems: "flex-end",
-    gap: 6
-  },
-  managementNotes: {
-    gap: 8
-  },
-  noteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
+  emptyPeople: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    paddingTop: 4,
+    borderTopWidth: 1
   }
 });

@@ -3,15 +3,37 @@ import { StyleSheet, View } from "react-native";
 
 import { useTheme } from "../theme";
 
-export function DataSurface({ children }: { children: React.ReactNode }) {
+export function DataSurface({
+  children,
+  elevated = false,
+  padded = false
+}: {
+  children: React.ReactNode;
+  elevated?: boolean;
+  padded?: boolean;
+}) {
   const theme = useTheme();
 
-  return <View style={[styles.surface, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>{children}</View>;
+  return (
+    <View
+      style={[
+        styles.surface,
+        {
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.hairline,
+          borderRadius: theme.radius.md,
+          borderWidth: elevated && theme.mode === "light" ? 0 : 1,
+          padding: padded ? theme.spacing.cardPadding : 0,
+          overflow: elevated ? "visible" : "hidden"
+        },
+        elevated ? theme.cardShadow : null
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  surface: {
-    borderWidth: 1,
-    overflow: "hidden"
-  }
+  surface: {}
 });

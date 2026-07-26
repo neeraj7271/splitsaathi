@@ -1,13 +1,29 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarBlank, Paperclip } from "phosphor-react-native";
+import {
+  Calculator,
+  CalendarBlank,
+  Car,
+  CaretDown,
+  Clock,
+  DotsThree,
+  FilmSlate,
+  ForkKnife,
+  ListBullets,
+  Lightning,
+  NotePencil,
+  Paperclip,
+  ShoppingBag,
+  X
+} from "phosphor-react-native";
 
 import { ApiError, apiClient, CreateExpenseRequest } from "../api/client";
 import { useOptionalAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
+import { CalculatorModal } from "../components/CalculatorModal";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
@@ -20,15 +36,31 @@ import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
 import { ExpenseDetail, SplitType } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
-import { enqueueCommand } from "../offline/outbox";
-import { formatMoney, parseAmountToMinor } from "../utils/money";
+import { enqueueCommand, getOutboxStatus } from "../offline/outbox";
+import { amountToRupeeWords, formatMoney, parseAmountToMinor } from "../utils/money";
 import { activeGroupParticipants } from "../utils/groupPeople";
 
 type AdjustmentType = "tax" | "gst_cgst" | "gst_sgst" | "service_charge" | "tip" | "discount" | "rounding";
 type PartyTab = "payers" | "beneficiaries";
+
+const NOTES_MAX = 120;
+
+const EXPENSE_CATEGORIES: Array<{
+  id: string;
+  label: string;
+  Icon: React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "fill" | "regular" }>;
+  tint: string;
+}> = [
+  { id: "Groceries", label: "Groceries", Icon: ShoppingBag, tint: "#0D9488" },
+  { id: "Food", label: "Food", Icon: ForkKnife, tint: "#F97316" },
+  { id: "Transport", label: "Transport", Icon: Car, tint: "#3B82F6" },
+  { id: "Utilities", label: "Utilities", Icon: Lightning, tint: "#EAB308" },
+  { id: "Entertainment", label: "Entertainment", Icon: FilmSlate, tint: "#EC4899" },
+  { id: "__more__", label: "More", Icon: DotsThree, tint: "#94A3B8" }
+];
 
 interface DraftLineItem {
   label: string;
@@ -69,6 +101,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date());
   const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [calculatorVisible, setCalculatorVisible] = useState(false);
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [selectedPayers, setSelectedPayers] = useState<string[]>([]);
   const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>({});
@@ -88,6 +121,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [submitting, setSubmitting] = useState(false);
   const [queuedOffline, setQueuedOffline] = useState(false);
   const [receiptName, setReceiptName] = useState<string>();
+  const [queueCount, setQueueCount] = useState(0);
+  const [categoryMore, setCategoryMore] = useState(false);
   const submitLockRef = useRef(false);
 
   function markFormDirty() {
@@ -114,6 +149,20 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       navigation.setSelectedGroupId(groups[0].id);
     }
   }, [groups, navigation]);
+
+  useEffect(() => {
+    let active = true;
+    void getOutboxStatus()
+      .then((status) => {
+        if (active) {
+          setQueueCount(status.queued + status.failed + status.syncing);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [queuedOffline, submitting]);
 
   useEffect(() => {
     if (!editingExpenseId) {
@@ -387,11 +436,12 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   };
 
   return (
+    <>
     <Screen>
-      <ScreenBackButton navigation={navigation} label="Back" />
-      <View style={styles.header}>
+      <View style={styles.topBar}>
+        <ScreenBackButton navigation={navigation} label="" fallbackRoute="home" />
         <View style={styles.headerTitle}>
-          <ThemedText variant="caption" tone="muted">
+          <ThemedText variant="caption" tone="confirmed">
             {isEditing ? "Expense edit" : "Expense entry"}
           </ThemedText>
           <ThemedText variant="title" numberOfLines={1}>
@@ -399,15 +449,24 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
           </ThemedText>
         </View>
         {isEditing ? (
-          <Button
-            label="History"
-            variant="secondary"
-            size="compact"
-            onPress={() => navigation.go("audit")}
-            style={styles.headerButton}
-          />
+          <Button label="History" variant="secondary" size="compact" onPress={() => navigation.go("audit")} style={styles.headerButton} />
         ) : (
-          <Button label="Queue" variant="secondary" onPress={() => navigation.go("offline")} style={styles.headerButton} />
+          <Pressable
+            onPress={() => navigation.go("offline")}
+            style={[
+              styles.queueChip,
+              {
+                borderColor: colorWithAlpha(theme.colors.confirmed, 0.4),
+                backgroundColor: theme.colors.surface,
+                borderRadius: theme.radius.full
+              }
+            ]}
+          >
+            <Clock size={14} color={theme.colors.confirmed} weight="duotone" />
+            <ThemedText variant="caption" tone="confirmed">
+              Queue{queueCount ? ` (${queueCount})` : ""}
+            </ThemedText>
+          </Pressable>
         )}
       </View>
 
@@ -433,88 +492,207 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
 
       {selectedGroupId && participants.length ? (
         <>
-          <DataSurface>
-            <View style={styles.formBlock}>
-              <InputField
-                label="Description"
+          {splitType !== "itemized" ? (
+            <DataSurface elevated>
+              <View style={styles.amountHero}>
+                <View style={styles.amountHeroCopy}>
+                  <ThemedText variant="caption" tone="muted">
+                    Total amount
+                  </ThemedText>
+                  <View style={styles.amountInputRow}>
+                    <ThemedText variant="balanceHero" style={styles.currencyPrefix}>
+                      ₹
+                    </ThemedText>
+                    <TextInput
+                      value={amount}
+                      onChangeText={(value) => {
+                        markFormDirty();
+                        setAmount(value);
+                      }}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={theme.colors.inkFaint}
+                      style={[theme.typography.balanceHero, styles.amountInput, { color: theme.colors.ink }]}
+                    />
+                  </View>
+                  <ThemedText variant="bodySm" tone="muted">
+                    {amountToRupeeWords(totalMinor)}
+                  </ThemedText>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open calculator"
+                  onPress={() => setCalculatorVisible(true)}
+                  style={[
+                    styles.calcChip,
+                    {
+                      borderColor: theme.colors.hairline,
+                      backgroundColor: colorWithAlpha(theme.colors.confirmed, theme.mode === "dark" ? 0.16 : 0.1),
+                      borderRadius: theme.radius.full
+                    }
+                  ]}
+                >
+                  <Calculator size={16} color={theme.colors.confirmed} weight="duotone" />
+                  <ThemedText variant="caption" tone="confirmed">
+                    Calculator
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </DataSurface>
+          ) : null}
+
+          <DataSurface elevated>
+            <View style={styles.descriptionRow}>
+              <ListBullets size={18} color={theme.colors.inkMuted} weight="duotone" />
+              <TextInput
                 value={description}
                 onChangeText={(value) => {
                   markFormDirty();
                   setDescription(value);
                 }}
-                placeholder="Groceries, rent, dinner"
+                placeholder="What was this for?"
+                placeholderTextColor={theme.colors.inkFaint}
+                style={[theme.typography.body, styles.descriptionInput, { color: theme.colors.ink }]}
               />
-              {splitType !== "itemized" ? (
-                <InputField
-                  label="Total amount"
-                  value={amount}
-                  onChangeText={(value) => {
+              {description ? (
+                <Pressable
+                  onPress={() => {
                     markFormDirty();
-                    setAmount(value);
+                    setDescription("");
                   }}
-                  keyboardType="decimal-pad"
-                  amount
-                />
+                  hitSlop={8}
+                  accessibilityLabel="Clear description"
+                >
+                  <X size={16} color={theme.colors.inkMuted} weight="bold" />
+                </Pressable>
               ) : null}
+            </View>
+          </DataSurface>
+
+          <View style={styles.section}>
+            <ThemedText variant="bodyMedium">Category (optional)</ThemedText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
+              {EXPENSE_CATEGORIES.map((option) => {
+                const active = option.id === "__more__" ? categoryMore : !categoryMore && category === option.id;
+                const Icon = option.Icon;
+                const chrome = theme.colors.confirmed;
+                const labelColor = active ? chrome : theme.colors.inkMuted;
+                return (
+                  <Pressable
+                    key={option.id}
+                    onPress={() => {
+                      markFormDirty();
+                      if (option.id === "__more__") {
+                        setCategoryMore(true);
+                        if (EXPENSE_CATEGORIES.some((item) => item.id === category)) {
+                          setCategory("");
+                        }
+                        return;
+                      }
+                      setCategoryMore(false);
+                      setCategory(option.id);
+                    }}
+                    style={[
+                      styles.categoryChip,
+                      {
+                        borderRadius: theme.radius.md,
+                        borderColor: active ? chrome : theme.colors.hairline,
+                        backgroundColor: active
+                          ? colorWithAlpha(chrome, theme.mode === "dark" ? 0.18 : 0.1)
+                          : theme.colors.surface
+                      }
+                    ]}
+                  >
+                    <Icon size={22} color={option.tint} weight="duotone" />
+                    <ThemedText variant="caption" style={{ color: labelColor }}>
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {categoryMore ? (
               <InputField
-                label="Category optional"
+                label="Custom category"
                 value={category}
                 onChangeText={(value) => {
                   markFormDirty();
                   setCategory(value);
                 }}
+                placeholder="e.g. Medical, Gifts"
               />
-              <InputField
-                label="Notes optional"
+            ) : null}
+          </View>
+
+          <View style={styles.metaRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Expense date ${expenseDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+              onPress={() => setDatePickerVisible(true)}
+              style={[styles.metaChip, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }]}
+            >
+              <CalendarBlank size={18} color={theme.colors.inkMuted} weight="duotone" />
+              <ThemedText variant="bodySm">
+                {expenseDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </ThemedText>
+              <CaretDown size={14} color={theme.colors.inkMuted} weight="bold" />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Attach receipt or proof image"
+              onPress={() => void attachReceipt()}
+              style={[styles.metaChip, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }]}
+            >
+              <Paperclip size={18} color={theme.colors.confirmed} weight="duotone" />
+              <ThemedText variant="bodySm" tone="confirmed" numberOfLines={1} style={{ flex: 1 }}>
+                {receiptName ? receiptName : "Add receipt"}
+              </ThemedText>
+            </Pressable>
+          </View>
+          {datePickerVisible ? (
+            <DateTimePicker
+              value={expenseDate}
+              mode="date"
+              maximumDate={new Date()}
+              onChange={(_, date) => {
+                setDatePickerVisible(false);
+                if (date) {
+                  setExpenseDate(date);
+                }
+              }}
+            />
+          ) : null}
+
+          <DataSurface elevated>
+            <View style={styles.notesBlock}>
+              <View style={styles.notesHeader}>
+                <NotePencil size={16} color={theme.colors.inkMuted} weight="duotone" />
+                <ThemedText variant="caption" tone="muted" style={{ flex: 1 }}>
+                  Add a note (optional)
+                </ThemedText>
+                <ThemedText variant="caption" tone="faint">
+                  {notes.length}/{NOTES_MAX}
+                </ThemedText>
+              </View>
+              <TextInput
                 value={notes}
                 onChangeText={(value) => {
                   markFormDirty();
-                  setNotes(value);
+                  setNotes(value.slice(0, NOTES_MAX));
                 }}
                 placeholder="Extra context for this expense"
+                placeholderTextColor={theme.colors.inkFaint}
                 multiline
-                style={{ minHeight: 72, textAlignVertical: "top", paddingTop: 14 }}
+                style={[theme.typography.body, styles.notesInput, { color: theme.colors.ink }]}
               />
-              <View style={styles.iconActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Expense date ${expenseDate.toLocaleDateString("en-IN")}`}
-                  onPress={() => setDatePickerVisible(true)}
-                  style={[styles.iconAction, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}
-                >
-                  <CalendarBlank size={20} color={theme.colors.ink} weight="duotone" />
-                  <ThemedText variant="bodySm">{expenseDate.toLocaleDateString("en-IN")}</ThemedText>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Attach receipt or proof image"
-                  onPress={() => void attachReceipt()}
-                  style={[styles.iconAction, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}
-                >
-                  <Paperclip size={20} color={theme.colors.ink} weight="duotone" />
-                  <ThemedText variant="bodySm" numberOfLines={1}>
-                    {receiptName ? receiptName : "Receipt"}
-                  </ThemedText>
-                </Pressable>
-              </View>
-              {datePickerVisible ? (
-                <DateTimePicker
-                  value={expenseDate}
-                  mode="date"
-                  maximumDate={new Date()}
-                  onChange={(_, date) => {
-                    setDatePickerVisible(false);
-                    if (date) {
-                      setExpenseDate(date);
-                    }
-                  }}
-                />
-              ) : null}
             </View>
           </DataSurface>
 
+          <ThemedText variant="bodyMedium">Split type</ThemedText>
           <SegmentedControl
             value={splitType}
+            scrollable={false}
+            compact
             options={[
               { label: "Equal", value: "equal" },
               { label: "Exact", value: "exact" },
@@ -689,11 +867,13 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
               </DataSurface>
             ) : null}
 
-            <DataSurface>
+            <DataSurface elevated>
               <View style={styles.reviewBlock}>
                 <View style={styles.reviewRow}>
-                  <ThemedText variant="section">Total</ThemedText>
-                  <ThemedText variant="amount">{formatMoney(totalMinor)}</ThemedText>
+                  <ThemedText variant="section">Summary</ThemedText>
+                  <ThemedText variant="amountSm" tone="confirmed">
+                    Total {formatMoney(totalMinor)}
+                  </ThemedText>
                 </View>
 
                 <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>
@@ -704,7 +884,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   return (
                     <View key={payerId} style={styles.reviewRow}>
                       <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
-                      <ThemedText variant="amount" tone={paid > 0 ? "ink" : "muted"}>
+                      <ThemedText variant="amountSm" tone={paid > 0 ? "ink" : "muted"}>
                         {formatMoney(paid)}
                       </ThemedText>
                     </View>
@@ -732,7 +912,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   return (
                     <View key={shareId} style={styles.reviewRow}>
                       <ThemedText variant="bodyMedium">{nameForParticipant(shareId)}</ThemedText>
-                      <ThemedText variant="amount" tone={share > 0 ? "ink" : "muted"}>
+                      <ThemedText variant="amountSm" tone={share > 0 ? "ink" : "muted"}>
                         {formatMoney(share)}
                       </ThemedText>
                     </View>
@@ -750,7 +930,18 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   </View>
                 ) : null}
 
-                <View style={[styles.statusBar, { backgroundColor: balanced ? theme.colors.confirmed : theme.colors.owe, borderRadius: theme.radius.full }]} />
+                <View style={[styles.statusBarTrack, { backgroundColor: theme.colors.hairline, borderRadius: theme.radius.full }]}>
+                  <View
+                    style={[
+                      styles.statusBarFill,
+                      {
+                        width: `${balanced ? 100 : Math.max(12, Math.min(88, Math.round((payerTotalMinor / Math.max(totalMinor, 1)) * 100)))}%`,
+                        backgroundColor: balanced ? theme.colors.confirmed : theme.colors.info,
+                        borderRadius: theme.radius.full
+                      }
+                    ]}
+                  />
+                </View>
                 {computedShares.residualMinor > 0 ? (
                   <ThemedText variant="bodySm" tone="muted">
                     {computedShares.residualMinor}p rounding distributed by largest-remainder.
@@ -827,6 +1018,16 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
         <EmptyState title="No participants" body="Add people to this group before creating expenses." action={{ label: "Manage group", onPress: () => navigation.go("groupDetail") }} />
       ) : null}
     </Screen>
+    <CalculatorModal
+      visible={calculatorVisible}
+      initialValue={amount}
+      onClose={() => setCalculatorVisible(false)}
+      onApply={(value) => {
+        markFormDirty();
+        setAmount(value);
+      }}
+    />
+    </>
   );
 }
 
@@ -1050,7 +1251,7 @@ function applyExpenseToForm(
 }
 
 const styles = StyleSheet.create({
-  header: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12
@@ -1062,23 +1263,101 @@ const styles = StyleSheet.create({
   headerButton: {
     flexShrink: 0
   },
-  formBlock: {
-    gap: 10,
-    padding: 12
+  queueChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1
   },
-  iconActions: {
+  amountHero: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 14
+  },
+  amountHeroCopy: {
+    flex: 1,
+    gap: 4
+  },
+  amountInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2
+  },
+  currencyPrefix: {
+    marginTop: 2
+  },
+  amountInput: {
+    flex: 1,
+    padding: 0,
+    minHeight: 40
+  },
+  calcChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    marginTop: 4
+  },
+  descriptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12
+  },
+  descriptionInput: {
+    flex: 1,
+    padding: 0,
+    minHeight: 24
+  },
+  categoryRow: {
+    gap: 8,
+    paddingRight: 8
+  },
+  categoryChip: {
+    minWidth: 78,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderWidth: 1
+  },
+  metaRow: {
     flexDirection: "row",
     gap: 8
   },
-  iconAction: {
+  metaChip: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderRadius: 12
+    borderWidth: 1
+  },
+  notesBlock: {
+    gap: 8,
+    padding: 14
+  },
+  notesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  notesInput: {
+    minHeight: 56,
+    padding: 0,
+    textAlignVertical: "top"
+  },
+  formBlock: {
+    gap: 10,
+    padding: 12
   },
   section: {
     gap: 10
@@ -1101,7 +1380,7 @@ const styles = StyleSheet.create({
   },
   reviewBlock: {
     gap: 8,
-    padding: 12
+    padding: 14
   },
   reviewRow: {
     flexDirection: "row",
@@ -1116,8 +1395,12 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 6
   },
-  statusBar: {
+  statusBarTrack: {
     height: 4,
-    marginTop: 4
+    marginTop: 8,
+    overflow: "hidden"
+  },
+  statusBarFill: {
+    height: 4
   }
 });
