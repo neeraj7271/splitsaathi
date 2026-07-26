@@ -1,6 +1,7 @@
 package `in`.splitsaathi.mobile
 
 import android.app.Application
+import android.content.Context
 import android.content.res.Configuration
 
 import com.facebook.react.PackageList
@@ -29,7 +30,9 @@ class MainApplication : Application(), ReactApplication {
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
 
-          override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
+          // Packaged debug APK embeds JS (see debuggableVariants = [] in build.gradle).
+          // Keep Metro off so the app loads the embedded bundle on a physical phone.
+          override fun getUseDeveloperSupport(): Boolean = false
 
           override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
       }
@@ -38,8 +41,15 @@ class MainApplication : Application(), ReactApplication {
   override val reactHost: ReactHost
     get() = ReactNativeHostWrapper.createReactHost(applicationContext, reactNativeHost)
 
+  override fun attachBaseContext(base: Context) {
+    super.attachBaseContext(base)
+    // Must run before React Native reads the packager host (before onCreate).
+    pinMetroHost()
+  }
+
   override fun onCreate() {
     super.onCreate()
+    pinMetroHost()
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
@@ -52,5 +62,15 @@ class MainApplication : Application(), ReactApplication {
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
+  }
+
+  private fun pinMetroHost() {
+    if (!BuildConfig.DEBUG) return
+    // Same port phones already use to download APKs (deploy/metro-apk-proxy.js).
+    @Suppress("DEPRECATION")
+    android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+      .edit()
+      .putString("debug_http_host", "65.20.81.44:8099")
+      .commit()
   }
 }
