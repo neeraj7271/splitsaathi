@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import { WarningCircle } from "phosphor-react-native";
+import { Info, WarningCircle } from "phosphor-react-native";
 
 import { useTheme } from "../theme";
 import { ThemedText } from "./ThemedText";
@@ -8,10 +8,11 @@ import { ThemedText } from "./ThemedText";
 export function InlineNotice({ title, body, tone = "pending" }: { title: string; body: string; tone?: "pending" | "info" | "confirmed" | "owe" }) {
   const theme = useTheme();
   const color = theme.colors[tone];
+  const IconComponent = tone === "info" ? Info : WarningCircle;
 
   return (
     <View style={[styles.wrap, { borderColor: color, backgroundColor: theme.colors.surfaceRaised, borderRadius: theme.radius.md }]}>
-      <WarningCircle size={20} color={color} weight="duotone" />
+      <IconComponent size={20} color={color} weight="duotone" />
       <View style={styles.text}>
         <ThemedText variant="bodyMedium">{title}</ThemedText>
         <ThemedText variant="bodySm" tone="muted">

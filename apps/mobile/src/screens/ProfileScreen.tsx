@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ImageSquare, Trash } from "phosphor-react-native";
+import { ArrowLeft, ImageSquare, Trash, Bell, ShieldCheck, Palette, Star, Headset, SealCheck, PencilSimple, EnvelopeSimple, CurrencyInr, Phone, Gear } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
@@ -15,7 +15,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import { SettingsLinkRow } from "../components/SettingsLinkRow";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { pickAndCompressAvatar } from "../utils/avatarUpload";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
@@ -131,11 +131,11 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={styles.backButton}>
-          <ArrowLeft size={22} color={theme.colors.ink} />
+        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
+          <ArrowLeft size={20} color={theme.colors.ink} />
         </Pressable>
         <View style={styles.titleBlock}>
-          <ThemedText variant="caption" tone="muted">
+          <ThemedText variant="caption" tone="confirmed">
             Account
           </ThemedText>
           <ThemedText variant="title">Profile</ThemedText>
@@ -150,34 +150,54 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             displayName={profile?.displayName ?? displayName}
             avatarUrl={profile?.avatarUrl}
             localUri={localAvatarUri}
-            size={72}
+            size={86}
             editable
             loading={uploadAvatar.isPending || removeAvatar.isPending}
             onPress={() => setAvatarSheetVisible(true)}
           />
           <View style={styles.identity}>
-            <ThemedText variant="title">{profile?.displayName ?? "Your profile"}</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">
-              {profile?.email ?? "Email unavailable"}
-            </ThemedText>
-            <ThemedText variant="bodySm" tone="muted">
-              {profile?.phoneE164 || profile?.phoneMasked || "Phone number unavailable"}
-            </ThemedText>
+            <View style={styles.nameRow}>
+              <View style={styles.nameWrapper}>
+                <ThemedText variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>{profile?.displayName ?? "Your profile"}</ThemedText>
+                <SealCheck size={20} color={theme.colors.confirmed} weight="fill" />
+              </View>
+              <Pressable
+                style={[styles.editButton, { borderColor: theme.colors.confirmed }]}
+                onPress={() => {
+                  if (isEditing) {
+                    setDisplayName(savedDisplayName);
+                    setUpiVpa(savedUpiVpa);
+                    setPhoneE164(savedPhoneE164);
+                  }
+                  setIsEditing((value) => !value);
+                }}
+              >
+                <PencilSimple size={14} color={theme.colors.confirmed} />
+                <ThemedText variant="bodySm" tone="confirmed">
+                  {isEditing ? "Cancel" : "Edit profile"}
+                </ThemedText>
+              </Pressable>
+            </View>
+            <View style={[styles.activeTag, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+              <View style={[styles.activeDot, { backgroundColor: theme.colors.confirmed }]} />
+              <ThemedText variant="bodySm" tone="confirmed">Active</ThemedText>
+            </View>
+            <View style={styles.infoRow}>
+              <EnvelopeSimple size={16} color={theme.colors.inkMuted} />
+              <ThemedText variant="bodySm" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {profile?.email ?? "Email unavailable"}
+              </ThemedText>
+            </View>
+            <View style={styles.infoRow}>
+              <CurrencyInr size={16} color={theme.colors.info} />
+              <ThemedText variant="bodySm" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {savedUpiVpa || "Not set"}
+              </ThemedText>
+              <View style={[styles.badge, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+                <ThemedText variant="caption" tone="confirmed">Default UPI</ThemedText>
+              </View>
+            </View>
           </View>
-          <Pressable
-            onPress={() => {
-              if (isEditing) {
-                setDisplayName(savedDisplayName);
-                setUpiVpa(savedUpiVpa);
-                setPhoneE164(savedPhoneE164);
-              }
-              setIsEditing((value) => !value);
-            }}
-          >
-            <ThemedText variant="bodySm" tone="confirmed">
-              {isEditing ? "Cancel" : "Edit"}
-            </ThemedText>
-          </Pressable>
         </View>
       </DataSurface>
 
@@ -231,32 +251,67 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           </View>
         </DataSurface>
       ) : (
-        <DataSurface>
-          <View style={styles.formBlock}>
-            <ThemedText variant="caption" tone="muted">
-              Phone number
-            </ThemedText>
-            <ThemedText variant="bodyMedium">
-              {savedPhoneE164 || profile?.phoneMasked || "Not set — tap Edit to add"}
-            </ThemedText>
-            <ThemedText variant="caption" tone="muted">
-              Default receive UPI ID
-            </ThemedText>
-            <ThemedText variant="bodyMedium">{savedUpiVpa || "Not set — tap Edit to add"}</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">
-              Used automatically when someone pays you on Settle.
-            </ThemedText>
-          </View>
-        </DataSurface>
+        <View>
+          <DataSurface>
+            <View style={styles.contactCard}>
+              <View style={styles.contactItemRow}>
+                <View style={[styles.contactIcon, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+                  <Phone size={18} color={theme.colors.confirmed} weight="fill" />
+                </View>
+                <View style={styles.contactText}>
+                  <ThemedText variant="caption" tone="muted">Phone number</ThemedText>
+                  <ThemedText variant="bodySm">{savedPhoneE164 || profile?.phoneMasked || "Not set"}</ThemedText>
+                </View>
+              </View>
+              <View style={[styles.contactDividerHorizontal, { backgroundColor: theme.colors.hairline }]} />
+              <View style={styles.contactItemRow}>
+                <View style={[styles.contactIcon, { backgroundColor: colorWithAlpha(theme.colors.info, 0.15) }]}>
+                  <CurrencyInr size={18} color={theme.colors.info} weight="bold" />
+                </View>
+                <View style={styles.contactText}>
+                  <ThemedText variant="caption" tone="muted">Default receive UPI ID</ThemedText>
+                  <ThemedText variant="bodySm">{savedUpiVpa || "Not set"}</ThemedText>
+                </View>
+                <Pressable
+                  style={[styles.changeButton, { borderColor: theme.colors.hairline }]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <ThemedText variant="bodySm" tone="confirmed">Change</ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </DataSurface>
+          <ThemedText variant="bodySm" tone="muted" style={styles.contactFooterText}>
+            Used automatically when someone pays you on Settle.
+          </ThemedText>
+        </View>
       )}
 
       <View style={styles.section}>
         <SectionHeader title="Preferences" />
         <DataSurface>
           <View style={styles.menuBlock}>
-            <SettingsLinkRow label="Notifications" onPress={() => navigation.go("notificationSettings")} />
-            <SettingsLinkRow label="Security" onPress={() => navigation.go("securitySettings")} />
-            <SettingsLinkRow label="Appearance" onPress={() => navigation.go("appearanceSettings")} />
+            <SettingsLinkRow 
+              label="Notifications" 
+              subtitle="Manage your alerts and updates"
+              icon={<Bell size={20} color={theme.colors.confirmed} weight="fill" />} 
+              iconTone="confirmed" 
+              onPress={() => navigation.go("notificationSettings")} 
+            />
+            <SettingsLinkRow 
+              label="Security" 
+              subtitle="Password, biometrics and privacy"
+              icon={<ShieldCheck size={20} color={theme.colors.info} weight="fill" />} 
+              iconTone="info" 
+              onPress={() => navigation.go("securitySettings")} 
+            />
+            <SettingsLinkRow 
+              label="Appearance" 
+              subtitle="Theme, language and display"
+              icon={<Palette size={20} color={theme.colors.info} weight="fill" />} 
+              iconTone="info" 
+              onPress={() => navigation.go("appearanceSettings")} 
+            />
           </View>
         </DataSurface>
       </View>
@@ -267,6 +322,9 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           <View style={styles.menuBlock}>
             <SettingsLinkRow
               label="Rate SplitSaathi"
+              subtitle="Share your experience with us"
+              icon={<Star size={20} color={theme.colors.pending} weight="fill" />}
+              iconTone="pending"
               onPress={() =>
                 Linking.openURL("market://details?id=in.splitsaathi.mobile").catch(() =>
                   Linking.openURL("https://play.google.com/store/apps/details?id=in.splitsaathi.mobile")
@@ -275,6 +333,9 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             />
             <SettingsLinkRow
               label="Contact support"
+              subtitle="Get help from our team"
+              icon={<Headset size={20} color={theme.colors.confirmed} weight="fill" />}
+              iconTone="confirmed"
               onPress={() => Linking.openURL("mailto:support@splitsaathi.com?subject=SplitSaathi+support")}
             />
           </View>
@@ -290,6 +351,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
         <View style={styles.brandWordmarkChip}>
           <BrandLogo variant="wordmark" size={16} />
         </View>
+        <ThemedText variant="caption" tone="muted">Version 1.0.0</ThemedText>
       </View>
 
       <Button label="Back to home" variant="ghost" onPress={() => navigation.go("home")} />
@@ -330,54 +392,146 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12
+    gap: 12,
+    marginBottom: 8
   },
-  backButton: {
-    padding: 4
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center"
   },
   titleBlock: {
     flex: 1,
-    gap: 4
+    gap: 0
   },
   profileBlock: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    padding: 14
+    alignItems: "flex-start",
+    gap: 16,
+    padding: 16
   },
   identity: {
     flex: 1,
-    gap: 4
+    gap: 8,
+    marginTop: 2
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  nameWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 6
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+    flexShrink: 0
+  },
+  activeTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 100
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  badge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    flexShrink: 0
   },
   formBlock: {
     gap: 12,
     padding: 14
   },
-  section: {
+  contactCard: {
+    flexDirection: "column",
+    padding: 12,
+    gap: 12
+  },
+  contactItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10
   },
+  contactIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  contactText: {
+    flex: 1,
+    gap: 2
+  },
+  contactDividerHorizontal: {
+    height: 1,
+    width: "100%"
+  },
+  changeButton: {
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8
+  },
+  contactFooterText: {
+    marginTop: 8,
+    paddingHorizontal: 4
+  },
+  section: {
+    gap: 10,
+    marginTop: 16
+  },
   menuBlock: {
-    gap: 8,
-    padding: 8
+    gap: 2,
+    padding: 6
   },
   retryBlock: {
     gap: 10
   },
   brandFooter: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    paddingVertical: 8
+    gap: 6,
+    paddingVertical: 16
   },
   brandMarkClip: {
     borderRadius: 8,
     overflow: "hidden"
   },
   brandWordmarkChip: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
     paddingHorizontal: 8,
-    paddingVertical: 4
+    paddingVertical: 4,
+    gap: 4
   }
 });

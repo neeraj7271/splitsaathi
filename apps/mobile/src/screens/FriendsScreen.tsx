@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, Share, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { MagnifyingGlass, SlidersHorizontal, UserPlus } from "phosphor-react-native";
+import { ArrowDownLeft, ArrowUpRight, Clock, MagnifyingGlass, SquaresFour, UserPlus } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
@@ -12,7 +12,6 @@ import { FriendSummaryCard } from "../components/FriendSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
-import { SegmentedControl } from "../components/SegmentedControl";
 import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import type { FriendSummary } from "../types/domain";
@@ -20,11 +19,16 @@ import { AppNavigation } from "../types/navigation";
 
 type FriendFilter = "all" | "outstanding" | "you_owe" | "owes_you";
 
-const FILTERS: Array<{ label: string; value: FriendFilter }> = [
-  { label: "All", value: "all" },
-  { label: "Outstanding", value: "outstanding" },
-  { label: "You owe", value: "you_owe" },
-  { label: "Owes you", value: "owes_you" }
+const FILTERS: Array<{
+  label: string;
+  value: FriendFilter;
+  Icon: typeof SquaresFour;
+  accent: "confirmed" | "pending" | "info" | "receive";
+}> = [
+  { label: "All", value: "all", Icon: SquaresFour, accent: "confirmed" },
+  { label: "Outstanding", value: "outstanding", Icon: Clock, accent: "pending" },
+  { label: "You owe", value: "you_owe", Icon: ArrowUpRight, accent: "info" },
+  { label: "Owes you", value: "owes_you", Icon: ArrowDownLeft, accent: "receive" }
 ];
 
 const SECTION_PREVIEW = 3;
@@ -131,24 +135,37 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
             clearButtonMode="while-editing"
           />
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Filter friends"
-          onPress={() => setFilterSheetOpen(true)}
-          style={[
-            styles.filterBtn,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.hairline,
-              borderRadius: theme.radius.md
-            }
-          ]}
-        >
-          <SlidersHorizontal size={18} color={theme.colors.inkMuted} weight="duotone" />
-        </Pressable>
+
       </View>
 
-      <SegmentedControl value={filter} options={FILTERS} onChange={setFilter} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {FILTERS.map((option) => {
+          const active = option.value === filter;
+          const accent = theme.colors[option.accent];
+          const Icon = option.Icon;
+          return (
+            <Pressable
+              key={option.value}
+              onPress={() => setFilter(option.value)}
+              style={[
+                styles.filterChip,
+                {
+                  borderRadius: theme.radius.full,
+                  borderColor: active ? accent : theme.colors.hairline,
+                  backgroundColor: active
+                    ? colorWithAlpha(accent, theme.mode === "dark" ? 0.16 : 0.08)
+                    : theme.colors.surface
+                }
+              ]}
+            >
+              <Icon size={14} color={accent} weight="duotone" />
+              <ThemedText variant="caption" style={{ color: active ? accent : theme.colors.inkMuted }}>
+                {option.label}
+              </ThemedText>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {friendsQuery.error ? <InlineNotice title="Friends could not load" body={friendsQuery.error.message} tone="owe" /> : null}
 
@@ -368,5 +385,17 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
     minWidth: 0
+  },
+  filterRow: {
+    gap: 8,
+    paddingRight: 8
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1
   }
 });

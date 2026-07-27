@@ -70,7 +70,7 @@ class MainApplication : Application(), ReactApplication {
     @Suppress("DEPRECATION")
     android.preference.PreferenceManager.getDefaultSharedPreferences(this)
       .edit()
-      .putString("debug_http_host", "hbysny4-anonymous-8088.exp.direct:80")
+      .putString("debug_http_host", "l6-am0k-anonymous-8081.exp.direct:80")
       .commit()
   }
 }

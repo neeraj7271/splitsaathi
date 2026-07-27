@@ -3,19 +3,27 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { CaretRight } from "phosphor-react-native";
 
 import { ThemedText } from "./ThemedText";
-import { useTheme } from "../theme";
+import { colorWithAlpha, useTheme } from "../theme";
+import { semanticColors } from "../theme/colors";
 
 interface SettingsLinkRowProps {
   label: string;
   subtitle?: string;
+  icon?: React.ReactNode;
+  iconTone?: keyof typeof semanticColors;
   onPress: () => void;
 }
 
-export function SettingsLinkRow({ label, subtitle, onPress }: SettingsLinkRowProps) {
+export function SettingsLinkRow({ label, subtitle, icon, iconTone = "info", onPress }: SettingsLinkRowProps) {
   const theme = useTheme();
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, { backgroundColor: theme.colors.surface, opacity: pressed ? 0.85 : 1 }]}>
+      {icon ? (
+        <View style={[styles.iconContainer, { backgroundColor: colorWithAlpha(theme.colors[iconTone], 0.15) }]}>
+          {icon}
+        </View>
+      ) : null}
       <View style={styles.copy}>
         <ThemedText variant="body">{label}</ThemedText>
         {subtitle ? (
@@ -38,6 +46,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderRadius: 14
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
   },
   copy: {
     flex: 1,

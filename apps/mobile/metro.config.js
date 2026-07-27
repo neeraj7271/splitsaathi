@@ -31,6 +31,8 @@ config.resolver.blockList = [
   new RegExp(`${path.resolve(workspaceRoot, "packages").replace(/\\/g, "/")}/.*`),
   /\/android\/build\/.*/,
   /\/android\/\.gradle\/.*/,
+  /\/android\/\.cxx\/.*/,
+  /\/node_modules\/.*\/android\/\.cxx\/.*/,
   /\/ios\/build\/.*/,
   /\/\.expo\/.*/,
   /\.git\/.*/,

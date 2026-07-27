@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AppState, Image, Modal, Pressable, StyleSheet, View } from "react-native";
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { AppState, Image, Modal, Pressable, StyleSheet, View, Alert, TextInput } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CaretDown, CaretUp, CheckCircle, ImageSquare, QrCode, ShieldCheck, X } from "phosphor-react-native";
+import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
@@ -20,7 +21,8 @@ import { SegmentedControl } from "../components/SegmentedControl";
 import { SettlementStepper } from "../components/SettlementStepper";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
-import { useTheme } from "../theme";
+import { UserAvatar } from "../components/UserAvatar";
+import { colorWithAlpha, useTheme } from "../theme";
 import { SettlementIntent, SettlementState, SettlementSuggestion } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
@@ -34,6 +36,8 @@ import {
   UpiAppId,
   UpiAppOption
 } from "../utils/upiApps";
+
+import { AmazonPayIcon, BankFinanceLoanIcon, BhimAppIcon, FourSquaresLineIcon, GooglePayIcon, PaytmIcon, PhonepeIcon, WaWhatsappIcon } from "../components/UpiIcons";
 
 type SettlementMode = "suggested" | "custom";
 type PaymentMethod = "cash" | "upi";
@@ -97,11 +101,22 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [payerParticipantId, setPayerParticipantId] = useState("");
   const [payeeParticipantId, setPayeeParticipantId] = useState("");
   const [payeeVpa, setPayeeVpa] = useState("");
+  const [isEditingUpi, setIsEditingUpi] = useState(false);
   const [intent, setIntent] = useState<SettlementIntent>();
   const [utrText, setUtrText] = useState("");
   const [proofAttachment, setProofAttachment] = useState<{ id: string; name: string }>();
   const [reason, setReason] = useState("");
   const [handoffError, setHandoffError] = useState<string>();
+  
+  const qrRef = useRef<any>(null);
+
+  const handleShareQR = () => {
+    Alert.alert("Rebuild Required", "Sharing the QR requires a native app rebuild. We will add this soon!");
+  };
+
+  const handleDownloadQR = () => {
+    Alert.alert("Rebuild Required", "Saving the QR to gallery requires a native app rebuild. We will add this soon!");
+  };
   const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
   const [proofPreviewUri, setProofPreviewUri] = useState<string>();
@@ -475,22 +490,43 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     }
   };
 
-  const renderUpiAppButton = (app: UpiAppOption | { id: UpiAppId; label: string; brandColor: string }) => (
-    <Pressable
-      key={app.id}
-      onPress={() => void openUpi(app.id)}
-      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}
-    >
-      <View style={[styles.upiBadge, { backgroundColor: app.brandColor }]}>
-        <ThemedText variant="caption" style={styles.upiBadgeText}>
-          {app.label.slice(0, 2).toUpperCase()}
+  const getUpiLogo = (id: string) => {
+    switch (id) {
+      case "gpay": return GooglePayIcon;
+      case "phonepe": return PhonepeIcon;
+      case "paytm": return PaytmIcon;
+      case "bhim": return BhimAppIcon;
+      case "whatsapp": return WaWhatsappIcon;
+      case "amazonpay": return AmazonPayIcon;
+      case "other": return FourSquaresLineIcon;
+      default: return null;
+    }
+  };
+
+  const renderUpiAppButton = (app: UpiAppOption | { id: UpiAppId | "other"; label: string; brandColor: string }) => {
+    const LogoComp = getUpiLogo(app.id);
+    const size = app.id === "other" ? 24 : 36;
+    return (
+      <Pressable
+        key={app.id}
+        onPress={() => void openUpi(app.id)}
+        style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: 14 }]}
+      >
+        <View style={[styles.upiBadge, { backgroundColor: LogoComp ? "transparent" : app.brandColor }]}>
+          {LogoComp ? (
+            <LogoComp width={size} height={size} />
+          ) : (
+            <ThemedText variant="caption" style={styles.upiBadgeText}>
+              {app.label.slice(0, 2).toUpperCase()}
+            </ThemedText>
+          )}
+        </View>
+        <ThemedText variant="caption" numberOfLines={1}>
+          {app.label}
         </ThemedText>
-      </View>
-      <ThemedText variant="caption" numberOfLines={1}>
-        {app.label}
-      </ThemedText>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
 
   const canCreateCustom =
     Boolean(myParticipantId) &&
@@ -562,13 +598,32 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
       <View style={styles.header}>
-        <View>
-          <ThemedText variant="caption" tone="muted">
-            {paymentMethod === "cash" ? "Cash settlement" : "UPI settlement"}
-          </ThemedText>
-          <ThemedText variant="title" numberOfLines={1}>{paymentMethod === "cash" ? "Mark cash payment" : "Proof before posted"}</ThemedText>
-        </View>
-        {intent ? <StatusPill state={intent.state} /> : null}
+        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
+          <CaretLeft size={20} color={theme.colors.ink} weight="bold" />
+        </Pressable>
+        <View style={{ flex: 1 }} />
+        <StatusPill state={intent?.state ?? "intent_created"} />
+
+      </View>
+
+      <View style={styles.titleSection}>
+        {intent ? (
+          <>
+            <ThemedText variant="title" numberOfLines={1}>Settle up</ThemedText>
+            <View style={styles.secureLine}>
+              <ThemedText variant="bodySm" tone="muted">Secure UPI payments</ThemedText>
+              <ShieldCheck size={16} color={theme.colors.confirmed} weight="fill" />
+            </View>
+          </>
+        ) : (
+          <>
+            <ThemedText variant="caption" tone="muted">
+              {paymentMethod === "cash" ? "Cash settlement" : "UPI settlement"}
+            </ThemedText>
+            <ThemedText variant="title" numberOfLines={1}>{paymentMethod === "cash" ? "Mark cash payment" : "Proof before posted"}</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">Complete payment and add proof to settle</ThemedText>
+          </>
+        )}
       </View>
 
       {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
@@ -590,75 +645,138 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
       {!intent ? (
         <View style={styles.section}>
-          <SegmentedControl value={mode} options={[{ label: "Suggested", value: "suggested" }, { label: "Custom", value: "custom" }]} onChange={setMode} />
-          <SegmentedControl
-            value={paymentMethod}
-            options={[{ label: "Pay via UPI", value: "upi" }, { label: "Paid in cash", value: "cash" }]}
-            onChange={setPaymentMethod}
-          />
+          <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4 }}>How do you want to settle?</ThemedText>
+          <View style={styles.methodRow}>
+            <Pressable
+              onPress={() => setPaymentMethod("upi")}
+              style={[styles.methodCard, { backgroundColor: theme.colors.surface, borderColor: paymentMethod === "upi" ? theme.colors.confirmed : theme.colors.hairline }]}
+            >
+              <View style={[styles.methodIconWrap, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+                <DeviceMobile size={22} color={theme.colors.confirmed} weight="duotone" />
+              </View>
+              <View style={styles.methodCopy}>
+                <ThemedText variant="bodyMedium">Pay via UPI</ThemedText>
+              </View>
+              <CaretRight size={16} color={theme.colors.inkMuted} />
+            </Pressable>
+            <Pressable
+              onPress={() => setPaymentMethod("cash")}
+              style={[styles.methodCard, { backgroundColor: theme.colors.surface, borderColor: paymentMethod === "cash" ? theme.colors.confirmed : theme.colors.hairline }]}
+            >
+              <View style={[styles.methodIconWrap, { backgroundColor: colorWithAlpha(theme.colors.pending, 0.15) }]}>
+                <Wallet size={22} color={theme.colors.pending} weight="duotone" />
+              </View>
+              <View style={styles.methodCopy}>
+                <ThemedText variant="bodyMedium">Paid in cash</ThemedText>
+              </View>
+              <CaretRight size={16} color={theme.colors.inkMuted} />
+            </Pressable>
+          </View>
+
+          <View style={[styles.securityBanner, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.08) }]}>
+            <ShieldCheck size={24} color={theme.colors.confirmed} weight="regular" />
+            <View style={{ flex: 1, gap: 2 }}>
+              <ThemedText variant="bodyMedium">Your payment is safe & secure</ThemedText>
+              <ThemedText variant="bodySm" tone="muted">Payments are encrypted and protected by SplitSaathi.</ThemedText>
+            </View>
+          </View>
 
           {mode === "suggested" ? (
             <View style={styles.section}>
               <SectionHeader title="You need to pay" />
               {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
               {payableSuggestions.length ? (
-                <DataSurface>
-                  {payableSuggestions.map((suggestion) => (
-                    <Pressable
-                      key={suggestion.id}
-                      onPress={() => {
-                        setSelectedSuggestion(suggestion);
-                        const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
-                        if (defaultVpa) {
-                          setPayeeVpa(defaultVpa);
-                        }
-                      }}
-                      style={[
-                        styles.suggestion,
-                        {
-                          borderBottomColor: theme.colors.hairline,
-                          borderColor: selectedSuggestion?.id === suggestion.id ? theme.colors.confirmed : "transparent"
-                        }
-                      ]}
-                    >
-                      <View style={styles.titleBlock}>
-                        <ThemedText variant="bodyMedium">Pay {suggestion.payeeName}</ThemedText>
-                        <ThemedText variant="bodySm" tone="muted">
-                          {suggestion.explanation}
-                        </ThemedText>
-                      </View>
-                      <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
-                    </Pressable>
-                  ))}
-                </DataSurface>
+                  <View style={{ gap: 8 }}>
+                    {payableSuggestions.map((suggestion) => {
+                      const initials = (suggestion.payeeName ?? "?").slice(0, 2).toUpperCase();
+                      return (
+                        <Pressable
+                          key={suggestion.id}
+                          onPress={() => {
+                            setSelectedSuggestion(suggestion);
+                            const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
+                            if (defaultVpa) {
+                              setPayeeVpa(defaultVpa);
+                            }
+                          }}
+                          style={[
+                            styles.suggestion,
+                            {
+                              backgroundColor: theme.colors.surface,
+                              borderColor: selectedSuggestion?.id === suggestion.id ? theme.colors.confirmed : theme.colors.hairline
+                            }
+                          ]}
+                        >
+                          <View style={[styles.suggestionAvatar, { backgroundColor: colorWithAlpha(theme.colors.info, 0.15) }]}>
+                            <ThemedText variant="caption" style={{ color: theme.colors.info, fontWeight: "700" }}>{initials}</ThemedText>
+                          </View>
+                          <View style={styles.titleBlock}>
+                            <ThemedText variant="bodyMedium">Pay {suggestion.payeeName}</ThemedText>
+                            <ThemedText variant="bodySm" tone="muted" numberOfLines={2}>
+                              {suggestion.explanation}
+                            </ThemedText>
+                          </View>
+                          <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
               ) : (
                 <EmptyState title="Nothing to pay" body="You don’t currently owe anyone in this group." />
               )}
 
               {paymentMethod === "upi" && payableSuggestions.length ? (
                 <View style={styles.section}>
-                  <InputField
-                    label="Receiver UPI ID"
-                    value={payeeVpa}
-                    onChangeText={setPayeeVpa}
-                    autoCapitalize="none"
-                    placeholder="name@okaxis"
-                  />
-                  <ThemedText variant="caption" tone="muted">
-                    {selectedPayeeHasDefaultVpa
-                      ? "Filled from their default receive UPI ID. Edit only if they asked you to use a different ID."
-                      : "They haven’t saved a default UPI ID yet — ask them, or enter it here."}
-                  </ThemedText>
+                  <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4 }}>Receiver UPI ID</ThemedText>
+                  <DataSurface>
+                    <View style={styles.upiIdRow}>
+                      <View style={[styles.upiIdIcon, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+                        <Bank size={18} color={theme.colors.confirmed} weight="duotone" />
+                      </View>
+                      {isEditingUpi ? (
+                        <TextInput
+                          value={payeeVpa}
+                          onChangeText={setPayeeVpa}
+                          autoCapitalize="none"
+                          placeholder="name@okaxis"
+                          autoFocus
+                          style={[theme.typography.bodySm, { flex: 1, color: theme.colors.ink, padding: 0 }]}
+                          placeholderTextColor={theme.colors.inkFaint}
+                        />
+                      ) : (
+                        <ThemedText variant="bodySm" numberOfLines={1} style={{ flex: 1 }}>
+                          {payeeVpa || "name@okaxis"}
+                        </ThemedText>
+                      )}
+                      {isEditingUpi ? (
+                        <Pressable onPress={() => setIsEditingUpi(false)}>
+                          <ThemedText variant="bodySm" tone="confirmed">Save</ThemedText>
+                        </Pressable>
+                      ) : (
+                        <Pressable onPress={() => setIsEditingUpi(true)}>
+                          <ThemedText variant="bodySm" tone="confirmed">Change</ThemedText>
+                        </Pressable>
+                      )}
+                    </View>
+                  </DataSurface>
                 </View>
               ) : null}
 
               {payableSuggestions.length ? (
-                <Button
-                  label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
-                  onPress={() => createIntent.mutate()}
-                  loading={createIntent.isPending}
-                  disabled={!canCreateSuggested || !canCreateUpi}
-                />
+                <>
+                  <Button
+                    label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
+                    onPress={() => createIntent.mutate()}
+                    loading={createIntent.isPending}
+                    disabled={!canCreateSuggested || !canCreateUpi}
+                  />
+                  <View style={styles.footerNotice}>
+                    <LockSimple size={14} color={theme.colors.inkMuted} weight="fill" />
+                    <ThemedText variant="caption" tone="muted">
+                      You will be able to scan QR or pay using any UPI app
+                    </ThemedText>
+                  </View>
+                </>
               ) : null}
 
               {receivableSuggestions.length ? (
@@ -770,7 +888,70 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         <View style={styles.section}>
           {isPayer && !isSettled ? (
             <>
-              <SectionHeader title="UPI handoff" />
+              <DataSurface>
+                <View style={styles.upiHandoffHeader}>
+                  <View style={[styles.upiHandoffIcon, { backgroundColor: "transparent" }]}>
+                    <DeviceMobileCamera size={24} color={theme.colors.info} weight="duotone" />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <ThemedText variant="bodyMedium">Pay using UPI</ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">Scan any app or pay from your installed UPI apps</ThemedText>
+                  </View>
+                </View>
+                <View style={styles.formBlock}>
+                  <View style={styles.appRow}>
+                    {upiApps.installed.map((app) => renderUpiAppButton(app))}
+                    <Pressable
+                      onPress={() => setShowOtherUpiApps((value) => !value)}
+                      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: 14 }]}
+                    >
+                      <View style={[styles.upiBadge, { backgroundColor: theme.colors.inkMuted }]}>
+                        <DotsThree size={20} color="#fff" weight="bold" />
+                      </View>
+                      <ThemedText variant="caption">More</ThemedText>
+                    </Pressable>
+                  </View>
+                  {showOtherUpiApps ? (
+                    <View style={styles.otherAppsBlock}>
+                      <ThemedText variant="caption" tone="muted">
+                        Not detected on this phone — tap to try opening anyway.
+                      </ThemedText>
+                      <View style={styles.appRow}>
+                        {upiApps.notInstalled.map((app) => renderUpiAppButton(app))}
+                        {renderUpiAppButton({ id: "other", label: "Any UPI app", brandColor: theme.colors.inkMuted })}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {intent.qrPayload ? (
+                    <View style={styles.qrSection}>
+                      <View style={styles.dividerRow}>
+                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
+                        <ThemedText variant="caption" tone="muted">OR</ThemedText>
+                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
+                      </View>
+                      <View style={styles.qrRow}>
+                        <View style={[styles.qrBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
+                          <QRCode getRef={(c) => (qrRef.current = c)} value={intent.qrPayload} size={130} backgroundColor="transparent" color={theme.mode === "dark" ? theme.colors.ink : "#000"} />
+                          <View style={[styles.qrLogoOverlay, { backgroundColor: theme.colors.surface }]}>
+                            <Image source={require("../../assets/brand/logo-mark.png")} style={{ width: 24, height: 24, resizeMode: "contain" }} />
+                          </View>
+                        </View>
+                        <View style={styles.qrActions}>
+                          <View style={{ marginBottom: 8 }}>
+                            <ThemedText variant="bodyMedium">
+                              Scan this QR to pay <ThemedText tone="muted">with any UPI app</ThemedText>
+                            </ThemedText>
+                          </View>
+                          <Button label="Share QR" variant="soft" size="compact" Icon={ShareNetwork} tone="confirmed" onPress={handleShareQR} />
+                          <Button label="Download" variant="secondary" size="compact" Icon={ArrowDown} tone="confirmed" onPress={handleDownloadQR} />
+                        </View>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              </DataSurface>
+
               {canEditPayeeVpa ? (
                 <DataSurface>
                   <View style={styles.formBlock}>
@@ -794,67 +975,37 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   </View>
                 </DataSurface>
               ) : null}
-              <DataSurface>
-                <View style={styles.formBlock}>
-                  <View style={styles.handoffRow}>
-                    <QrCode size={24} color={theme.colors.confirmed} weight="duotone" />
-                    <View style={styles.titleBlock}>
-                      <ThemedText variant="bodyMedium">Pay with an installed UPI app</ThemedText>
-                      <ThemedText variant="bodySm" tone="muted">
-                        Only apps detected on this phone are listed. Use Other for apps we could not detect.
-                      </ThemedText>
-                    </View>
-                  </View>
-                  <View style={styles.appRow}>
-                    {upiApps.installed.map((app) => renderUpiAppButton(app))}
-                    <Pressable
-                      onPress={() => setShowOtherUpiApps((value) => !value)}
-                      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}
-                    >
-                      <View style={[styles.upiBadge, { backgroundColor: theme.colors.inkMuted }]}>
-                        {showOtherUpiApps ? (
-                          <CaretUp size={14} color="#fff" weight="bold" />
-                        ) : (
-                          <CaretDown size={14} color="#fff" weight="bold" />
-                        )}
-                      </View>
-                      <ThemedText variant="caption">Other</ThemedText>
-                    </Pressable>
-                  </View>
-                  {showOtherUpiApps ? (
-                    <View style={styles.otherAppsBlock}>
-                      <ThemedText variant="caption" tone="muted">
-                        Not detected on this phone — tap to try opening anyway, or use Any UPI app / QR.
-                      </ThemedText>
-                      <View style={styles.appRow}>
-                        {upiApps.notInstalled.map((app) => renderUpiAppButton(app))}
-                        {renderUpiAppButton({ id: "other", label: "Any UPI app", brandColor: theme.colors.inkMuted })}
-                      </View>
-                    </View>
-                  ) : null}
-                  {intent.qrPayload ? (
-                    <View style={[styles.qrBox, { backgroundColor: theme.colors.ink, borderRadius: theme.radius.md }]}>
-                      <QRCode value={intent.qrPayload} size={164} backgroundColor="transparent" color={theme.colors.canvas} />
-                    </View>
-                  ) : null}
-                </View>
-              </DataSurface>
 
               {canSubmitProofAsPayer ? (
                 <>
-                  <SectionHeader title="Payment proof" />
                   <DataSurface>
-                    <View style={styles.formBlock}>
-                      <ThemedText variant="bodySm" tone="muted">
-                        After you pay, add UTR and/or a screenshot. The receiver must confirm before this settles.
-                      </ThemedText>
-                      <InputField label="UTR or UPI reference" value={utrText} onChangeText={setUtrText} autoCapitalize="characters" />
-                      <Button
-                        label={proofAttachment ? `Proof attached: ${proofAttachment.name}` : "Attach screenshot or PDF"}
-                        variant="secondary"
-                        onPress={() => uploadProof.mutate()}
-                        loading={uploadProof.isPending}
-                      />
+                    <View style={styles.proofHeader}>
+                      <View style={[styles.proofHeaderIcon, { backgroundColor: colorWithAlpha(theme.colors.info, 0.15) }]}>
+                        <FileText size={22} color={theme.colors.info} weight="duotone" />
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <ThemedText variant="bodyMedium">Payment proof</ThemedText>
+                        <ThemedText variant="bodySm" tone="muted">Add UTR or screenshot after payment</ThemedText>
+                      </View>
+                      <Pressable style={styles.addNowButton}>
+                        <ThemedText variant="bodySm" tone="info">Add now</ThemedText>
+                        <CaretDown size={14} color={theme.colors.info} weight="bold" />
+                      </Pressable>
+                    </View>
+                    <View style={[styles.formBlock, { borderTopWidth: 0, paddingTop: 12 }]}>
+                      <View style={styles.proofInputRow}>
+                        <Pressable
+                          onPress={() => uploadProof.mutate()}
+                          style={[styles.proofInputCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
+                        >
+                          <Paperclip size={18} color={theme.colors.inkMuted} weight="duotone" />
+                          <View style={{ flex: 1, gap: 2 }}>
+                            <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>{proofAttachment ? proofAttachment.name : "Upload screenshot / PDF"}</ThemedText>
+                            <ThemedText variant="caption" tone="muted" numberOfLines={1}>JPG, PNG or PDF (max 5 MB)</ThemedText>
+                          </View>
+                        </Pressable>
+                      </View>
+                      <InputField label="UTR or UPI reference" value={utrText} onChangeText={setUtrText} autoCapitalize="characters" Icon={Receipt} />
                       <Button
                         label="Submit proof"
                         onPress={() => submitProof.mutate()}
@@ -1018,70 +1169,61 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       </Modal>
 
       <View style={styles.section}>
-        <SectionHeader title="Settlement history" />
+        <View style={styles.historyHeader}>
+          <ThemedText variant="bodyMedium">Settlement history</ThemedText>
+          <Pressable style={styles.viewAllBtn}>
+            <ThemedText variant="bodySm" tone="confirmed">View all</ThemedText>
+            <CaretRight size={14} color={theme.colors.confirmed} weight="bold" />
+          </Pressable>
+        </View>
         {historyQuery.error ? <InlineNotice title="History could not load" body={historyQuery.error.message} tone="owe" /> : null}
         {historyQuery.data?.length ? (
-          <DataSurface>
+          <View style={styles.historyList}>
             {historyQuery.data.map((row) => {
               const rowIsPayee = Boolean(myParticipantId && row.payeeParticipantId === myParticipantId);
               const rowCanConfirm = rowIsPayee && row.paymentMethod !== "cash" && isConfirmableState(row.state);
               const hasProof = Boolean(row.proofAttachmentId || row.proofUrl);
+              const displayLabel = lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement";
+              const initials = displayLabel.slice(0, 1).toUpperCase();
               return (
-                <View key={row.id} style={[styles.historyRow, { borderBottomColor: theme.colors.hairline }]}>
-                  <View style={styles.titleBlock}>
-                    <ThemedText variant="bodyMedium">
-                      {lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement"}
-                    </ThemedText>
-                    <ThemedText variant="bodySm" tone="muted">
-                      {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Settlement intent"}
-                    </ThemedText>
-                    {row.state === "rejected" && row.rejectionReason ? (
-                      <ThemedText variant="bodySm" tone="owe">
-                        Rejected: {row.rejectionReason}
+                <DataSurface key={row.id}>
+                  <View style={styles.historyRow}>
+                    <View style={[styles.historyAvatar, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
+                      <ThemedText variant="caption" tone="confirmed">{initials}</ThemedText>
+                    </View>
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium" numberOfLines={1}>{displayLabel}</ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        {row.createdAt ? new Date(row.createdAt).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', year: 'numeric' }) : ""}
+                        {row.createdAt ? `, ${new Date(row.createdAt).toLocaleTimeString("en-GB", { hour: '2-digit', minute: '2-digit' })}` : ""}
+                        {row.paymentMethod ? ` • ${row.paymentMethod.toUpperCase()}` : ""}
                       </ThemedText>
-                    ) : null}
-                    {row.state === "disputed" && row.rejectionReason ? (
-                      <ThemedText variant="bodySm" tone="owe">
-                        Dispute: {row.rejectionReason}
-                      </ThemedText>
-                    ) : null}
-                    {rowCanConfirm ? (
-                      <Button
-                        label={intent?.id === row.id ? "Reviewing above" : "Review"}
-                        size="compact"
-                        variant="secondary"
-                        onPress={() => setIntent(row)}
-                        style={styles.historyReviewButton}
-                      />
-                    ) : null}
+                      {row.state === "rejected" && row.rejectionReason ? (
+                        <ThemedText variant="bodySm" tone="owe">Rejected: {row.rejectionReason}</ThemedText>
+                      ) : null}
+                      {row.state === "disputed" && row.rejectionReason ? (
+                        <ThemedText variant="bodySm" tone="owe">Dispute: {row.rejectionReason}</ThemedText>
+                      ) : null}
+                      {rowCanConfirm ? (
+                        <Button
+                          label={intent?.id === row.id ? "Reviewing above" : "Review"}
+                          size="compact"
+                          variant="secondary"
+                          onPress={() => setIntent(row)}
+                          style={styles.historyReviewButton}
+                        />
+                      ) : null}
+                    </View>
+                    <View style={styles.trailing}>
+                      <ThemedText variant="title" style={{ fontSize: 15 }}>{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
+                      <StatusPill state={row.state} />
+                    </View>
+                    <CaretRight size={16} color={theme.colors.inkMuted} />
                   </View>
-                  <View style={styles.trailing}>
-                    {hasProof ? (
-                      <Pressable
-                        onPress={() => void openProof(row)}
-                        disabled={proofLoading}
-                        accessibilityRole="button"
-                        accessibilityLabel="View payment proof"
-                        hitSlop={8}
-                        style={({ pressed }) => [
-                          styles.proofIconButton,
-                          {
-                            borderColor: theme.colors.hairline,
-                            backgroundColor: theme.colors.canvas,
-                            opacity: proofLoading || pressed ? 0.7 : 1
-                          }
-                        ]}
-                      >
-                        <ImageSquare size={18} color={theme.colors.inkMuted} weight="duotone" />
-                      </Pressable>
-                    ) : null}
-                    <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
-                    <StatusPill state={row.state} />
-                  </View>
-                </View>
+                </DataSurface>
               );
             })}
-          </DataSurface>
+          </View>
         ) : (
           <EmptyState title="No settlement history" body="UPI app opens, proofs, confirmations, and postings will appear here." />
         )}
@@ -1089,9 +1231,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
       {createIntent.error ? <InlineNotice title="Intent failed" body={createIntent.error.message} tone="owe" /> : null}
       {handoffError ? <InlineNotice title="UPI handoff unavailable" body={handoffError} tone="pending" /> : null}
-      {intent?.upiUri ? (
-        <InlineNotice title="UPI fallback" body="If app handoff is unavailable on this simulator/device, scan the QR from a UPI app." tone="info" />
-      ) : null}
+
       {uploadProof.error ? <InlineNotice title="Attachment failed" body={uploadProof.error.message} tone="owe" /> : null}
       {submitProof.error ? <InlineNotice title="Proof failed" body={submitProof.error.message} tone="owe" /> : null}
     </Screen>
@@ -1101,12 +1241,30 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: 12
+    gap: 12,
+    marginBottom: 4
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  titleSection: {
+    gap: 2,
+    marginBottom: 8
+  },
+  secureLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
   },
   section: {
-    gap: 12
+    gap: 12,
+    marginTop: 12
   },
   formBlock: {
     gap: 14,
@@ -1115,13 +1273,77 @@ const styles = StyleSheet.create({
   amountBlock: {
     gap: 6
   },
+  methodRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  methodCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10
+  },
+  methodIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  methodCopy: {
+    flex: 1,
+    gap: 2
+  },
+  securityBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14
+  },
+  securityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  suggestionAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  upiIdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14
+  },
+  upiIdIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  footerNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 4
+  },
   suggestion: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     padding: 14,
-    borderBottomWidth: 1,
-    borderWidth: 1
+    borderWidth: 1,
+    borderRadius: 14
   },
   titleBlock: {
     flex: 1,
@@ -1134,6 +1356,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8
   },
+  upiHandoffHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    paddingBottom: 0
+  },
+  upiHandoffIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
   handoffRow: {
     flexDirection: "row",
     gap: 12,
@@ -1141,22 +1377,21 @@ const styles = StyleSheet.create({
   },
   appRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8
   },
   upiApp: {
-    minWidth: 88,
-    minHeight: 72,
+    flex: 1,
+    aspectRatio: 1,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    padding: 10
+    gap: 8,
+    padding: 8
   },
   upiBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -1167,9 +1402,74 @@ const styles = StyleSheet.create({
   otherAppsBlock: {
     gap: 10
   },
+  qrSection: {
+    gap: 12,
+    marginTop: 8
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1
+  },
+  qrRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16
+  },
   qrBox: {
-    alignSelf: "center",
-    padding: 14
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qrLogoOverlay: {
+    position: "absolute",
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  qrActions: {
+    flex: 1,
+    gap: 10
+  },
+  proofHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    paddingBottom: 0
+  },
+  proofHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  addNowButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  proofInputRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  proofInputCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1
   },
   actionRow: {
     flexDirection: "row",
@@ -1183,6 +1483,27 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4
+  },
+  viewAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  historyList: {
+    gap: 10
+  },
+  historyAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -1220,8 +1541,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
-    borderBottomWidth: 1
+    padding: 14
   },
   trailing: {
     alignItems: "flex-end",
