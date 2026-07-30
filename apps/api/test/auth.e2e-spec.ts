@@ -18,6 +18,8 @@ import { DevOtpProvider } from '../src/modules/auth/providers/dev-otp.provider';
 import { DevEmailProvider } from '../src/modules/auth/providers/dev-email.provider';
 import { UserEntity } from '../src/modules/users/entities/user.entity';
 import { UserPreferencesEntity } from '../src/modules/users/entities/user-preferences.entity';
+import { ContactAliasEntity } from '@splitsaathi/db';
+import { ParticipantEntity } from '../src/modules/groups/entities/participant.entity';
 import { UsersService } from '../src/modules/users/users.service';
 import { InMemoryRepository } from './support/in-memory-repository';
 
@@ -62,6 +64,8 @@ describe('auth endpoints', () => {
         { provide: getRepositoryToken(EmailCredentialEntity), useValue: emailCredentialRepository },
         { provide: getRepositoryToken(EmailOtpChallengeEntity), useValue: emailChallengeRepository },
         { provide: getRepositoryToken(UserPreferencesEntity), useValue: userPreferencesRepository },
+        { provide: getRepositoryToken(ContactAliasEntity), useValue: new InMemoryRepository<ContactAliasEntity>() },
+        { provide: getRepositoryToken(ParticipantEntity), useValue: new InMemoryRepository<ParticipantEntity>() },
         { provide: getRepositoryToken(AttachmentEntity), useValue: attachmentRepository }
       ]
     }).compile();

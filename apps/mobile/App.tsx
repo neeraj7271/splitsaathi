@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Linking, StyleSheet, View } from "react-native";
+import { AppState, BackHandler, Linking, StyleSheet, View } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { House, Scales, UsersThree, UserCircle } from "phosphor-react-native";
@@ -18,6 +18,7 @@ import { restoreSession } from "./src/auth/session";
 import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
 import { configurePushNotifications } from "./src/notifications/configurePush";
+import { AllExpensesScreen } from "./src/screens/AllExpensesScreen";
 import { AuditScreen } from "./src/screens/AuditScreen";
 import { BalancesScreen } from "./src/screens/BalancesScreen";
 import { ExpenseEntryScreen } from "./src/screens/ExpenseEntryScreen";
@@ -161,10 +162,19 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     if (!authenticated) {
       return;
     }
-    // Refresh FCM token on every authenticated session (not only onboarding).
-    void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
-      registerPushIfPossible().catch(() => undefined)
-    );
+    const syncPush = () => {
+      void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
+        registerPushIfPossible().catch(() => undefined)
+      );
+    };
+
+    // Refresh FCM token on every authenticated session and when app becomes active.
+    syncPush();
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        syncPush();
+      }
+    });
 
     let receivedSub: { remove: () => void } | undefined;
     let responseSub: { remove: () => void } | undefined;
@@ -185,6 +195,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     });
 
     return () => {
+      appStateSub.remove();
       receivedSub?.remove();
       responseSub?.remove();
     };
@@ -320,6 +331,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       {route === "balances" ? <BalancesScreen navigation={navigation} /> : null}
       {route === "settlement" ? <SettlementScreen navigation={navigation} /> : null}
       {route === "audit" ? <AuditScreen navigation={navigation} /> : null}
+      {route === "allExpenses" ? <AllExpensesScreen navigation={navigation} /> : null}
       {route === "recurring" ? <RecurringScreen navigation={navigation} /> : null}
       {route === "importExport" ? <ImportExportScreen navigation={navigation} /> : null}
       {route === "offline" ? <OfflineSyncScreen navigation={navigation} /> : null}

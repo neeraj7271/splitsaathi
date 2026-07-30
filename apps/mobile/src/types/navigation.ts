@@ -8,6 +8,7 @@ export type AppRoute =
   | "balances"
   | "settlement"
   | "audit"
+  | "allExpenses"
   | "recurring"
   | "importExport"
   | "offline"

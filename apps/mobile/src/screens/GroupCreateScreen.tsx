@@ -5,8 +5,10 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   AddressBook,
+  CaretDown,
   Clock,
   ListBullets,
+  QrCode,
   SquaresFour,
   UserPlus,
   UsersThree
@@ -23,6 +25,7 @@ import { groupTypeAccent, groupTypeIcon } from "../components/GroupTypeAvatar";
 import { GroupSummaryCard } from "../components/GroupSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
+import { QRScannerModal } from "../components/QRScannerModal";
 import { Screen } from "../components/Screen";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { ThemedText } from "../components/ThemedText";
@@ -80,6 +83,7 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   const [availableContacts, setAvailableContacts] = useState<SyncedContact[]>([]);
   const [contactError, setContactError] = useState<string | null>(null);
   const [groupImage, setGroupImage] = useState<{ uri: string; mimeType: string; fileName?: string } | null>(null);
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const createGroup = useMutation({
@@ -101,6 +105,7 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
     },
     onSuccess: (group) => {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
       navigation.setSelectedGroupId(group.id);
       navigation.go("groupDetail");
     }
@@ -182,25 +187,54 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
             {activeTab === "create" ? "Create a new group" : "Manage your groups and balances."}
           </ThemedText>
         </View>
-        <Pressable
-          onPress={() => navigation.go("importExport")}
-          accessibilityRole="button"
-          accessibilityLabel="Import CSV"
-          style={[
-            styles.importChip,
-            {
-              borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
-              backgroundColor: theme.colors.surface,
-              borderRadius: theme.radius.full
-            }
-          ]}
-        >
-          <UserPlus size={16} color={theme.colors.info} weight="duotone" />
-          <ThemedText variant="caption" tone="info">
-            Import CSV
-          </ThemedText>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <Pressable
+            onPress={() => setShowQrScanner(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Scan QR to Join"
+            style={[
+              styles.importChip,
+              {
+                borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
+                backgroundColor: theme.colors.surface,
+                borderRadius: theme.radius.full
+              }
+            ]}
+          >
+            <QrCode size={16} color={theme.colors.info} weight="duotone" />
+            <ThemedText variant="caption" tone="info">
+              Scan QR
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => navigation.go("importExport")}
+            accessibilityRole="button"
+            accessibilityLabel="Import CSV"
+            style={[
+              styles.importChip,
+              {
+                borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
+                backgroundColor: theme.colors.surface,
+                borderRadius: theme.radius.full
+              }
+            ]}
+          >
+            <UserPlus size={16} color={theme.colors.info} weight="duotone" />
+            <ThemedText variant="caption" tone="info">
+              Import CSV
+            </ThemedText>
+          </Pressable>
+        </View>
       </View>
+
+      <QRScannerModal
+        visible={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onJoined={(groupId) => {
+          navigation.setSelectedGroupId(groupId);
+          navigation.go("groupDetail");
+        }}
+      />
 
       <SegmentedControl value={activeTab} options={tabOptions} onChange={setActiveTab} />
 
@@ -499,7 +533,12 @@ function GroupSection({
   groups: GroupSummary[];
   onOpenGroup: (groupId: string) => void;
 }) {
+  const theme = useTheme();
+  const [showAll, setShowAll] = useState(false);
+  const LIMIT = 5;
   const countLabel = `${groups.length} group${groups.length === 1 ? "" : "s"}`;
+  const visibleGroups = showAll ? groups : groups.slice(0, LIMIT);
+  const hasMore = groups.length > LIMIT;
 
   return (
     <View style={styles.listSection}>
@@ -510,7 +549,7 @@ function GroupSection({
         </ThemedText>
       </View>
       <View style={styles.groupStack}>
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <GroupSummaryCard
             key={group.id}
             group={group}
@@ -519,6 +558,23 @@ function GroupSection({
           />
         ))}
       </View>
+      {hasMore ? (
+        <Pressable
+          onPress={() => setShowAll((prev) => !prev)}
+          style={[
+            styles.seeAllButton,
+            {
+              borderColor: theme.colors.hairline,
+              backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+            }
+          ]}
+        >
+          <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+            {showAll ? "Show less" : `See all (${groups.length})`}
+          </ThemedText>
+          <CaretDown size={14} color={theme.colors.info} style={{ transform: [{ rotate: showAll ? "180deg" : "0deg" }] }} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -672,5 +728,16 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     paddingTop: 4,
     borderTopWidth: 1
+  },
+  seeAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4
   }
 });

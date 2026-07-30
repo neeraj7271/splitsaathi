@@ -35,6 +35,7 @@ import { ContactPicker } from "../components/ContactPicker";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { InlineNotice } from "../components/InlineNotice";
+import { QRScannerModal } from "../components/QRScannerModal";
 import { SpendingCharts } from "../components/SpendingCharts";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
@@ -306,6 +307,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
       queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
       queryClient.invalidateQueries({ queryKey: ["groups"] });
       queryClient.invalidateQueries({ queryKey: ["balances", selectedGroupId] });
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
     },
     onError: (error) => {
       setMembershipActionError(apiErrorMessage(error, "Could not remove member."));
@@ -381,6 +383,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["group", selectedGroupId] });
       queryClient.invalidateQueries({ queryKey: ["groups"] });
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
     }
   });
 
@@ -746,25 +749,54 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                     ))}
                   </DataSurface>
                   {canSeeAllActivity ? (
-                    <Button
-                      label="See all"
-                      variant="secondary"
-                      loading={activityQuery.isFetchingNextPage}
+                    <Pressable
                       onPress={() => {
                         setShowAllActivity(true);
                         if (activityQuery.hasNextPage) {
                           void activityQuery.fetchNextPage();
                         }
                       }}
-                    />
+                      style={[
+                        styles.seeAllButton,
+                        {
+                          borderColor: theme.colors.hairline,
+                          backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+                        }
+                      ]}
+                    >
+                      <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+                        See all ({enrichedActivity.length})
+                      </ThemedText>
+                      <CaretDown size={14} color={theme.colors.info} />
+                    </Pressable>
                   ) : null}
-                  {showAllActivity && activityQuery.hasNextPage ? (
-                    <Button
-                      label="Load more"
-                      variant="secondary"
-                      onPress={() => void activityQuery.fetchNextPage()}
-                      loading={activityQuery.isFetchingNextPage}
-                    />
+                  {showAllActivity ? (
+                    <Pressable
+                      onPress={() => {
+                        if (activityQuery.hasNextPage) {
+                          void activityQuery.fetchNextPage();
+                        } else {
+                          setShowAllActivity(false);
+                        }
+                      }}
+                      style={[
+                        styles.seeAllButton,
+                        {
+                          borderColor: theme.colors.hairline,
+                          backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08),
+                          marginTop: 8
+                        }
+                      ]}
+                    >
+                      <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+                        {activityQuery.hasNextPage ? "Load more events" : "Show less"}
+                      </ThemedText>
+                      <CaretDown
+                        size={14}
+                        color={theme.colors.info}
+                        style={{ transform: [{ rotate: activityQuery.hasNextPage ? "0deg" : "180deg" }] }}
+                      />
+                    </Pressable>
                   ) : null}
                 </>
               ) : (
@@ -1351,7 +1383,7 @@ function PeopleManagement({
             <Button label="Add from contacts" variant="soft" Icon={AddressBook} onPress={onAddFromContacts} />
             <View style={styles.inviteActions}>
               <Button
-                label={inviteUrl ? "Refresh link" : "Create link"}
+                label={createInvitePending ? "Loading..." : inviteUrl ? "New Link" : "Create Link"}
                 variant="secondary"
                 tone="info"
                 Icon={LinkSimple}
@@ -1635,6 +1667,17 @@ const styles = StyleSheet.create({
   logoActions: {
     flex: 1,
     gap: 8
+  },
+  seeAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4
   }
 });
 

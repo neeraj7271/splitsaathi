@@ -4,23 +4,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Bell,
+  BellRinging,
   CaretDown,
   CaretRight,
+  Coins,
   DotsThreeVertical,
   Handshake,
-  BellRinging
+  UsersThree
 } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
 import { useAppDialog } from "../components/AppDialog";
-import { Button } from "../components/Button";
 import { EmptyState } from "../components/EmptyState";
 import { friendAccent } from "../components/FriendSummaryCard";
-import { GroupTypeAvatar } from "../components/GroupTypeAvatar";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
 import { ScreenBackButton } from "../components/ScreenBackButton";
+import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { colorWithAlpha, useTheme } from "../theme";
@@ -30,6 +32,22 @@ import { formatMoney, formatSignedMoney } from "../utils/money";
 
 const GROUPS_PREVIEW = 3;
 const TRANSACTIONS_PREVIEW = 5;
+
+const GROUP_PALETTE = [
+  { bg: "#F3E8FF", icon: "#9333EA" },
+  { bg: "#EFF6FF", icon: "#2563EB" },
+  { bg: "#FFF7ED", icon: "#EA580C" },
+  { bg: "#ECFDF5", icon: "#059669" },
+  { bg: "#FDF2F8", icon: "#DB2777" }
+];
+
+const GROUP_PALETTE_DARK = [
+  { bg: "#2E1065", icon: "#C084FC" },
+  { bg: "#1E3A8A", icon: "#60A5FA" },
+  { bg: "#7C2D12", icon: "#FB923C" },
+  { bg: "#064E3B", icon: "#34D399" },
+  { bg: "#831843", icon: "#F472B6" }
+];
 
 function balanceHeadline(friend: FriendSummary) {
   if (friend.netMinor > 0) {
@@ -150,14 +168,14 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
   return (
     <Screen refreshing={detailQuery.isRefetching} onRefresh={() => void detailQuery.refetch()}>
       <View style={styles.topBar}>
-        <ScreenBackButton navigation={navigation} label="Back" fallbackRoute="friends" />
+        <ScreenBackButton navigation={navigation} label="" fallbackRoute="friends" />
         <Pressable
           onPress={() => setMenuOpen(true)}
-          style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
+          style={[styles.navIconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
           accessibilityRole="button"
           accessibilityLabel="Friend options"
         >
-          <DotsThreeVertical size={18} color={theme.colors.ink} weight="bold" />
+          <DotsThreeVertical size={20} color={theme.colors.ink} weight="bold" />
         </Pressable>
       </View>
 
@@ -166,121 +184,171 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
 
       {friend ? (
         <>
-          <View style={styles.profileRow}>
+          <View style={styles.profileHeader}>
             <UserAvatar
               displayName={friend.displayName}
               avatarUrl={friend.avatarUrl}
-              size={64}
+              size={76}
               accentColor={accent}
             />
-            <View style={styles.profileCopy}>
-              <ThemedText variant="title" numberOfLines={1}>
+            <View style={styles.profileMeta}>
+              <ThemedText variant="title" style={styles.profileName}>
                 {friend.displayName}
               </ThemedText>
-              <ThemedText variant="bodySm" tone="muted">
+              <ThemedText variant="bodySm" tone="muted" style={styles.profileSubtitle}>
                 {friend.sharedGroupCount} shared group{friend.sharedGroupCount === 1 ? "" : "s"}
               </ThemedText>
+              <View style={styles.profileActions}>
+                {friend.netMinor > 0 ? (
+                  <Pressable
+                    onPress={() => remind.mutate()}
+                    disabled={remind.isPending}
+                    style={[
+                      styles.actionPill,
+                      {
+                        borderColor: "#8B5CF6",
+                        backgroundColor: theme.mode === "dark" ? "#2E1065" : "#F5F3FF"
+                      }
+                    ]}
+                  >
+                    <Bell size={16} color="#8B5CF6" weight="duotone" />
+                    <ThemedText variant="bodySm" style={{ color: "#8B5CF6", fontWeight: "600" }}>
+                      {remind.isPending ? "Sending..." : "Remind"}
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={openSettle}
+                  style={[
+                    styles.actionPill,
+                    {
+                      borderColor: "#059669",
+                      backgroundColor: theme.mode === "dark" ? "#064E3B" : "#ECFDF5"
+                    }
+                  ]}
+                >
+                  <Handshake size={16} color="#059669" weight="duotone" />
+                  <ThemedText variant="bodySm" style={{ color: "#059669", fontWeight: "600" }}>
+                    Settle up
+                  </ThemedText>
+                </Pressable>
+              </View>
             </View>
-            <Button
-              label="Settle up"
-              variant="secondary"
-              tone="confirmed"
-              size="compact"
-              Icon={Handshake}
-              onPress={openSettle}
-              style={styles.settleButton}
-            />
           </View>
 
           <View
             style={[
-              styles.balanceCard,
+              styles.heroCard,
               {
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.hairline,
-                borderRadius: theme.radius.md,
-                borderWidth: theme.mode === "light" ? 0 : 1
-              },
-              theme.cardShadow
+                backgroundColor: theme.mode === "dark" ? "#064E3B20" : "#F0FAF5",
+                borderColor: theme.mode === "dark" ? "#064E3B50" : "#E6F7ED"
+              }
             ]}
           >
-            <ThemedText variant="bodySm" tone="muted" align="center">
-              {balanceHeadline(friend)}
-            </ThemedText>
-            <ThemedText
-              variant="balanceHero"
-              tone={friend.netMinor > 0 ? "receive" : friend.netMinor < 0 ? "owe" : "confirmed"}
-              align="center"
-            >
-              {friend.netMinor === 0
-                ? formatMoney(0, friend.currencyCode)
-                : formatSignedMoney(friend.netMinor, friend.currencyCode)}
-            </ThemedText>
-            <ThemedText variant="caption" tone="muted" align="center">
-              {balanceSubcopy(friend)}
-            </ThemedText>
+            <View style={styles.heroCopy}>
+              <ThemedText variant="bodySm" tone="muted" style={styles.heroLabel}>
+                {balanceHeadline(friend)}
+              </ThemedText>
+              <ThemedText
+                variant="balanceHero"
+                style={[
+                  styles.heroAmount,
+                  {
+                    color: friend.netMinor > 0 ? "#10B981" : friend.netMinor < 0 ? theme.colors.owe : theme.colors.confirmed
+                  }
+                ]}
+              >
+                {friend.netMinor === 0
+                  ? formatMoney(0, friend.currencyCode)
+                  : formatSignedMoney(friend.netMinor, friend.currencyCode)}
+              </ThemedText>
+              <ThemedText variant="bodySm" tone="muted" style={styles.heroSubtext}>
+                {balanceSubcopy(friend)}
+              </ThemedText>
+            </View>
+            <View style={styles.heroGraphic}>
+              <View style={[styles.graphicGlow, { backgroundColor: theme.mode === "dark" ? "#065F46" : "#A7F3D0" }]}>
+                <Coins size={46} color="#059669" weight="duotone" />
+              </View>
+            </View>
           </View>
 
           <View style={styles.section}>
-            <ThemedText variant="bodyMedium">Shared groups</ThemedText>
+            <SectionHeader
+              title="Shared groups"
+              action={
+                friend.sharedGroups.length > 0 ? (
+                  <Pressable onPress={() => setShowAllGroups((prev) => !prev)}>
+                    <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
+                      View all ({friend.sharedGroups.length})
+                    </ThemedText>
+                  </Pressable>
+                ) : null
+              }
+            />
             {friend.sharedGroups.length ? (
               <>
                 <View style={styles.stack}>
-                  {visibleGroups.map((group) => (
-                    <Pressable
-                      key={group.groupId}
-                      onPress={() => openGroup(group.groupId)}
-                      style={[
-                        styles.listCard,
-                        {
-                          backgroundColor: theme.colors.surface,
-                          borderColor: theme.colors.hairline,
-                          borderRadius: theme.radius.md,
-                          borderWidth: theme.mode === "light" ? 0 : 1
-                        },
-                        theme.cardShadow
-                      ]}
-                    >
-                      <GroupTypeAvatar groupType={group.groupType} imageUrl={group.imageUrl} size={44} />
-                      <View style={styles.cardCopy}>
-                        <ThemedText variant="bodyMedium" numberOfLines={1}>
-                          {group.groupName}
-                        </ThemedText>
-                        <ThemedText variant="bodySm" tone="muted">
-                          Tap to open group
-                        </ThemedText>
-                      </View>
-                      <ThemedText
-                        variant="amountSm"
-                        tone={group.pairNetMinor >= 0 ? "receive" : "owe"}
-                        align="right"
+                  {visibleGroups.map((group, idx) => {
+                    const palette = (theme.mode === "dark" ? GROUP_PALETTE_DARK : GROUP_PALETTE)[idx % GROUP_PALETTE.length];
+                    return (
+                      <Pressable
+                        key={group.groupId}
+                        onPress={() => openGroup(group.groupId)}
+                        style={[
+                          styles.listCard,
+                          {
+                            backgroundColor: theme.colors.surface,
+                            borderColor: theme.colors.hairline,
+                            borderRadius: theme.radius.md,
+                            borderWidth: theme.mode === "light" ? 0 : 1
+                          },
+                          theme.cardShadow
+                        ]}
                       >
-                        {group.pairNetMinor === 0
-                          ? formatMoney(0, group.currencyCode)
-                          : formatSignedMoney(group.pairNetMinor, group.currencyCode)}
-                      </ThemedText>
-                      <CaretRight size={16} color={theme.colors.confirmed} weight="bold" />
-                    </Pressable>
-                  ))}
+                        <View style={[styles.groupIconBox, { backgroundColor: palette.bg }]}>
+                          <UsersThree size={22} color={palette.icon} weight="duotone" />
+                        </View>
+                        <View style={styles.cardCopy}>
+                          <ThemedText variant="bodyMedium" numberOfLines={1} style={{ fontWeight: "600" }}>
+                            {group.groupName}
+                          </ThemedText>
+                          <ThemedText variant="bodySm" tone="muted">
+                            Tap to open group
+                          </ThemedText>
+                        </View>
+                        <ThemedText
+                          variant="amountSm"
+                          tone={group.pairNetMinor >= 0 ? "receive" : "owe"}
+                          align="right"
+                          style={{ fontWeight: "600", color: group.pairNetMinor >= 0 ? "#10B981" : theme.colors.owe }}
+                        >
+                          {group.pairNetMinor === 0
+                            ? formatMoney(0, group.currencyCode)
+                            : formatSignedMoney(group.pairNetMinor, group.currencyCode)}
+                        </ThemedText>
+                        <CaretRight size={16} color="#10B981" weight="bold" />
+                      </Pressable>
+                    );
+                  })}
                 </View>
                 {friend.sharedGroups.length > GROUPS_PREVIEW ? (
                   <Pressable
                     onPress={() => setShowAllGroups((value) => !value)}
                     style={[
-                      styles.viewAll,
+                      styles.viewAllPill,
                       {
                         backgroundColor: theme.colors.surface,
-                        borderColor: theme.colors.hairline,
-                        borderRadius: theme.radius.full
+                        borderColor: theme.colors.hairline
                       }
                     ]}
                   >
-                    <ThemedText variant="bodySm" tone="confirmed">
+                    <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
                       {showAllGroups
                         ? "Show fewer groups"
                         : `View all groups (${friend.sharedGroups.length})`}
                     </ThemedText>
-                    <CaretDown size={14} color={theme.colors.confirmed} weight="bold" />
+                    <CaretDown size={14} color="#10B981" weight="bold" />
                   </Pressable>
                 ) : null}
               </>
@@ -290,13 +358,13 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
           </View>
 
           <View style={styles.section}>
-            <ThemedText variant="bodyMedium">Transactions with you</ThemedText>
+            <SectionHeader title="Transactions with you" />
             {transactions.length ? (
               <>
                 <View style={styles.stack}>
                   {visibleTransactions.map((tx) => {
                     const incoming = tx.amountMinor > 0;
-                    const iconColor = incoming ? theme.colors.receive : theme.colors.owe;
+                    const iconColor = incoming ? "#10B981" : theme.colors.owe;
                     const Icon = incoming ? ArrowUpRight : ArrowDownLeft;
                     return (
                       <Pressable
@@ -325,7 +393,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                           <Icon size={18} color={iconColor} weight="bold" />
                         </View>
                         <View style={styles.cardCopy}>
-                          <ThemedText variant="bodyMedium" numberOfLines={1}>
+                          <ThemedText variant="bodyMedium" numberOfLines={1} style={{ fontWeight: "600" }}>
                             {tx.description}
                           </ThemedText>
                           <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
@@ -339,10 +407,11 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                           variant="amountSm"
                           tone={tx.amountMinor > 0 ? "receive" : tx.amountMinor < 0 ? "owe" : "muted"}
                           align="right"
+                          style={{ fontWeight: "600", color: tx.amountMinor >= 0 ? "#10B981" : theme.colors.owe }}
                         >
                           {formatSignedMoney(tx.amountMinor, tx.currencyCode)}
                         </ThemedText>
-                        <CaretRight size={16} color={theme.colors.confirmed} weight="bold" />
+                        <CaretRight size={16} color="#10B981" weight="bold" />
                       </Pressable>
                     );
                   })}
@@ -351,18 +420,17 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                   <Pressable
                     onPress={() => setShowAllTransactions((value) => !value)}
                     style={[
-                      styles.viewAll,
+                      styles.viewAllPill,
                       {
                         backgroundColor: theme.colors.surface,
-                        borderColor: theme.colors.hairline,
-                        borderRadius: theme.radius.full
+                        borderColor: theme.colors.hairline
                       }
                     ]}
                   >
-                    <ThemedText variant="bodySm" tone="confirmed">
+                    <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
                       {showAllTransactions ? "Show fewer transactions" : "View all transactions"}
                     </ThemedText>
-                    <CaretDown size={14} color={theme.colors.confirmed} weight="bold" />
+                    <CaretDown size={14} color="#10B981" weight="bold" />
                   </Pressable>
                 ) : null}
               </>
@@ -422,37 +490,91 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    marginBottom: 4
   },
   navIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center"
   },
-  profileRow: {
+  profileHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12
+    gap: 14,
+    paddingVertical: 2,
+    marginBottom: 12
   },
-  profileCopy: {
+  profileMeta: {
     flex: 1,
-    gap: 4,
-    minWidth: 0
+    gap: 2
   },
-  settleButton: {
-    flexShrink: 0
+  profileName: {
+    fontSize: 22,
+    fontWeight: "700"
   },
-  balanceCard: {
+  profileSubtitle: {
+    marginBottom: 6
+  },
+  profileActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  actionPill: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5
+  },
+  heroCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
     paddingVertical: 18,
-    paddingHorizontal: 16
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16
+  },
+  heroCopy: {
+    flex: 1,
+    gap: 4
+  },
+  heroLabel: {
+    fontSize: 14,
+    fontWeight: "500"
+  },
+  heroAmount: {
+    fontSize: 32,
+    fontWeight: "800",
+    letterSpacing: -0.5
+  },
+  heroSubtext: {
+    fontSize: 13,
+    fontWeight: "500"
+  },
+  heroGraphic: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12
+  },
+  graphicGlow: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center"
   },
   section: {
-    gap: 10
+    gap: 12,
+    marginBottom: 16
   },
   stack: {
     gap: 10
@@ -460,28 +582,36 @@ const styles = StyleSheet.create({
   listCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12
+    gap: 12,
+    padding: 14
+  },
+  groupIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  txIcon: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center"
   },
   cardCopy: {
     flex: 1,
     gap: 2,
     minWidth: 0
   },
-  txIcon: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  viewAll: {
-    minHeight: 44,
+  viewAllPill: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 24,
     borderWidth: 1,
-    paddingHorizontal: 14
+    marginTop: 4
   }
 });

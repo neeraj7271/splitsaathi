@@ -60,8 +60,9 @@ export function resolveActorDisplayName(actorId: string | undefined, lookups: Gr
   return undefined;
 }
 
-export function humanizeEventType(eventType: string): string {
-  const spaced = eventType
+export function humanizeEventType(eventType?: string): string {
+  const safeType = typeof eventType === "string" ? eventType : "";
+  const spaced = safeType
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/_/g, " ")
     .trim();
@@ -71,14 +72,18 @@ export function humanizeEventType(eventType: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 
-export function formatActivityTitle(title: string): string {
-  const colonIndex = title.indexOf(": ");
+export function formatActivityTitle(title?: string): string {
+  const safeTitle = typeof title === "string" ? title : "";
+  if (!safeTitle) {
+    return "Activity";
+  }
+  const colonIndex = safeTitle.indexOf(": ");
   if (colonIndex === -1) {
-    return humanizeEventType(title);
+    return humanizeEventType(safeTitle);
   }
 
-  const eventPart = title.slice(0, colonIndex);
-  const detailPart = title.slice(colonIndex + 2);
+  const eventPart = safeTitle.slice(0, colonIndex);
+  const detailPart = safeTitle.slice(colonIndex + 2);
   const looksLikeId = /^[0-9a-f-]{20,}$/i.test(detailPart) || /^[a-z]+-[a-z0-9-]+$/i.test(detailPart);
   if (looksLikeId) {
     return humanizeEventType(eventPart);
@@ -99,7 +104,7 @@ export function formatSettlementHistoryLabel(
 }
 
 export function enrichAuditEntries(entries: AuditEntry[], lookups: GroupDisplayLookups): AuditEntry[] {
-  return entries.map((entry) => ({
+  return (entries ?? []).map((entry) => ({
     ...entry,
     actorName: entry.actorId ? resolveActorDisplayName(entry.actorId, lookups) ?? entry.actorName : entry.actorName,
     summary: entry.summary ? humanizeEventType(entry.summary) : entry.summary,
@@ -112,7 +117,7 @@ export function enrichAuditEntries(entries: AuditEntry[], lookups: GroupDisplayL
 }
 
 export function enrichBalanceRows(balances: BalanceRow[], lookups: GroupDisplayLookups): BalanceRow[] {
-  return balances.map((row) => ({
+  return (balances ?? []).map((row) => ({
     ...row,
     displayName: resolveParticipantDisplayName(row.participantId, lookups) ?? row.displayName ?? "Unknown participant"
   }));
@@ -123,7 +128,7 @@ function participantLabel(participantId: string | undefined, lookups: GroupDispl
 }
 
 export function participantList(ids: string[], lookups: GroupDisplayLookups): string {
-  const names = ids.map((id) => participantLabel(id, lookups)).filter(Boolean);
+  const names = (ids ?? []).map((id) => participantLabel(id, lookups)).filter(Boolean);
   if (!names.length) {
     return "participants";
   }
@@ -136,8 +141,11 @@ export function participantList(ids: string[], lookups: GroupDisplayLookups): st
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-export function replaceParticipantIds(text: string, lookups: GroupDisplayLookups): string {
-  let next = text;
+export function replaceParticipantIds(text?: string, lookups?: GroupDisplayLookups): string {
+  let next = typeof text === "string" ? text : "";
+  if (!lookups) {
+    return next;
+  }
   // Replace longer IDs first so partial overlaps cannot break names.
   const ids = [...lookups.participantById.keys()].sort((left, right) => right.length - left.length);
   for (const participantId of ids) {
@@ -159,10 +167,11 @@ export function enrichActivityRows(
   lookups: GroupDisplayLookups,
   groupName?: string
 ): ActivityRowDto[] {
-  return rows.map((row) => {
+  return (rows ?? []).map((row) => {
     const context = row.context ?? {};
     const actor = resolveActorDisplayName(row.actorId, lookups);
-    const description = typeof context.description === "string" ? context.description : row.title.replace(/ (added|updated|voided)$/i, "");
+    const safeTitle = typeof row.title === "string" ? row.title : "";
+    const description = typeof context.description === "string" ? context.description : safeTitle.replace(/ (added|updated|voided)$/i, "");
     const payerIds = Array.isArray(context.payerParticipantIds)
       ? context.payerParticipantIds.filter((id): id is string => typeof id === "string")
       : typeof context.payerParticipantId === "string"
@@ -182,7 +191,7 @@ export function enrichActivityRows(
     const reason = typeof context.reason === "string" ? context.reason : undefined;
     const paymentMethod = typeof context.paymentMethod === "string" ? context.paymentMethod : undefined;
 
-    let title = row.title;
+    let title = safeTitle;
     let body = row.body ?? "";
 
     switch (row.activityType) {
@@ -230,10 +239,11 @@ export function enrichActivityRows(
 }
 
 export function enrichSettlementSuggestions(suggestions: SettlementSuggestion[], lookups: GroupDisplayLookups): SettlementSuggestion[] {
-  return suggestions.map((suggestion) => {
+  return (suggestions ?? []).map((suggestion) => {
     const payerName = resolveParticipantDisplayName(suggestion.payerParticipantId, lookups) ?? suggestion.payerName ?? "Unknown payer";
     const payeeName = resolveParticipantDisplayName(suggestion.payeeParticipantId, lookups) ?? suggestion.payeeName ?? "Unknown payee";
-    const explanation = suggestion.explanation
+    const safeExplanation = typeof suggestion.explanation === "string" ? suggestion.explanation : "";
+    const explanation = safeExplanation
       .split(suggestion.payerParticipantId)
       .join(payerName)
       .split(suggestion.payeeParticipantId)

@@ -247,7 +247,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       ...current,
       {
         adjustmentType,
-        label: adjustmentType.replace(/_/g, " "),
+        label: (adjustmentType ?? "").replace(/_/g, " "),
         amount: adjustmentAmount
       }
     ]);
@@ -294,6 +294,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       queryClient.invalidateQueries({ queryKey: ["groupActivity", groupId] }),
       queryClient.invalidateQueries({ queryKey: ["group", groupId] }),
       queryClient.invalidateQueries({ queryKey: ["groups"] }),
+      queryClient.invalidateQueries({ queryKey: ["friends"] }),
+      queryClient.invalidateQueries({ queryKey: ["myMonthlySpend"] }),
       expenseId ? queryClient.invalidateQueries({ queryKey: ["expense", expenseId] }) : Promise.resolve(),
       expenseId ? queryClient.invalidateQueries({ queryKey: ["expenseHistory", expenseId] }) : Promise.resolve(),
       expenseId ? queryClient.invalidateQueries({ queryKey: ["expenseExplanation", expenseId] }) : Promise.resolve()

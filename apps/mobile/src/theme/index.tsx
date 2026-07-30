@@ -109,8 +109,14 @@ export function useTheme() {
   return context;
 }
 
-export function colorWithAlpha(hex: string, alpha: number) {
+export function colorWithAlpha(hex: string | undefined, alpha: number) {
+  if (typeof hex !== "string" || !hex) {
+    return `rgba(99, 102, 241, ${alpha})`;
+  }
   const normalized = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(99, 102, 241, ${alpha})`;
+  }
   const bigint = Number.parseInt(normalized, 16);
   const r = (bigint >> 16) & 255;
   const g = (bigint >> 8) & 255;

@@ -13,7 +13,7 @@ export class BalanceQueryService {
   constructor(private readonly balances: BalanceProjector) {}
 
   getGroupBalances(groupId: string): GroupBalanceSummary {
-    const rows = this.balances.listGroupBalances(groupId);
+    const rows = this.balances.listGroupBalances(groupId, { includeZero: false });
     const totals = new Map<string, number>();
     for (const row of rows) {
       totals.set(row.currencyCode, (totals.get(row.currencyCode) ?? 0) + row.amountMinor);

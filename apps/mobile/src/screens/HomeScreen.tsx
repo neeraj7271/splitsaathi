@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
@@ -6,6 +6,7 @@ import {
   CalendarBlank,
   CloudArrowUp,
   FileArrowDown,
+  QrCode,
   Receipt,
   Scales,
   UserPlus,
@@ -19,6 +20,7 @@ import { BrandLogo } from "../components/BrandLogo";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSummaryCard } from "../components/GroupSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
+import { QRScannerModal } from "../components/QRScannerModal";
 import { QuickActionGrid } from "../components/QuickActionGrid";
 import { Screen } from "../components/Screen";
 import { SectionHeader } from "../components/SectionHeader";
@@ -36,11 +38,28 @@ const HOME_GROUPS_PREVIEW = 5;
 
 export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() });
+  const monthlySpendQuery = useQuery({ queryKey: ["myMonthlySpend"], queryFn: () => apiClient.getMyMonthlySpend() });
   const groups = groupsQuery.data ?? [];
-  const activeGroups = groups.filter((group) => group.state === "active");
+  const activeGroups = useMemo(() => {
+    const active = groups.filter((group) => group.state === "active");
+    return active.sort((a, b) => {
+      const balA = Math.abs(a.netBalanceMinor ?? 0);
+      const balB = Math.abs(b.netBalanceMinor ?? 0);
+      const hasBalA = balA > 0 ? 1 : 0;
+      const hasBalB = balB > 0 ? 1 : 0;
+      if (hasBalA !== hasBalB) {
+        return hasBalB - hasBalA; // Non-zero balance groups first
+      }
+      if (hasBalA && hasBalB) {
+        return balB - balA; // Higher absolute balance first
+      }
+      return new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime();
+    });
+  }, [groups]);
 
   const activityQueries = useQueries({
     queries: activeGroups.slice(0, 6).map((group) => ({
@@ -76,12 +95,14 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const owedGroupCount = activeGroups.filter((group) => (group.netBalanceMinor ?? 0) > 0).length;
   const pendingProofs = groups.reduce((total, group) => total + (group.pendingProofCount ?? 0), 0);
   const friendsCount = friendsQuery.data?.length ?? 0;
-  const monthlySpendMinor = useMemo(() => sumThisMonthSpend(recentActivity), [recentActivity]);
+  const fallbackMonthlySpend = useMemo(() => sumThisMonthSpend(recentActivity), [recentActivity]);
+  const monthlySpendMinor = monthlySpendQuery.data?.amountMinor ?? fallbackMonthlySpend;
 
   const refreshing =
     groupsQuery.isRefetching ||
     profileQuery.isRefetching ||
     friendsQuery.isRefetching ||
+    monthlySpendQuery.isRefetching ||
     activityQueries.some((query) => query.isRefetching);
 
   const displayName = profileQuery.data?.displayName?.trim() || "there";
@@ -93,6 +114,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
       groupsQuery.refetch(),
       profileQuery.refetch(),
       friendsQuery.refetch(),
+      monthlySpendQuery.refetch(),
       ...activityQueries.map((query) => query.refetch())
     ]);
   }
@@ -116,6 +138,14 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
           </View>
         </View>
         <View style={styles.headerRight}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Scan QR to Join"
+            onPress={() => setShowQrScanner(true)}
+            style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }, theme.cardShadow]}
+          >
+            <QrCode size={20} color={theme.colors.info} weight="duotone" />
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Notifications"
@@ -157,7 +187,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
           icon={Wallet}
           tint="#F59E0B"
           label={`${formatMoney(monthlySpendMinor)} This Month`}
-          onPress={() => navigation.go("audit")}
+          onPress={() => navigation.go("allExpenses")}
         />
       </View>
 
@@ -169,6 +199,15 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
           { label: "Sync", icon: CloudArrowUp, tint: "#A855F7", onPress: () => navigation.go("offline") },
           { label: "Import", icon: FileArrowDown, tint: "#F59E0B", onPress: () => navigation.go("importExport") }
         ]}
+      />
+
+      <QRScannerModal
+        visible={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onJoined={(groupId) => {
+          navigation.setSelectedGroupId(groupId);
+          navigation.go("groupDetail");
+        }}
       />
 
       {groupsQuery.error ? <InlineNotice title="Groups could not load" body={groupsQuery.error.message} tone="owe" /> : null}
@@ -319,7 +358,7 @@ function HomeActivityCard({
           {formatActivityTitle(item.title)}
         </ThemedText>
         <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
-          {item.body || humanizeEventType(item.activityType)}
+          {formatActivityBody(item.body) || humanizeEventType(item.activityType)}
           {item.groupName ? ` · ${item.groupName}` : ""}
         </ThemedText>
         <ThemedText variant="caption" tone="faint">
@@ -380,6 +419,10 @@ function formatRelativeDay(iso?: string) {
     return `${diffDays} days ago`;
   }
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function formatActivityBody(body?: string) {
+  return body ?? "";
 }
 
 function formatActivityWhen(iso: string) {

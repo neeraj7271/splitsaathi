@@ -17,6 +17,8 @@ import { NoopObligationTransferProvider } from '../src/modules/groups/providers/
 import { NotificationsService } from '../src/modules/notifications/notifications.service';
 import { UsersService } from '../src/modules/users/users.service';
 import { UserEntity } from '../src/modules/users/entities/user.entity';
+import { UserPreferencesEntity } from '../src/modules/users/entities/user-preferences.entity';
+import { AuthIdentityEntity } from '../src/modules/auth/entities/auth-identity.entity';
 import { InMemoryRepository } from './support/in-memory-repository';
 
 describe('groups endpoints', () => {
@@ -73,6 +75,8 @@ describe('groups endpoints', () => {
           useValue: { create: jest.fn() }
         },
         { provide: getRepositoryToken(UserEntity), useValue: userRepository },
+        { provide: getRepositoryToken(UserPreferencesEntity), useValue: new InMemoryRepository<UserPreferencesEntity>() },
+        { provide: getRepositoryToken(AuthIdentityEntity), useValue: new InMemoryRepository<AuthIdentityEntity>() },
         { provide: getRepositoryToken(GroupEntity), useValue: groupRepository },
         { provide: getRepositoryToken(ParticipantEntity), useValue: participantRepository },
         { provide: getRepositoryToken(GroupMembershipEntity), useValue: membershipRepository },

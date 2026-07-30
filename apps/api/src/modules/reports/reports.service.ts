@@ -23,6 +23,35 @@ export class ReportsService {
     };
   }
 
+  async userMonthlySpend(userId: string) {
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    const endOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+
+    const result = await this.query(
+      `WITH latest_expenses AS (
+         SELECT DISTINCT ON (event.aggregate_id)
+           event.aggregate_id, event.group_id, event.event_type, event.payload
+         FROM event_store event
+         JOIN group_memberships membership ON membership.group_id = event.group_id
+         WHERE membership.user_id = $1
+           AND membership.status IN ('active', 'locked_for_exit')
+           AND event.aggregate_type = 'expense'
+           AND event.event_type IN ('ExpenseCreated', 'ExpenseAdjusted', 'ExpenseVoided')
+         ORDER BY event.aggregate_id, event.version DESC
+       )
+       SELECT COALESCE(SUM((latest_expenses.payload->>'totalAmountMinor')::bigint), 0)::text AS "amountMinor"
+       FROM latest_expenses
+       JOIN groups group_row ON group_row.id = latest_expenses.group_id
+       WHERE latest_expenses.event_type <> 'ExpenseVoided'
+         AND (latest_expenses.payload->>'expenseDate')::date >= $2::date
+         AND (latest_expenses.payload->>'expenseDate')::date < $3::date`,
+      [userId, startOfMonth, endOfMonth]
+    );
+
+    return { amountMinor: parseInt(result[0]?.amountMinor ?? "0", 10) };
+  }
+
   async groupTypeBreakdown(userId: string, range: ReportDateRange) {
     return this.query(
       `WITH latest_expenses AS (

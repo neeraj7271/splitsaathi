@@ -27,7 +27,7 @@ export class FriendsController {
   @ApiOkResponse({ type: FriendDetailDto })
   detail(
     @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('otherUserId', ParseUUIDPipe) otherUserId: string
+    @Param('otherUserId') otherUserId: string
   ): Promise<FriendDetailDto> {
     return this.friendsService.getFriendDetail(currentUser.userId, otherUserId);
   }
@@ -36,7 +36,7 @@ export class FriendsController {
   @ApiOkResponse({ type: RemindFriendResponseDto })
   remind(
     @CurrentUser() currentUser: AuthenticatedUser,
-    @Param('otherUserId', ParseUUIDPipe) otherUserId: string
+    @Param('otherUserId') otherUserId: string
   ): Promise<RemindFriendResponseDto> {
     return this.friendsService.remindFriend(currentUser.userId, otherUserId);
   }

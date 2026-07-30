@@ -3,5 +3,6 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/__tests__", "<rootDir>/src"],
   testMatch: ["**/*.test.ts", "**/*.test.tsx"],
-  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"]
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
+  transformIgnorePatterns: ["node_modules/(?!(react-native|@react-native)/)"]
 };

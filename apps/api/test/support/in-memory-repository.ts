@@ -61,6 +61,18 @@ export class InMemoryRepository<T extends EntityLike> {
     return [...this.rows];
   }
 
+  createQueryBuilder() {
+    const builder = {
+      select: () => builder,
+      addSelect: () => builder,
+      where: () => builder,
+      andWhere: () => builder,
+      groupBy: () => builder,
+      getRawMany: async () => []
+    };
+    return builder;
+  }
+
   private createOne(input: Partial<T>): T {
     const now = new Date();
     return {

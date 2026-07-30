@@ -70,12 +70,24 @@ export class FriendsService {
 
   async getFriendDetail(userId: string, otherUserId: string): Promise<FriendDetailDto> {
     const pairsByFriend = await this.sharedPairsByFriend(userId);
-    const pairs = pairsByFriend.get(otherUserId);
+    let pairs = pairsByFriend.get(otherUserId);
+    let resolvedKey = otherUserId;
+
+    if (!pairs?.length) {
+      for (const [key, pList] of pairsByFriend.entries()) {
+        if (pList.some((row) => row.theirParticipantId === otherUserId)) {
+          pairs = pList;
+          resolvedKey = key;
+          break;
+        }
+      }
+    }
+
     if (!pairs?.length) {
       throw new NotFoundException('Friend not found. You only see people from shared groups.');
     }
-    const friend = await this.buildSummary(userId, otherUserId, pairs);
-    const transactions = await this.listTransactions(userId, otherUserId, pairs);
+    const friend = await this.buildSummary(userId, resolvedKey, pairs);
+    const transactions = await this.listTransactions(userId, resolvedKey, pairs);
     return { friend, transactions };
   }
 
@@ -85,6 +97,11 @@ export class FriendsService {
     }
     if (!this.notifications) {
       throw new ForbiddenException('Notifications are unavailable.');
+    }
+
+    const targetUser = await this.users.findById(otherUserId);
+    if (!targetUser) {
+      throw new BadRequestException("This person hasn't registered an account on SplitSaathi yet. Share the invite link with them to join!");
     }
 
     const detail = await this.getFriendDetail(userId, otherUserId);
@@ -116,48 +133,89 @@ export class FriendsService {
   }
 
   private async sharedPairsByFriend(userId: string): Promise<Map<string, SharedGroupPair[]>> {
-    const myMemberships = await this.memberships.find({
-      where: { userId, status: In(['active', 'locked_for_exit']) }
-    });
+    const [myMemberships, myParticipants] = await Promise.all([
+      this.memberships.find({
+        where: { userId, status: In(['active', 'locked_for_exit']) }
+      }),
+      this.participants.find({ where: { linkedUserId: userId } })
+    ]);
+
+    const myGroupIds = new Set<string>();
+    const myParticipantByGroup = new Map<string, string>();
+
+    for (const m of myMemberships) {
+      myGroupIds.add(m.groupId);
+      if (m.participantId) {
+        myParticipantByGroup.set(m.groupId, m.participantId);
+      }
+    }
+    for (const p of myParticipants) {
+      myGroupIds.add(p.groupId);
+      if (!myParticipantByGroup.has(p.groupId)) {
+        myParticipantByGroup.set(p.groupId, p.id);
+      }
+    }
+
     const map = new Map<string, SharedGroupPair[]>();
-    if (!myMemberships.length) {
+    if (!myGroupIds.size) {
       return map;
     }
 
-    const groupIds = [...new Set(myMemberships.map((row) => row.groupId))];
+    const groupIdsArray = Array.from(myGroupIds);
     const [groups, allMemberships, allParticipants] = await Promise.all([
-      this.groups.find({ where: { id: In(groupIds) } }),
+      this.groups.find({ where: { id: In(groupIdsArray) } }),
       this.memberships.find({
-        where: { groupId: In(groupIds), status: In(['active', 'locked_for_exit']) }
+        where: { groupId: In(groupIdsArray), status: In(['active', 'locked_for_exit']) }
       }),
-      this.participants.find({ where: { groupId: In(groupIds) } })
+      this.participants.find({ where: { groupId: In(groupIdsArray) } })
     ]);
-    const groupById = new Map(groups.map((group) => [group.id, group]));
-    const myParticipantByGroup = new Map(
-      myMemberships.map((row) => [row.groupId, row.participantId])
-    );
 
-    for (const membership of allMemberships) {
-      if (!membership.userId || membership.userId === userId) {
+    for (const group of groups) {
+      const groupMemberships = allMemberships.filter((m) => m.groupId === group.id);
+      const groupParticipants = allParticipants.filter((p) => p.groupId === group.id);
+
+      let myParticipantId = myParticipantByGroup.get(group.id);
+      if (!myParticipantId) {
+        const linkedP = groupParticipants.find((p) => p.linkedUserId === userId);
+        if (linkedP) {
+          myParticipantId = linkedP.id;
+        } else {
+          const myM = groupMemberships.find((m) => m.userId === userId);
+          if (myM?.participantId) {
+            myParticipantId = myM.participantId;
+          }
+        }
+      }
+
+      if (!myParticipantId) {
         continue;
       }
-      const group = groupById.get(membership.groupId);
-      const myParticipantId = myParticipantByGroup.get(membership.groupId);
-      if (!group || !myParticipantId || !membership.participantId || group.state === 'archived') {
-        continue;
+
+      const otherUserMap = new Map<string, string>();
+
+      for (const m of groupMemberships) {
+        if (m.userId && m.userId !== userId && m.participantId) {
+          otherUserMap.set(m.userId, m.participantId);
+        }
       }
-      // Prefer membership participant; fall back to linked participant for same user.
-      let theirParticipantId = membership.participantId;
-      const linked = allParticipants.find(
-        (row) => row.groupId === membership.groupId && row.linkedUserId === membership.userId
-      );
-      if (linked) {
-        theirParticipantId = linked.id;
+
+      for (const p of groupParticipants) {
+        if (p.id !== myParticipantId) {
+          const targetKey = p.linkedUserId ?? p.id;
+          if (targetKey !== userId) {
+            if (!otherUserMap.has(targetKey)) {
+              otherUserMap.set(targetKey, p.id);
+            }
+          }
+        }
       }
-      const list = map.get(membership.userId) ?? [];
-      if (!list.some((row) => row.group.id === group.id)) {
-        list.push({ group, myParticipantId, theirParticipantId });
-        map.set(membership.userId, list);
+
+      for (const [targetId, theirParticipantId] of otherUserMap.entries()) {
+        const list = map.get(targetId) ?? [];
+        if (!list.some((row) => row.group.id === group.id)) {
+          list.push({ group, myParticipantId, theirParticipantId });
+          map.set(targetId, list);
+        }
       }
     }
 
@@ -169,7 +227,29 @@ export class FriendsService {
     otherUserId: string,
     pairs: SharedGroupPair[]
   ): Promise<FriendSummaryDto> {
-    const other = await this.users.findByIdOrThrow(otherUserId);
+    let displayName = 'Friend';
+    let avatarUrl: string | null = null;
+
+    if (otherUserId.startsWith('phone:') || otherUserId.startsWith('name:')) {
+      const participant = await this.participants.findOne({
+        where: { id: pairs[0]?.theirParticipantId }
+      });
+      if (participant) {
+        displayName = participant.displayName;
+      }
+    } else {
+      const otherUser = await this.users.findById(otherUserId);
+      if (otherUser) {
+        displayName = otherUser.displayName;
+        avatarUrl = otherUser.avatarAttachmentId ? `/v1/public/avatars/${otherUser.avatarAttachmentId}` : null;
+      } else {
+        const participant = await this.participants.findOne({ where: { id: otherUserId } });
+        if (participant) {
+          displayName = participant.displayName;
+        }
+      }
+    }
+
     const currencyCode = pairs[0]?.group.baseCurrencyCode ?? 'INR';
     const sharedGroups: FriendSharedGroupDto[] = [];
     let netMinor = 0;
@@ -194,8 +274,8 @@ export class FriendsService {
 
     return {
       otherUserId,
-      displayName: other.displayName,
-      avatarUrl: other.avatarAttachmentId ? `/v1/public/avatars/${other.avatarAttachmentId}` : null,
+      displayName,
+      avatarUrl,
       currencyCode,
       netMinor,
       status: this.statusFor(netMinor, hasHistory),
@@ -215,12 +295,8 @@ export class FriendsService {
         currencyCode: row.currencyCode
       }));
 
-    // Two-person group: my balance is exactly the pairwise net.
-    const memberCount = new Set(rows.map((row) => row.participantId)).size;
-    if (memberCount <= 2) {
-      return (
-        rows.find((row) => row.participantId === pair.myParticipantId)?.amountMinor ?? 0
-      );
+    if (!rows.length) {
+      return 0;
     }
 
     const suggestions = this.optimizer.suggest(rows);
@@ -231,11 +307,16 @@ export class FriendsService {
         (row.payerParticipantId === pair.theirParticipantId &&
           row.payeeParticipantId === pair.myParticipantId)
     );
-    if (!edge) {
-      return 0;
+    if (edge) {
+      return edge.payeeParticipantId === pair.myParticipantId ? edge.amountMinor : -edge.amountMinor;
     }
-    // Positive => friend owes me (I am payee).
-    return edge.payeeParticipantId === pair.myParticipantId ? edge.amountMinor : -edge.amountMinor;
+
+    const idsInRows = new Set(rows.map((r) => r.participantId));
+    if (idsInRows.has(pair.myParticipantId) && idsInRows.has(pair.theirParticipantId) && idsInRows.size === 2) {
+      return rows.find((r) => r.participantId === pair.myParticipantId)?.amountMinor ?? 0;
+    }
+
+    return 0;
   }
 
   private hasPairHistory(pair: SharedGroupPair): boolean {

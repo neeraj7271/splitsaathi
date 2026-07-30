@@ -208,6 +208,7 @@ export interface SettlementSuggestion {
 
 export interface SettlementIntent {
   id: string;
+  settlementIntentId?: string;
   groupId: string;
   payerParticipantId: string;
   payeeParticipantId: string;
@@ -221,6 +222,7 @@ export interface SettlementIntent {
   clientReference?: string;
   expiresAt?: string;
   createdAt?: string;
+  updatedAt?: string;
   proofs?: Array<{ id?: string; attachmentId?: string; utr?: string; submittedAt?: string }>;
   proofAttachmentId?: string;
   proofUrl?: string;

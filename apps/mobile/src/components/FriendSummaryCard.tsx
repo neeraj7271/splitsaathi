@@ -32,7 +32,19 @@ export function friendStatusLabel(friend: FriendSummary) {
   }
 }
 
-export function FriendSummaryCard({ friend, onPress }: { friend: FriendSummary; onPress: () => void }) {
+export function FriendSummaryCard({
+  friend,
+  onPress,
+  onRemind,
+  isReminding = false,
+  isReminded = false
+}: {
+  friend: FriendSummary;
+  onPress: () => void;
+  onRemind?: () => void;
+  isReminding?: boolean;
+  isReminded?: boolean;
+}) {
   const theme = useTheme();
   const accent = friendAccent(friend, theme.colors);
   const settled = friend.netMinor === 0;
@@ -86,11 +98,35 @@ export function FriendSummaryCard({ friend, onPress }: { friend: FriendSummary; 
           </ThemedText>
         </View>
       ) : (
-        <ThemedText variant="amountSm" tone={friend.netMinor > 0 ? "receive" : "owe"} align="right">
-          {friend.netMinor === 0
-            ? formatMoney(0, friend.currencyCode)
-            : formatSignedMoney(friend.netMinor, friend.currencyCode)}
-        </ThemedText>
+        <View style={styles.amountCol}>
+          <ThemedText variant="amountSm" tone={friend.netMinor > 0 ? "receive" : "owe"} align="right">
+            {friend.netMinor === 0
+              ? formatMoney(0, friend.currencyCode)
+              : formatSignedMoney(friend.netMinor, friend.currencyCode)}
+          </ThemedText>
+          {onRemind && friend.status === "owes_you" ? (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                onRemind();
+              }}
+              disabled={isReminding || isReminded}
+              style={[
+                styles.remindBtn,
+                {
+                  backgroundColor: isReminded
+                    ? colorWithAlpha(theme.colors.confirmed, 0.15)
+                    : colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.2 : 0.12),
+                  borderColor: isReminded ? theme.colors.confirmed : theme.colors.info
+                }
+              ]}
+            >
+              <ThemedText variant="caption" tone={isReminded ? "confirmed" : "info"}>
+                {isReminded ? "Reminded" : isReminding ? "Sending..." : "Remind"}
+              </ThemedText>
+            </Pressable>
+          ) : null}
+        </View>
       )}
       <CaretRight size={16} color={theme.colors.confirmed} weight="bold" />
     </Pressable>
@@ -133,5 +169,15 @@ const styles = StyleSheet.create({
   settledPill: {
     paddingHorizontal: 10,
     paddingVertical: 5
+  },
+  amountCol: {
+    alignItems: "flex-end",
+    gap: 4
+  },
+  remindBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1
   }
 });

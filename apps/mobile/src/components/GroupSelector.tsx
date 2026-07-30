@@ -34,7 +34,7 @@ export function GroupSelector({
         const net = group.netBalanceMinor ?? 0;
         const caption = net >= 0 ? "You will get back" : "You owe";
         const amountLabel =
-          net === 0 ? formatMoney(0, group.baseCurrencyCode) : formatSignedMoney(net, group.baseCurrencyCode).replace(/^[+-]/, "");
+          net === 0 ? formatMoney(0, group.baseCurrencyCode) : (formatSignedMoney(net, group.baseCurrencyCode) ?? "").replace(/^[+-]/, "");
 
         return (
           <Pressable

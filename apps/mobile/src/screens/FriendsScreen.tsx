@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, Clock, MagnifyingGlass, SquaresFour, UserPlus } from "phosphor-react-native";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowDownLeft, ArrowUpRight, CaretDown, Clock, MagnifyingGlass, SquaresFour, UserPlus } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
+import { useAppDialog } from "../components/AppDialog";
 import { ActionSheet } from "../components/ActionSheet";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
@@ -31,12 +32,15 @@ const FILTERS: Array<{
   { label: "Owes you", value: "owes_you", Icon: ArrowDownLeft, accent: "receive" }
 ];
 
-const SECTION_PREVIEW = 3;
+const SECTION_PREVIEW = 100;
 const INVITE_MESSAGE =
   "Join me on SplitSaathi — split expenses with friends without the awkwardness. https://play.google.com/store/apps/details?id=in.splitsaathi.mobile";
 
 function matchesFilter(friend: FriendSummary, filter: FriendFilter): boolean {
-  if (filter === "all" || filter === "outstanding") {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "outstanding") {
     return friend.netMinor !== 0;
   }
   if (filter === "you_owe") {
@@ -58,11 +62,35 @@ async function shareInvite() {
 
 export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const [filter, setFilter] = useState<FriendFilter>("all");
   const [search, setSearch] = useState("");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [expandedSettled, setExpandedSettled] = useState(false);
+  const [remindedUserIds, setRemindedUserIds] = useState<Record<string, boolean>>({});
+
   const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() });
+  const remindMutation = useMutation({
+    mutationFn: (targetUserId: string) => apiClient.remindFriend(targetUserId),
+    onSuccess: (_, targetUserId) => {
+      setRemindedUserIds((prev) => ({ ...prev, [targetUserId]: true }));
+      showDialog({
+        title: "Reminder Sent",
+        message: "A payment reminder notification has been delivered.",
+        tone: "success",
+        primaryAction: { label: "OK" }
+      });
+    },
+    onError: (err: Error) => {
+      showDialog({
+        title: "Could not send reminder",
+        message: err.message,
+        tone: "error",
+        primaryAction: { label: "OK" }
+      });
+    }
+  });
+
   const friends = friendsQuery.data ?? [];
   const query = search.trim().toLowerCase();
 
@@ -176,8 +204,6 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
               <FriendSection
                 title="You owe"
                 friends={youOwe}
-                previewCount={SECTION_PREVIEW}
-                onViewAll={() => setFilter("you_owe")}
                 onOpen={openFriend}
               />
             ) : null}
@@ -185,37 +211,23 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
               <FriendSection
                 title="Owes you"
                 friends={owesYou}
-                previewCount={SECTION_PREVIEW}
-                onViewAll={() => setFilter("owes_you")}
                 onOpen={openFriend}
+                onRemind={(friendUserId) => remindMutation.mutate(friendUserId)}
+                remindingUserId={remindMutation.isPending ? remindMutation.variables : undefined}
+                remindedUserIds={remindedUserIds}
               />
             ) : null}
             {settled.length ? (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Settled up"
-                  action={
-                    settled.length > SECTION_PREVIEW ? (
-                      <Pressable onPress={() => setExpandedSettled((value) => !value)} hitSlop={8}>
-                        <ThemedText variant="bodySm" tone="confirmed">
-                          {expandedSettled ? "Show less" : "View all"}
-                        </ThemedText>
-                      </Pressable>
-                    ) : null
-                  }
-                />
-                <View style={styles.stack}>
-                  {settledPreview.map((friend) => (
-                    <FriendSummaryCard key={friend.otherUserId} friend={friend} onPress={() => openFriend(friend.otherUserId)} />
-                  ))}
-                </View>
-              </View>
+              <FriendSection
+                title="Settled up"
+                friends={settled}
+                onOpen={openFriend}
+              />
             ) : null}
             {noExpenses.length ? (
               <FriendSection
                 title="No expenses yet"
                 friends={noExpenses}
-                previewCount={SECTION_PREVIEW}
                 onOpen={openFriend}
               />
             ) : null}
@@ -223,7 +235,14 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
         ) : (
           <View style={styles.stack}>
             {filtered.map((friend) => (
-              <FriendSummaryCard key={friend.otherUserId} friend={friend} onPress={() => openFriend(friend.otherUserId)} />
+              <FriendSummaryCard
+                key={friend.otherUserId}
+                friend={friend}
+                onPress={() => openFriend(friend.otherUserId)}
+                onRemind={() => remindMutation.mutate(friend.otherUserId)}
+                isReminding={remindMutation.isPending && remindMutation.variables === friend.otherUserId}
+                isReminded={Boolean(remindedUserIds[friend.otherUserId])}
+              />
             ))}
           </View>
         )
@@ -280,38 +299,56 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
 function FriendSection({
   title,
   friends,
-  previewCount,
-  onViewAll,
-  onOpen
+  onOpen,
+  onRemind,
+  remindingUserId,
+  remindedUserIds = {}
 }: {
   title: string;
   friends: FriendSummary[];
-  previewCount: number;
-  onViewAll?: () => void;
   onOpen: (friendUserId: string) => void;
+  onRemind?: (friendUserId: string) => void;
+  remindingUserId?: string;
+  remindedUserIds?: Record<string, boolean>;
 }) {
-  const preview = friends.slice(0, previewCount);
-  const canViewAll = Boolean(onViewAll) && friends.length > previewCount;
+  const theme = useTheme();
+  const [showAll, setShowAll] = useState(false);
+  const LIMIT = 5;
+  const visibleFriends = showAll ? friends : friends.slice(0, LIMIT);
+  const hasMore = friends.length > LIMIT;
 
   return (
     <View style={styles.section}>
-      <SectionHeader
-        title={title}
-        action={
-          canViewAll ? (
-            <Pressable onPress={onViewAll} hitSlop={8}>
-              <ThemedText variant="bodySm" tone="confirmed">
-                View all
-              </ThemedText>
-            </Pressable>
-          ) : null
-        }
-      />
+      <SectionHeader title={title} />
       <View style={styles.stack}>
-        {preview.map((friend) => (
-          <FriendSummaryCard key={friend.otherUserId} friend={friend} onPress={() => onOpen(friend.otherUserId)} />
+        {visibleFriends.map((friend) => (
+          <FriendSummaryCard
+            key={friend.otherUserId}
+            friend={friend}
+            onPress={() => onOpen(friend.otherUserId)}
+            onRemind={onRemind ? () => onRemind(friend.otherUserId) : undefined}
+            isReminding={remindingUserId === friend.otherUserId}
+            isReminded={Boolean(remindedUserIds[friend.otherUserId])}
+          />
         ))}
       </View>
+      {hasMore ? (
+        <Pressable
+          onPress={() => setShowAll((prev) => !prev)}
+          style={[
+            styles.seeAllButton,
+            {
+              borderColor: theme.colors.hairline,
+              backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+            }
+          ]}
+        >
+          <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+            {showAll ? "Show less" : `See all (${friends.length})`}
+          </ThemedText>
+          <CaretDown size={14} color={theme.colors.info} style={{ transform: [{ rotate: showAll ? "180deg" : "0deg" }] }} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -397,5 +434,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1
+  },
+  seeAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4
   }
 });

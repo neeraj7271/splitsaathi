@@ -104,7 +104,9 @@ function expenseCopy(event: DomainEvent, payload: Record<string, unknown>): Acti
   const payerIds = asParticipantIds(payload.payers);
   const participantIds = asParticipantIds(payload.shares);
   const bodyParts = [
-    total !== undefined ? `Total ${total} ${currencyCode ?? ''}`.trim() : undefined,
+    total !== undefined
+      ? `Total ${(total / 100).toFixed(total % 100 === 0 ? 0 : 2)} ${currencyCode ?? ''}`.trim()
+      : undefined,
     payerIds.length ? 'paid by members' : undefined,
     splitTypes.length
       ? `${splitTypes.join('/')} split across members`
@@ -173,7 +175,9 @@ function settlementCopy(event: DomainEvent, payload: Record<string, unknown>): A
   };
   const reason = typeof payload.reason === 'string' ? payload.reason : undefined;
   const amountNote =
-    amountMinor !== undefined ? `amountMinor ${amountMinor}${currencyCode ? ` ${currencyCode}` : ''}` : undefined;
+    amountMinor !== undefined
+      ? `${(amountMinor / 100).toFixed(amountMinor % 100 === 0 ? 0 : 2)}${currencyCode ? ` ${currencyCode}` : ''}`
+      : undefined;
   return {
     title: labels[event.type] ?? event.type,
     body: ['Settlement update', amountNote, method, reason, payer && payee ? 'A member paid another member' : undefined]

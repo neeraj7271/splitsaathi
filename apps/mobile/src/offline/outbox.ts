@@ -151,9 +151,9 @@ export function describeOutboxCommand(row: OutboxCommandRecord): {
         ? "Edit expense"
         : row.commandType === "expense.void"
           ? "Delete expense"
-          : row.commandType === "settlement.proof" || row.commandType.includes("proof")
+          : row.commandType === "settlement.proof" || (row.commandType ?? "").includes("proof")
             ? "Upload proof"
-            : row.commandType.replace(/\./g, " ");
+            : (row.commandType ?? "").replace(/\./g, " ");
 
   let payload: Record<string, unknown> = {};
   try {

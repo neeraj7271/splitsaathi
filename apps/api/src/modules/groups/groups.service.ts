@@ -3,7 +3,8 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MembershipRole } from '@splitsaathi/contracts';
@@ -66,7 +67,7 @@ export class GroupsService {
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
     private readonly config: ApiConfigService,
-    private readonly balanceProjector: BalanceProjector
+    @Optional() private readonly balanceProjector?: BalanceProjector
   ) {}
 
   async createGroup(userId: string, dto: CreateGroupDto): Promise<GroupResponseDto> {
@@ -181,20 +182,32 @@ export class GroupsService {
       currentMemberships.map((membership) => [membership.groupId, membership])
     );
 
-    const countRows = await this.participants
-      .createQueryBuilder('p')
-      .select('p.group_id', 'groupId')
-      .addSelect('COUNT(*)', 'cnt')
-      .where('p.group_id IN (:...ids)', { ids: groupIds })
-      .groupBy('p.group_id')
-      .getRawMany<{ groupId: string; cnt: string }>();
-    const countByGroupId = new Map(countRows.map((row) => [row.groupId, Number(row.cnt)]));
+    const [allActiveMemberships, allGroupParticipants] = await Promise.all([
+      this.memberships.find({
+        where: { groupId: In(groupIds), status: In(['active', 'locked_for_exit']) }
+      }),
+      this.participants.find({
+        where: { groupId: In(groupIds) }
+      })
+    ]);
+
+    const countByGroupId = new Map<string, number>();
+    for (const groupId of groupIds) {
+      const gMemberships = allActiveMemberships.filter((m) => m.groupId === groupId);
+      const gParticipants = allGroupParticipants.filter((p) => p.groupId === groupId);
+
+      const userIds = new Set(gMemberships.map((m) => m.userId).filter(Boolean));
+      const unlinkedGuests = gParticipants.filter((p) => !p.linkedUserId);
+
+      const activeCount = Math.max(1, userIds.size + unlinkedGuests.length);
+      countByGroupId.set(groupId, activeCount);
+    }
 
     return groups.map((group) => {
       const membership = membershipByGroupId.get(group.id)!;
       const participantId = membership.participantId ?? undefined;
-      const netBalanceMinor = participantId
-        ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
+      const netBalanceMinor = participantId && this.balanceProjector
+        ? (this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode)?.amountMinor ?? 0)
         : 0;
       return GroupSummaryResponseDto.fromEntities(
         group,
@@ -221,8 +234,8 @@ export class GroupsService {
 
     const membership = memberships.find((row) => row.userId === userId);
     const participantId = membership?.participantId ?? undefined;
-    const netBalanceMinor = participantId
-      ? this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode).amountMinor
+    const netBalanceMinor = participantId && this.balanceProjector
+      ? (this.balanceProjector.getParticipantBalance(group.id, participantId, group.baseCurrencyCode)?.amountMinor ?? 0)
       : 0;
     const upiVpaByParticipantId = await this.resolveUpiVpaByParticipantIds(participants);
     const [currentPermissions, memberPermissions] = await Promise.all([
@@ -368,14 +381,25 @@ export class GroupsService {
 
     invite.uses += 1;
     await this.invites.save(invite);
+    const groupName = await this.getGroupName(invite.groupId);
     await this.notificationsService.create({
       userId,
       groupId: invite.groupId,
       type: 'invite_claimed',
       title: 'Invite accepted',
-      body: `You joined ${await this.getGroupName(invite.groupId)} through an invite link.`,
+      body: `You joined ${groupName} through an invite link.`,
       data: { groupId: invite.groupId, inviteId: invite.id }
     });
+    await this.notifyActiveUsers(
+      invite.groupId,
+      {
+        type: 'participant_added',
+        title: 'New member joined',
+        body: `${displayName} joined ${groupName}.`,
+        data: { groupId: invite.groupId, joinedUserId: userId, newMemberName: displayName }
+      },
+      new Set([userId])
+    );
     return this.getGroupForUser(userId, invite.groupId);
   }
 
@@ -842,8 +866,7 @@ export class GroupsService {
       throw new BadRequestException('Membership has no linked participant to check balances.');
     }
 
-    const outstanding = this.balanceProjector
-      .listGroupBalances(groupId)
+    const outstanding = (this.balanceProjector?.listGroupBalances(groupId) ?? [])
       .filter(
         (row) =>
           row.participantId === membership.participantId && Math.abs(row.amountMinor) > 0
@@ -979,7 +1002,11 @@ export class GroupsService {
     participantId: string
   ): Promise<void> {
     try {
-      const groupName = await this.getGroupName(groupId);
+      const [groupName, user] = await Promise.all([
+        this.getGroupName(groupId),
+        this.usersService.findById(userId)
+      ]);
+      const addedUserName = user?.displayName || 'A new member';
       await this.notificationsService.create({
         userId,
         groupId,
@@ -989,6 +1016,16 @@ export class GroupsService {
         tone: 'action_required',
         data: { groupId, participantId, type: 'participant_added' }
       });
+      await this.notifyActiveUsers(
+        groupId,
+        {
+          type: 'participant_added',
+          title: 'New member added',
+          body: `${addedUserName} was added to ${groupName}.`,
+          data: { groupId, participantId, joinedUserId: userId, newMemberName: addedUserName }
+        },
+        new Set([userId])
+      );
     } catch (error) {
       console.error('[groups] participant_added notification failed', error);
     }
@@ -1061,8 +1098,7 @@ export class GroupsService {
       if (!supersededByPhone && !supersededByName) {
         continue;
       }
-      const outstanding = this.balanceProjector
-        .listGroupBalances(groupId)
+      const outstanding = (this.balanceProjector?.listGroupBalances(groupId) ?? [])
         .some((row) => row.participantId === participant.id && Math.abs(row.amountMinor) > 0);
       if (outstanding) {
         continue;

@@ -11,7 +11,7 @@ type FieldIcon = React.ComponentType<{
 }>;
 
 interface InputFieldProps extends TextInputProps {
-  label: string;
+  label?: string;
   amount?: boolean;
   Icon?: FieldIcon;
 }
@@ -23,7 +23,7 @@ export function InputField({ label, amount = false, Icon, style, ...props }: Inp
 
   return (
     <View style={styles.wrap}>
-      <ThemedText variant="bodyMedium">{label}</ThemedText>
+      {label ? <ThemedText variant="bodyMedium">{label}</ThemedText> : null}
       <View
         style={[
           styles.field,

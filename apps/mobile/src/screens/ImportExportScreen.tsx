@@ -183,7 +183,7 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
               {exportJob ? (
                 <View style={styles.jobBox}>
                   <ThemedText variant="bodyMedium">
-                    {exportJob.exportType.replace(/_/g, " ")} export
+                    {(exportJob.exportType ?? "").replace(/_/g, " ")} export
                   </ThemedText>
                   <StatusPill state={exportJob.state === "ready" || exportJob.state === "completed" ? "confirmed" : exportJob.state === "failed" ? "rejected" : "pending"} />
                   {exportJob.fileUrl ? (
@@ -192,7 +192,7 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
                     </ThemedText>
                   ) : exportJob.data ? (
                     <ThemedText variant="bodySm" tone="confirmed">
-                      Export ready ({exportJob.contentType ?? exportJob.exportType.replace(/_/g, " ")}).
+                      Export ready ({exportJob.contentType ?? (exportJob.exportType ?? "").replace(/_/g, " ")}).
                     </ThemedText>
                   ) : (
                     <ThemedText variant="bodySm" tone="muted">

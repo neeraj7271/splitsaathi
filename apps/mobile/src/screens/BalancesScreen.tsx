@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
-import { Scales } from "phosphor-react-native";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Bell, Scales } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
+import { useAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
@@ -20,7 +21,39 @@ import { buildGroupDisplayLookups, enrichBalanceRows, enrichSettlementSuggestion
 
 export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
+  const [remindedUserIds, setRemindedUserIds] = useState<Record<string, boolean>>({});
+
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
+  const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() });
+  const friendsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of friendsQuery.data ?? []) {
+      map.set(f.otherUserId, f.otherUserId);
+    }
+    return map;
+  }, [friendsQuery.data]);
+
+  const remindMutation = useMutation({
+    mutationFn: (otherUserId: string) => apiClient.remindFriend(otherUserId),
+    onSuccess: (_, otherUserId) => {
+      setRemindedUserIds((prev) => ({ ...prev, [otherUserId]: true }));
+      showDialog({
+        title: "Reminder Sent",
+        message: "Payment reminder notification delivered.",
+        tone: "success",
+        primaryAction: { label: "OK" }
+      });
+    },
+    onError: (err: Error) => {
+      showDialog({
+        title: "Could not send reminder",
+        message: err.message,
+        tone: "error",
+        primaryAction: { label: "OK" }
+      });
+    }
+  });
   const groups = groupsQuery.data ?? [];
   const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
   const groupQuery = useQuery({
@@ -94,19 +127,38 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
           <EmptyState title="Everyone is settled" body="No outstanding balances in this group right now." />
         ) : balances.length ? (
           <DataSurface>
-            {balances.map((balance) => (
-              <View key={`${balance.participantId}-${balance.currencyCode}`} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
-                <View style={styles.titleBlock}>
-                  <ThemedText variant="bodyMedium">{balance.displayName}</ThemedText>
-                  <ThemedText variant="bodySm" tone="muted">
-                    {balance.explanation || (balance.balanceMinor >= 0 ? "Net creditor in this group" : "Net debtor in this group")}
-                  </ThemedText>
+            {balances.map((balance) => {
+              const debtorUserId = (friendsQuery.data ?? []).find((f) => f.displayName.toLowerCase() === balance.displayName.toLowerCase())?.otherUserId;
+              const isDebtor = balance.balanceMinor < 0;
+              const isReminded = Boolean(debtorUserId && remindedUserIds[debtorUserId]);
+              const isReminding = Boolean(debtorUserId && remindMutation.isPending && remindMutation.variables === debtorUserId);
+
+              return (
+                <View key={`${balance.participantId}-${balance.currencyCode}`} style={[styles.row, { borderBottomColor: theme.colors.hairline }]}>
+                  <View style={styles.titleBlock}>
+                    <ThemedText variant="bodyMedium">{balance.displayName}</ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">
+                      {balance.explanation || (balance.balanceMinor >= 0 ? "Net creditor in this group" : "Net debtor in this group")}
+                    </ThemedText>
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <ThemedText variant="amount" tone={balance.balanceMinor >= 0 ? "receive" : "owe"} align="right">
+                      {formatSignedMoney(balance.balanceMinor, balance.currencyCode)}
+                    </ThemedText>
+                    {isDebtor && debtorUserId ? (
+                      <Button
+                        label={isReminded ? "Reminded" : isReminding ? "Sending..." : "Remind"}
+                        variant="secondary"
+                        tone="info"
+                        size="compact"
+                        disabled={isReminded || isReminding}
+                        onPress={() => remindMutation.mutate(debtorUserId)}
+                      />
+                    ) : null}
+                  </View>
                 </View>
-                <ThemedText variant="amount" tone={balance.balanceMinor >= 0 ? "receive" : "owe"} align="right">
-                  {formatSignedMoney(balance.balanceMinor, balance.currencyCode)}
-                </ThemedText>
-              </View>
-            ))}
+              );
+            })}
           </DataSurface>
         ) : balancesQuery.isLoading ? (
           <EmptyState title="Loading balances" body="Fetching server projections for this group." />
@@ -122,31 +174,51 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
           <EmptyState title="Nothing to settle" body="Everyone is settled, so there are no payment suggestions." />
         ) : suggestions.length ? (
           <DataSurface>
-            {suggestions.map((suggestion) => (
-              <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline }]}>
-                <View style={styles.suggestionHeader}>
-                  <Scales size={22} color={theme.colors.confirmed} weight="duotone" />
-                  <View style={styles.titleBlock}>
-                    <ThemedText variant="bodyMedium">
-                      {suggestion.payerName} pays {suggestion.payeeName}
-                    </ThemedText>
-                    <ThemedText variant="bodySm" tone="muted">
-                      {suggestion.explanation}
+            {suggestions.map((suggestion) => {
+              const payerUserId = (friendsQuery.data ?? []).find((f) => f.displayName.toLowerCase() === suggestion.payerName.toLowerCase())?.otherUserId;
+              const isReminded = Boolean(payerUserId && remindedUserIds[payerUserId]);
+              const isReminding = Boolean(payerUserId && remindMutation.isPending && remindMutation.variables === payerUserId);
+
+              return (
+                <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline }]}>
+                  <View style={styles.suggestionHeader}>
+                    <Scales size={22} color={theme.colors.confirmed} weight="duotone" />
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium">
+                        {suggestion.payerName} pays {suggestion.payeeName}
+                      </ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        {suggestion.explanation}
+                      </ThemedText>
+                    </View>
+                    <ThemedText variant="amount" tone="owe" align="right">
+                      {formatSignedMoney(-suggestion.amountMinor, suggestion.currencyCode)}
                     </ThemedText>
                   </View>
-                  <ThemedText variant="amount" tone="owe" align="right">
-                    {formatSignedMoney(-suggestion.amountMinor, suggestion.currencyCode)}
-                  </ThemedText>
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <Button
+                      label="Use suggestion"
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        navigation.go("settlement");
+                      }}
+                    />
+                    {payerUserId ? (
+                      <Button
+                        label={isReminded ? "Reminded" : isReminding ? "Sending..." : "Remind"}
+                        variant="secondary"
+                        tone="info"
+                        Icon={Bell}
+                        disabled={isReminded || isReminding}
+                        onPress={() => remindMutation.mutate(payerUserId)}
+                        style={{ flex: 1 }}
+                      />
+                    ) : null}
+                  </View>
                 </View>
-                <Button
-                  label="Use suggestion"
-                  variant="secondary"
-                  onPress={() => {
-                    navigation.go("settlement");
-                  }}
-                />
-              </View>
-            ))}
+              );
+            })}
           </DataSurface>
         ) : (
           <EmptyState title="No settlement suggestion" body="The backend returns suggestions once balances are non-zero." />

@@ -18,6 +18,12 @@ export class ReportsController {
     @Inject(FINANCIAL_AUTHORIZATION) private readonly authorization: FinancialAuthorizationPort
   ) {}
 
+  @Get('reports/my-monthly-spend')
+  @ApiOkResponse()
+  async myMonthlySpend(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.reports.userMonthlySpend(currentUser.userId);
+  }
+
   @Get('reports/group-types')
   @ApiOkResponse()
   async groupTypes(@CurrentUser() currentUser: AuthenticatedUser, @Query() query: DateRangeQuery) {

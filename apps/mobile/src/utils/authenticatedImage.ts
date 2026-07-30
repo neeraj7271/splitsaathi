@@ -10,7 +10,7 @@ function isLocalUri(uri: string) {
 }
 
 function cachePathForUrl(url: string) {
-  const safeKey = url.replace(/[^a-zA-Z0-9]/g, "_").slice(-96);
+  const safeKey = (url ?? "").replace(/[^a-zA-Z0-9]/g, "_").slice(-96);
   const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
   if (!baseDir) {
     throw new Error("No writable cache directory is available.");

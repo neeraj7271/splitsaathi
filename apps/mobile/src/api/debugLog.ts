@@ -1,7 +1,7 @@
 const MAX_LOG_CHARS = 1200;
 
 function isDebugLoggingEnabled() {
-  return __DEV__;
+  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
 }
 
 function truncate(value: string) {

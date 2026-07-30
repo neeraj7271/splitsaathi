@@ -55,9 +55,10 @@ export type DetectedUpiApps = {
   notInstalled: UpiAppOption[];
 };
 
-function upiQuery(upiUri: string): string {
-  const match = upiUri.match(/^upi:\/\/pay\?(.*)$/i);
-  return match?.[1] ?? upiUri.replace(/^[^?]+\?/, "");
+function upiQuery(upiUri?: string): string {
+  const safeUri = typeof upiUri === "string" ? upiUri : "";
+  const match = safeUri.match(/^upi:\/\/pay\?(.*)$/i);
+  return match?.[1] ?? safeUri.replace(/^[^?]+\?/, "");
 }
 
 /** Build an app-specific pay URI from the canonical upi://pay?... link. */

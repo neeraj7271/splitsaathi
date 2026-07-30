@@ -83,8 +83,23 @@ export async function registerPushIfPossible(options?: { forcePrompt?: boolean }
   }
 
   try {
-    const deviceToken = await Notifications.getDevicePushTokenAsync();
-    const pushToken = deviceToken.data;
+    let pushToken: string | undefined;
+    let tokenType = "unknown";
+    try {
+      const deviceToken = await Notifications.getDevicePushTokenAsync();
+      tokenType = deviceToken.type;
+      pushToken = typeof deviceToken.data === "string" ? deviceToken.data : JSON.stringify(deviceToken.data);
+    } catch (tokenErr) {
+      console.warn("[SplitSaathi] getDevicePushTokenAsync failed, trying getExpoPushTokenAsync", tokenErr);
+      try {
+        const expoToken = await Notifications.getExpoPushTokenAsync();
+        tokenType = "expo";
+        pushToken = expoToken.data;
+      } catch (expoErr) {
+        console.warn("[SplitSaathi] getExpoPushTokenAsync fallback failed as well", expoErr);
+      }
+    }
+
     if (!pushToken || typeof pushToken !== "string") {
       return { status: "skipped" as const, reason: "empty_device_push_token" };
     }
@@ -94,7 +109,7 @@ export async function registerPushIfPossible(options?: { forcePrompt?: boolean }
       appVersion: Constants.expoConfig?.version ?? "0.1.0",
       pushToken
     });
-    return { status: "registered" as const, pushToken, provider: deviceToken.type };
+    return { status: "registered" as const, pushToken, provider: tokenType };
   } catch (error) {
     console.warn("[SplitSaathi] push registration failed", error);
     return { status: "skipped" as const, reason: error instanceof Error ? error.message : String(error) };

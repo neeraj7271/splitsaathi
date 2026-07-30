@@ -14,6 +14,8 @@ import type {
   NotificationProviderPort
 } from '../ports/notification-provider.port';
 
+import { DeviceInstallationsService } from '../device-installations.service';
+
 export const FCM_MESSAGING = Symbol('FCM_MESSAGING');
 
 type FcmMessaging = Pick<Messaging, 'sendEachForMulticast'>;
@@ -25,7 +27,8 @@ export class FcmPushProvider implements NotificationProviderPort {
 
   constructor(
     private readonly config: ApiConfigService,
-    @Optional() @Inject(FCM_MESSAGING) messaging?: FcmMessaging | null
+    @Optional() @Inject(FCM_MESSAGING) messaging?: FcmMessaging | null,
+    @Optional() private readonly deviceInstallations?: DeviceInstallationsService
   ) {
     this.messaging = messaging === undefined ? null : messaging;
   }
@@ -69,33 +72,51 @@ export class FcmPushProvider implements NotificationProviderPort {
         }
       });
 
-      const messageIds = response.responses
-        .map((row: SendResponse) => row.messageId)
-        .filter((id): id is string => Boolean(id));
-      const errors = response.responses
-        .filter((row: SendResponse) => !row.success)
-        .map((row: SendResponse) => row.error?.message)
-        .filter((msg): msg is string => Boolean(msg));
+      const messageIds: string[] = [];
+      const errors: string[] = [];
+      const staleTokens: string[] = [];
 
-      if (response.failureCount === tokens.length) {
-        return {
-          provider: 'fcm',
-          status: 'failed',
-          error: errors.join('; ') || 'All FCM deliveries failed.'
-        };
+      response.responses.forEach((row: SendResponse, index: number) => {
+        if (row.success && row.messageId) {
+          messageIds.push(row.messageId);
+        } else {
+          const errCode = row.error?.code ?? '';
+          const errMsg = row.error?.message ?? '';
+          if (
+            errCode === 'messaging/registration-token-not-registered' ||
+            errCode === 'messaging/invalid-registration-token' ||
+            /not-registered|notregistered|invalid-registration-token/i.test(errMsg)
+          ) {
+            if (tokens[index]) {
+              staleTokens.push(tokens[index]);
+            }
+          }
+          if (errMsg) {
+            errors.push(errMsg);
+          }
+        }
+      });
+
+      if (staleTokens.length > 0 && this.deviceInstallations) {
+        this.logger.log(`Pruning ${staleTokens.length} stale FCM push token(s) from device_installations`);
+        void this.deviceInstallations.deletePushTokens(staleTokens).catch((err) => {
+          this.logger.warn(`Failed to prune stale push tokens: ${String(err)}`);
+        });
       }
 
-      if (response.failureCount > 0) {
-        this.logger.warn(
-          `FCM partial failure notification=${input.notificationId} success=${response.successCount} failure=${response.failureCount}`
-        );
+      if (response.successCount > 0) {
+        return {
+          provider: 'fcm',
+          status: 'sent',
+          providerMessageId: messageIds.join(',') || undefined,
+          error: errors.length > 0 ? errors.join('; ') : undefined
+        };
       }
 
       return {
         provider: 'fcm',
-        status: 'sent',
-        providerMessageId: messageIds.join(',') || undefined,
-        error: errors.length > 0 ? errors.join('; ') : undefined
+        status: 'failed',
+        error: errors.join('; ') || 'All FCM deliveries failed.'
       };
     } catch (error) {
       return {

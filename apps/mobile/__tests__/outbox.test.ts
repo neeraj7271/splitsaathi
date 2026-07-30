@@ -4,6 +4,10 @@ jest.mock("expo-sqlite", () => ({
   openDatabaseAsync: mockOpenDatabaseAsync
 }));
 
+jest.mock("react-native", () => ({
+  Platform: { OS: "ios" }
+}));
+
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),

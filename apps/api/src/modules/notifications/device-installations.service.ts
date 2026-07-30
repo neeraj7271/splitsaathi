@@ -36,4 +36,17 @@ export class DeviceInstallationsService {
     const rows = await this.devices.find({ where: { userId } });
     return rows.map((row) => row.pushToken).filter((token): token is string => Boolean(token));
   }
+
+  async deletePushTokens(tokens: string[]): Promise<void> {
+    const validTokens = tokens.filter((t) => typeof t === 'string' && t.trim().length > 0);
+    if (validTokens.length === 0) {
+      return;
+    }
+    await this.devices
+      .createQueryBuilder()
+      .delete()
+      .from(DeviceInstallationEntity)
+      .where('pushToken IN (:...validTokens)', { validTokens })
+      .execute();
+  }
 }

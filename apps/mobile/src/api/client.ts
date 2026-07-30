@@ -227,7 +227,10 @@ function formatMoneyRows(value: unknown, currencyCode: string): string | undefin
     .join("; ");
 }
 
-function normalizeRawMinorTotals(detail: string, currencyCode: string): string {
+function normalizeRawMinorTotals(detail: string | undefined, currencyCode: string): string {
+  if (typeof detail !== "string" || !detail) {
+    return "";
+  }
   // Old API: "Created \"Dinner\" for 25000 INR."
   let next = detail.replace(/\bfor\s+(\d{3,})\s*([A-Z]{3})?\b/g, (_full, amountRaw: string, code?: string) => {
     const amount = asMinorAmount(amountRaw);
@@ -325,6 +328,7 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     undefined;
   return {
     id: row.id ?? row.settlementIntentId,
+    settlementIntentId: row.settlementIntentId ?? row.id,
     groupId: row.groupId,
     payerParticipantId: row.payerParticipantId,
     payeeParticipantId: row.payeeParticipantId,
@@ -338,6 +342,7 @@ function mapSettlementIntent(row: Record<string, any>): SettlementIntent {
     clientReference: row.clientReference ?? row.providerReference,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     proofs,
     proofAttachmentId,
     proofUrl: proofAttachmentId ? `/v1/attachments/${proofAttachmentId}/content` : undefined,
@@ -906,6 +911,10 @@ export class SplitSaathiApiClient {
     return this.request<ReportEnvelope<NetPositionReport>>(`/v1/groups/${groupId}/reports/net-position?${toQuery(range)}`);
   }
 
+  async getMyMonthlySpend() {
+    return this.request<{ amountMinor: number }>("/v1/reports/my-monthly-spend");
+  }
+
   async createSettlementIntent(payload: {
     groupId: string;
     payerParticipantId: string;
@@ -1223,8 +1232,9 @@ function toQuery(values: Record<string, string>) {
   return new URLSearchParams(values).toString();
 }
 
-export function extractInviteToken(tokenOrUrl: string) {
-  const trimmed = tokenOrUrl.trim();
+export function extractInviteToken(tokenOrUrl?: string) {
+  const safeStr = typeof tokenOrUrl === "string" ? tokenOrUrl : "";
+  const trimmed = safeStr.trim();
   const match = trimmed.match(
     /(?:splitsaathi:\/\/join\/|https?:\/\/[^/]+\/join\/|\/join\/)([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{12,})$/i
   );

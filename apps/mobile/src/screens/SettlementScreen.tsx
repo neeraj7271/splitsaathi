@@ -136,14 +136,16 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     queryFn: () => apiClient.getSettlementSuggestions(selectedGroupId as string),
     enabled: Boolean(selectedGroupId),
     staleTime: 0,
-    refetchOnMount: "always"
+    refetchOnMount: "always",
+    refetchInterval: 3000
   });
   const historyQuery = useQuery({
     queryKey: ["settlementHistory", selectedGroupId],
     queryFn: () => apiClient.listSettlementHistory(selectedGroupId as string),
     enabled: Boolean(selectedGroupId),
     staleTime: 0,
-    refetchOnMount: "always"
+    refetchOnMount: "always",
+    refetchInterval: 3000
   });
 
   const myParticipantId = useMemo(
@@ -212,9 +214,28 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     }
   }, [myParticipantId, selectedGroupId]);
 
-  // Resume open settlements for the current member (payer handoff or payee confirmation).
+  // Resume & sync open settlements for the current member.
   useEffect(() => {
-    if (intent || !myParticipantId || !historyQuery.data?.length) {
+    if (!myParticipantId || !historyQuery.data?.length) {
+      return;
+    }
+    if (intent) {
+      if (isTerminalState(intent.state)) {
+        resetSettlementForm();
+        return;
+      }
+      const intentId = intent.settlementIntentId ?? intent.id;
+      const updated = historyQuery.data.find((row) => (row.settlementIntentId ?? row.id) === intentId);
+      if (updated) {
+        if (isTerminalState(updated.state)) {
+          resetSettlementForm();
+          if (selectedGroupId) {
+            void invalidateSettlementBalances(selectedGroupId);
+          }
+        } else if (updated.state !== intent.state || updated.updatedAt !== intent.updatedAt) {
+          setIntent(updated);
+        }
+      }
       return;
     }
     const openForMe = historyQuery.data.find((row) => {
@@ -229,7 +250,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       }
       if (
         row.payerParticipantId === myParticipantId &&
-        ["intent_created", "intent_generated", "payer_opened_upi_app", "awaiting_payment_evidence", "proof_submitted"].includes(
+        ["intent_created", "intent_generated", "payer_opened_upi_app", "awaiting_payment_evidence", "proof_submitted", "awaiting_receiver_confirmation"].includes(
           row.state
         )
       ) {
@@ -240,7 +261,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     if (openForMe) {
       setIntent(openForMe);
     }
-  }, [historyQuery.data, intent, myParticipantId]);
+  }, [historyQuery.data, intent, myParticipantId, selectedGroupId]);
 
   useEffect(() => {
     if (!payableSuggestions.length) {
@@ -447,18 +468,14 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const confirm = useMutation({
     mutationFn: () => apiClient.confirmSettlement(intent?.id as string),
     onSuccess: async (response) => {
-      setIntent(response);
+      resetSettlementForm();
       await invalidateSettlementBalances(response.groupId);
       dialog?.showDialog({
         title: "Payment confirmed",
         message: "Settlement is complete. Balances have been updated.",
         tone: "success",
         primaryAction: {
-          label: "Done",
-          onPress: () => {
-            resetSettlementForm();
-            void invalidateSettlementBalances(response.groupId);
-          }
+          label: "Done"
         }
       });
     }
@@ -466,9 +483,8 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const reject = useMutation({
     mutationFn: () => apiClient.rejectSettlement(intent?.id as string, reason),
     onSuccess: async (response) => {
-      setIntent(response);
-      await invalidateSettlementBalances(response.groupId);
       resetSettlementForm();
+      await invalidateSettlementBalances(response.groupId);
     }
   });
   const dispute = useMutation({

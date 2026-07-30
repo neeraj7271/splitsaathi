@@ -65,12 +65,13 @@ class MainApplication : Application(), ReactApplication {
 
   private fun pinMetroHost() {
     if (!BuildConfig.DEBUG) return
-    // Expo tunnel hostname — reachable over mobile data (not LAN/VM IP ports).
-    // Keep in sync with: curl -s http://127.0.0.1:4041/api/tunnels
-    @Suppress("DEPRECATION")
-    android.preference.PreferenceManager.getDefaultSharedPreferences(this)
-      .edit()
-      .putString("debug_http_host", "l6-am0k-anonymous-8081.exp.direct:80")
-      .commit()
+    val host = getString(R.string.react_native_packager_host)
+    if (!host.isNullOrBlank()) {
+      @Suppress("DEPRECATION")
+      android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        .edit()
+        .putString("debug_http_host", host)
+        .commit()
+    }
   }
 }

@@ -2,8 +2,9 @@ import * as Crypto from "expo-crypto";
 
 const DEFAULT_PEPPER = "splitsaathi_local_dev_secret";
 
-export function normalizePhoneE164(raw: string, defaultCountryCode = "91"): string | null {
-  const trimmed = raw.trim();
+export function normalizePhoneE164(raw?: string, defaultCountryCode = "91"): string | null {
+  const safe = typeof raw === "string" ? raw : "";
+  const trimmed = safe.trim();
   if (!trimmed) {
     return null;
   }
