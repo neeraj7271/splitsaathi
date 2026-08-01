@@ -113,7 +113,7 @@ export class SettlementProjector implements Projector {
 
     const transition = transitionForEvent(event.type);
     if (transition) {
-      row.state = this.machine.transition(row.state, transition);
+      this.transitionState(row, transition);
     }
 
     if (event.type === 'UpiIntentGenerated') {
@@ -196,6 +196,16 @@ export class SettlementProjector implements Projector {
   reset(): void {
     this.intents.clear();
     this.paymentReferenceIndex.clear();
+  }
+
+  private transitionState(row: SettlementIntentRow, eventName: SettlementEventName): void {
+    // Legacy cash settlements posted the ledger immediately without a SettlementConfirmed event.
+    // After record_cash started mapping to awaiting_receiver_confirmation, replaying those
+    // events needs an implicit confirm before post_ledger.
+    if (eventName === 'post_ledger' && !this.machine.can(row.state, 'post_ledger') && this.machine.can(row.state, 'confirm')) {
+      row.state = this.machine.transition(row.state, 'confirm');
+    }
+    row.state = this.machine.transition(row.state, eventName);
   }
 
   private addTimeline(row: SettlementIntentRow, event: DomainEvent, state: SettlementState, note?: string): void {
