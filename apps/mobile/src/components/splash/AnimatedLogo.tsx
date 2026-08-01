@@ -14,17 +14,24 @@ import Animated, {
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 
 import type { SplashPalette } from "./tokens";
-import { TEAL, PURPLE, splashSpacing, splashTimeline } from "./tokens";
+import { PURPLE, splashLayoutDefaults, splashSpacing, splashTimeline, TEAL } from "./tokens";
 
 const logoSource = require("../../../assets/brand/logo-mark.png");
-const GLOW = 220;
+const GLOW = splashLayoutDefaults.glowSize;
 
 type Props = {
   palette: SplashPalette;
   reduceMotion: boolean;
+  logoSize?: number;
+  stageSize?: number;
 };
 
-export function AnimatedLogo({ palette, reduceMotion }: Props) {
+export function AnimatedLogo({
+  palette,
+  reduceMotion,
+  logoSize = splashSpacing.logoSize,
+  stageSize = GLOW
+}: Props) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.6);
   const glowOpacity = useSharedValue(0);
@@ -109,10 +116,25 @@ export function AnimatedLogo({ palette, reduceMotion }: Props) {
     opacity: palette.mode === "dark" ? 0.9 : 0.55
   }));
 
+  const glowSize = stageSize;
+  const ringSize = Math.round(stageSize * 0.91);
+  const ringInnerSize = Math.round(stageSize * 0.764);
+  const logoNudgeY = Math.round(logoSize * 0.03);
+
+  const centerLayer = (size: number, offsetY = 0) => ({
+    position: "absolute" as const,
+    top: "50%" as const,
+    left: "50%" as const,
+    width: size,
+    height: size,
+    marginTop: -size / 2 + offsetY,
+    marginLeft: -size / 2
+  });
+
   return (
-    <View style={styles.stage} accessibilityRole="image" accessibilityLabel="SplitSaathi logo">
-      <Animated.View style={[styles.glow, glowStyle]} pointerEvents="none">
-        <Svg width={GLOW} height={GLOW}>
+    <View style={[styles.stage, { width: stageSize, height: stageSize }]} accessibilityRole="image" accessibilityLabel="SplitSaathi logo">
+      <Animated.View style={[glowStyle, centerLayer(glowSize)]} pointerEvents="none">
+        <Svg width={glowSize} height={glowSize}>
           <Defs>
             <RadialGradient id="logoAura" cx="50%" cy="50%" r="50%">
               <Stop offset="0%" stopColor={TEAL} stopOpacity={palette.mode === "dark" ? 0.75 : 0.35} />
@@ -120,16 +142,52 @@ export function AnimatedLogo({ palette, reduceMotion }: Props) {
               <Stop offset="100%" stopColor={PURPLE} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Circle cx={GLOW / 2} cy={GLOW / 2} r={GLOW / 2} fill="url(#logoAura)" />
+          <Circle cx={glowSize / 2} cy={glowSize / 2} r={glowSize / 2} fill="url(#logoAura)" />
         </Svg>
       </Animated.View>
 
-      <Animated.View style={[styles.rings, ringStyle]} pointerEvents="none">
-        <View style={[styles.ringOuter, { borderColor: palette.orbitRing }]} />
-        <View style={[styles.ringInner, { borderColor: palette.orbitRing }]} />
+      <Animated.View style={[ringStyle, centerLayer(ringSize), styles.rings]} pointerEvents="none">
+        <View
+          style={[
+            styles.ringOuter,
+            {
+              width: ringSize - 2,
+              height: ringSize - 2,
+              borderRadius: (ringSize - 2) / 2,
+              borderColor: palette.orbitRing,
+              top: 1,
+              left: 1
+            }
+          ]}
+        />
+        <View
+          style={[
+            styles.ringInner,
+            {
+              width: ringInnerSize,
+              height: ringInnerSize,
+              borderRadius: ringInnerSize / 2,
+              borderColor: palette.orbitRing,
+              top: (ringSize - ringInnerSize) / 2,
+              left: (ringSize - ringInnerSize) / 2
+            }
+          ]}
+        />
       </Animated.View>
 
-      <Animated.View style={[styles.badge, palette.logoShadow, logoStyle]}>
+      <Animated.View
+        style={[
+          logoStyle,
+          centerLayer(logoSize, logoNudgeY),
+          palette.logoShadow,
+          styles.badge,
+          {
+            width: logoSize,
+            height: logoSize,
+            borderRadius: logoSize / 2
+          }
+        ]}
+      >
         <Image source={logoSource} style={styles.mark} resizeMode="contain" />
       </Animated.View>
     </View>
@@ -138,41 +196,22 @@ export function AnimatedLogo({ palette, reduceMotion }: Props) {
 
 const styles = StyleSheet.create({
   stage: {
-    width: 220,
-    height: 220,
     alignItems: "center",
     justifyContent: "center"
   },
-  glow: {
-    position: "absolute",
-    width: GLOW,
-    height: GLOW
-  },
   rings: {
-    position: "absolute",
-    width: 200,
-    height: 200,
     alignItems: "center",
     justifyContent: "center"
   },
   ringOuter: {
     position: "absolute",
-    width: 198,
-    height: 198,
-    borderRadius: 99,
     borderWidth: 1
   },
   ringInner: {
     position: "absolute",
-    width: 168,
-    height: 168,
-    borderRadius: 84,
     borderWidth: 1
   },
   badge: {
-    width: splashSpacing.logoSize,
-    height: splashSpacing.logoSize,
-    borderRadius: splashSpacing.logoSize / 2,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",

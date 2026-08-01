@@ -118,9 +118,15 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
             </ThemedText>
           </View>
           <View style={styles.greetingBlock}>
-            <ThemedText variant="title">
-              {greetingForNow()}, {firstName} 👋
-            </ThemedText>
+            <ThemedText variant="section">{greetingForNow()},</ThemedText>
+            <View style={styles.greetingNameRow}>
+              <ThemedText variant="section" style={styles.greetingName} numberOfLines={1} ellipsizeMode="tail">
+                {firstName}
+              </ThemedText>
+              <ThemedText variant="section" style={styles.greetingEmoji}>
+                {"\u00A0"}👋
+              </ThemedText>
+            </View>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -246,7 +252,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
               style={styles.seeAll}
             >
               <ThemedText variant="bodySm" tone="info">
-                View All
+                See all
               </ThemedText>
             </Pressable>
           }
@@ -462,7 +468,22 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2
   },
   greetingBlock: {
-    gap: 0
+    gap: 2,
+    flexShrink: 1,
+    minWidth: 0
+  },
+  greetingNameRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexShrink: 1,
+    minWidth: 0
+  },
+  greetingName: {
+    flexShrink: 1,
+    minWidth: 0
+  },
+  greetingEmoji: {
+    flexShrink: 0
   },
   headerRight: {
     flexDirection: "row",

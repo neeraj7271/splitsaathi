@@ -16,6 +16,7 @@ import { AnimatedGradient } from "./splash/AnimatedGradient";
 import { AnimatedLogo } from "./splash/AnimatedLogo";
 import { BottomWave } from "./splash/BottomWave";
 import { FloatingIcons } from "./splash/FloatingIcons";
+import { useSplashGlowAnchor, useSplashLayout } from "./splash/layout";
 import { LoadingDots } from "./splash/LoadingDots";
 import {
   PURPLE,
@@ -43,6 +44,8 @@ export function BrandSplashScreen({ onFinished }: Props) {
     () => (theme.mode === "light" ? splashLightPalette : splashDarkPalette),
     [theme.mode]
   );
+  const layout = useSplashLayout();
+  const glowAnchor = useSplashGlowAnchor(layout, insets);
 
   const nameOpacity = useSharedValue(0);
   const nameY = useSharedValue(10);
@@ -109,7 +112,7 @@ export function BrandSplashScreen({ onFinished }: Props) {
 
   return (
     <View style={[styles.root, { backgroundColor: palette.gradient[0] }]} accessibilityLabel="SplitSaathi">
-      <AnimatedGradient palette={palette} reduceMotion={reduceMotion} />
+      <AnimatedGradient palette={palette} reduceMotion={reduceMotion} glowAnchor={glowAnchor} />
 
       <View
         style={[
@@ -120,9 +123,27 @@ export function BrandSplashScreen({ onFinished }: Props) {
           }
         ]}
       >
-        <View style={styles.hero}>
-          <FloatingIcons palette={palette} reduceMotion={reduceMotion} />
-          <AnimatedLogo palette={palette} reduceMotion={reduceMotion} />
+        <View
+          style={[
+            styles.hero,
+            {
+              width: layout.heroSize,
+              height: layout.heroSize,
+              marginBottom: splashSpacing.logoToTitle
+            }
+          ]}
+        >
+          <View style={styles.heroLayer}>
+            <FloatingIcons palette={palette} reduceMotion={reduceMotion} orbitRadius={layout.orbitRadius} />
+            <View style={styles.logoAnchor}>
+              <AnimatedLogo
+                palette={palette}
+                reduceMotion={reduceMotion}
+                logoSize={layout.logoSize}
+                stageSize={layout.stageSize}
+              />
+            </View>
+          </View>
         </View>
 
         <Animated.View style={[styles.nameBlock, nameStyle]}>
@@ -167,11 +188,15 @@ const styles = StyleSheet.create({
     zIndex: 2
   },
   hero: {
-    width: 280,
-    height: 240,
+    alignSelf: "center"
+  },
+  heroLayer: {
+    ...StyleSheet.absoluteFillObject
+  },
+  logoAnchor: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: splashSpacing.logoToTitle
+    justifyContent: "center"
   },
   nameBlock: {
     alignItems: "center",

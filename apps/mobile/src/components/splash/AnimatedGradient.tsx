@@ -13,15 +13,17 @@ import Animated, {
 } from "react-native-reanimated";
 
 import type { SplashPalette } from "./tokens";
+import type { SplashGlowAnchor } from "./layout";
 
 const { width: W, height: H } = Dimensions.get("window");
 
 type Props = {
   palette: SplashPalette;
   reduceMotion: boolean;
+  glowAnchor: SplashGlowAnchor;
 };
 
-export function AnimatedGradient({ palette, reduceMotion }: Props) {
+export function AnimatedGradient({ palette, reduceMotion, glowAnchor }: Props) {
   const shift = useSharedValue(0);
   const pulse = useSharedValue(0.85);
 
@@ -68,7 +70,19 @@ export function AnimatedGradient({ palette, reduceMotion }: Props) {
         />
       </Animated.View>
 
-      <Animated.View style={[styles.centerGlow, glowStyle]}>
+      <Animated.View
+        style={[
+          styles.centerGlow,
+          glowStyle,
+          {
+            top: glowAnchor.top,
+            left: glowAnchor.left,
+            width: glowAnchor.size,
+            height: glowAnchor.size,
+            borderRadius: glowAnchor.size / 2
+          }
+        ]}
+      >
         <LinearGradient
           colors={[palette.centerGlow, "transparent"]}
           style={styles.centerGlowInner}
@@ -114,11 +128,6 @@ const styles = StyleSheet.create({
   },
   centerGlow: {
     position: "absolute",
-    top: H * 0.18,
-    left: W * 0.5 - 140,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
     overflow: "hidden"
   },
   centerGlowInner: {

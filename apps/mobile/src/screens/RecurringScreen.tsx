@@ -135,7 +135,7 @@ export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
         <View style={styles.upcomingHeader}>
           <ThemedText variant="bodyMedium">Upcoming schedules</ThemedText>
           <Pressable style={styles.viewAllBtn}>
-            <ThemedText variant="bodySm" tone="confirmed">View all</ThemedText>
+            <ThemedText variant="bodySm" tone="confirmed">See all</ThemedText>
             <CaretRight size={14} color={theme.colors.confirmed} weight="bold" />
           </Pressable>
         </View>

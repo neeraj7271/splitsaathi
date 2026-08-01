@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from "react-native";
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -17,6 +17,20 @@ function resolveWebClientId(): string | null {
   return process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || null;
 }
 
+let googleSignInConfigured = false;
+
+function ensureGoogleSignInConfigured(webClientId: string) {
+  if (googleSignInConfigured) {
+    return;
+  }
+  GoogleSignin.configure({
+    webClientId,
+    offlineAccess: false,
+    forceCodeForRefreshToken: false
+  });
+  googleSignInConfigured = true;
+}
+
 export function isGoogleSignInConfigured() {
   return Boolean(resolveWebClientId());
 }
@@ -28,6 +42,8 @@ type Props = {
   variant?: "button" | "icon";
   label?: string;
   disabled?: boolean;
+  beforeSignIn?: () => string | undefined;
+  style?: StyleProp<ViewStyle>;
 };
 
 export function GoogleSignInButton({
@@ -36,31 +52,45 @@ export function GoogleSignInButton({
   errorMessage,
   variant = "button",
   label = "Continue with Google",
-  disabled: disabledProp
+  disabled: disabledProp,
+  beforeSignIn,
+  style
 }: Props) {
   const theme = useTheme();
   const webClientId = resolveWebClientId();
   const [localError, setLocalError] = useState<string>();
-  const [configured, setConfigured] = useState(false);
+  const [configured, setConfigured] = useState(() => {
+    if (!webClientId) {
+      return false;
+    }
+    try {
+      ensureGoogleSignInConfigured(webClientId);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     if (!webClientId) {
       return;
     }
     try {
-      GoogleSignin.configure({
-        webClientId,
-        offlineAccess: false,
-        forceCodeForRefreshToken: false
-      });
+      ensureGoogleSignInConfigured(webClientId);
       setConfigured(true);
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Google Sign-In could not be configured.");
+      setConfigured(false);
     }
   }, [webClientId]);
 
   const signIn = useCallback(async () => {
     if (!webClientId || pending || disabledProp) {
+      return;
+    }
+    const blockedMessage = beforeSignIn?.();
+    if (blockedMessage) {
+      setLocalError(blockedMessage);
       return;
     }
     setLocalError(undefined);
@@ -91,7 +121,7 @@ export function GoogleSignInButton({
       }
       setLocalError(error instanceof Error ? error.message : "Google sign-in failed.");
     }
-  }, [webClientId, pending, disabledProp, onIdToken]);
+  }, [webClientId, pending, disabledProp, beforeSignIn, onIdToken]);
 
   if (!webClientId) {
     return null;
@@ -119,6 +149,7 @@ export function GoogleSignInButton({
         onPress={() => void signIn()}
         style={({ pressed }) => [
           styles.googleBtn,
+          style,
           {
             borderColor: isLight ? "rgba(15,23,42,0.08)" : "transparent",
             borderWidth: isLight ? 1 : 0,

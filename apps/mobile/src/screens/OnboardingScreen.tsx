@@ -16,7 +16,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiClient } from "../api/client";
-import { GoogleSignInButton, isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
+import { isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
 import { markLoggedInBefore, hasLoggedInBefore } from "../auth/loginStore";
 import { AuthIconButton } from "../components/AuthIconButton";
 import { BrandLogo } from "../components/BrandLogo";
@@ -571,7 +571,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
                 Join with invite
               </ThemedText>
               <ThemedText variant="bodySm" tone="muted" align="center">
-                Paste a link, scan a QR, then continue with Google. We&apos;ll add you to the group after sign-in.
+                Paste a link or scan a QR code, then continue to sign in with Google on the next screen.
               </ThemedText>
             </View>
 
@@ -626,34 +626,13 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
                 />
               )}
 
-              <View style={[styles.joinDivider, { backgroundColor: theme.colors.hairline }]} />
-
-              {googleConfigured ? (
-                <GoogleSignInButton
-                  label="Continue with Google"
-                  onIdToken={(idToken) => loginWithGoogle.mutate(idToken)}
-                  pending={loginWithGoogle.isPending}
-                  errorMessage={loginWithGoogle.error?.message}
-                  disabled={!inviteLink.trim()}
-                />
-              ) : (
-                <InlineNotice title="Google sign-in not configured" body="Configure Google OAuth client IDs, or use phone below." tone="pending" />
-              )}
-
-              <ThemedText variant="caption" tone="muted" align="center">
-                Prefer phone instead?
-              </ThemedText>
-              <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-              {loginWithPhone.error ? <InlineNotice title="Phone sign-in failed" body={loginWithPhone.error.message} tone="owe" /> : null}
               <Button
-                label="Continue with phone"
-                variant="secondary"
+                label="Continue"
                 onPress={() => {
-                  setLinkingPhone(false);
-                  loginWithPhone.mutate();
+                  setScanningInvite(false);
+                  setStep("welcome");
                 }}
-                loading={loginWithPhone.isPending}
-                disabled={!inviteLink.trim() || phone.length < 8}
+                disabled={!inviteLink.trim()}
               />
               <Button
                 label="Back to welcome"
@@ -882,10 +861,5 @@ const styles = StyleSheet.create({
     gap: 14,
     borderWidth: 1,
     padding: 18
-  },
-  joinDivider: {
-    height: StyleSheet.hairlineWidth,
-    width: "100%",
-    marginVertical: 2
   }
 });

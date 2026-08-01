@@ -8,6 +8,13 @@ export const splashSpacing = {
   taglineToDots: 28
 } as const;
 
+/** Default splash geometry — keep stable for Metro/HMR and layout fallbacks. */
+export const splashLayoutDefaults = {
+  orbitRadius: 102,
+  stageSize: 220,
+  glowSize: 220
+} as const;
+
 export const splashTimeline = {
   floatStart: 250,
   logoStart: 400,

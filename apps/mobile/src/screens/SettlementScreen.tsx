@@ -73,6 +73,8 @@ const TERMINAL_STATES: SettlementState[] = [
   "refunded"
 ];
 
+const HISTORY_LIMIT = 5;
+
 function vpaFromUpiUri(uri?: string): string {
   if (!uri) {
     return "";
@@ -94,9 +96,21 @@ function isTerminalState(state: SettlementState | undefined): boolean {
   return Boolean(state && TERMINAL_STATES.includes(state));
 }
 
-function isOpenSettlementForMember(row: SettlementIntent, myParticipantId: string | undefined): boolean {
+function isOpenSettlementForMember(
+  row: SettlementIntent,
+  myParticipantId: string | undefined,
+  isGroupAdmin = false
+): boolean {
   if (!myParticipantId || isTerminalState(row.state)) {
     return false;
+  }
+  if (isConfirmableState(row.state)) {
+    if (row.payeeParticipantId === myParticipantId) {
+      return true;
+    }
+    if (isGroupAdmin && row.payerParticipantId !== myParticipantId) {
+      return true;
+    }
   }
   return row.payerParticipantId === myParticipantId || row.payeeParticipantId === myParticipantId;
 }
@@ -118,6 +132,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [proofAttachment, setProofAttachment] = useState<{ id: string; name: string }>();
   const [reason, setReason] = useState("");
   const [handoffError, setHandoffError] = useState<string>();
+  const [showAllHistory, setShowAllHistory] = useState(false);
   
   const qrRef = useRef<any>(null);
 
@@ -197,6 +212,26 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     () => (myParticipantId ? suggestions.filter((row) => row.payeeParticipantId === myParticipantId) : []),
     [myParticipantId, suggestions]
   );
+  const isGroupAdmin = groupQuery.data?.currentUserRole === "owner" || groupQuery.data?.currentUserRole === "admin";
+  const canPayAnyone = payableSuggestions.length > 0;
+  const pendingAdminConfirmations = useMemo(() => {
+    if (!isGroupAdmin || !myParticipantId || !historyQuery.data?.length) {
+      return [];
+    }
+    return historyQuery.data.filter(
+      (row) =>
+        isConfirmableState(row.state) &&
+        row.payeeParticipantId !== myParticipantId &&
+        row.payerParticipantId !== myParticipantId
+    );
+  }, [historyQuery.data, isGroupAdmin, myParticipantId]);
+
+  const settlementHistory = historyQuery.data ?? [];
+  const visibleHistory = useMemo(
+    () => (showAllHistory ? settlementHistory : settlementHistory.slice(0, HISTORY_LIMIT)),
+    [settlementHistory, showAllHistory]
+  );
+  const hasMoreHistory = settlementHistory.length > HISTORY_LIMIT;
 
   function resolvePayeeDefaultVpa(payeeId: string | undefined): string {
     if (!payeeId || !groupQuery.data?.participants) {
@@ -218,6 +253,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     setReason("");
     setHandoffError(undefined);
     setShowOtherUpiApps(false);
+    setShowAllHistory(false);
   }, [selectedGroupId]);
 
   // Current user is always the payer for custom settlements they create.
@@ -310,7 +346,6 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const isPayer = Boolean(intent && myParticipantId && intent.payerParticipantId === myParticipantId);
   const isPayee = Boolean(intent && myParticipantId && intent.payeeParticipantId === myParticipantId);
-  const isGroupAdmin = groupQuery.data?.currentUserRole === "owner" || groupQuery.data?.currentUserRole === "admin";
   const canConfirmAsPayee = isPayee && isConfirmableState(intent?.state);
   const canConfirmAsAdmin = isGroupAdmin && !isPayee && !isPayer && isConfirmableState(intent?.state);
   const canConfirmSettlement = canConfirmAsPayee || canConfirmAsAdmin;
@@ -640,13 +675,21 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       <View style={styles.titleSection}>
         {intent ? (
           <>
-            <ThemedText variant="title" numberOfLines={1}>Settle up</ThemedText>
+            <ThemedText variant="title" numberOfLines={1}>
+              {canConfirmAsAdmin ? "Confirm payment" : "Settle up"}
+            </ThemedText>
             <View style={styles.secureLine}>
-              <ThemedText variant="bodySm" tone="muted">Secure UPI payments</ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                {canConfirmAsAdmin
+                  ? "Group admin confirmation"
+                  : intent.paymentMethod === "cash"
+                    ? "Cash settlement"
+                    : "Secure UPI payments"}
+              </ThemedText>
               <ShieldCheck size={16} color={theme.colors.confirmed} weight="fill" />
             </View>
           </>
-        ) : (
+        ) : canPayAnyone ? (
           <>
             <ThemedText variant="caption" tone="muted">
               {paymentMethod === "cash" ? "Cash settlement" : "UPI settlement"}
@@ -658,6 +701,24 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 : "Complete payment and add proof to settle"}
             </ThemedText>
           </>
+        ) : pendingAdminConfirmations.length ? (
+          <>
+            <ThemedText variant="caption" tone="muted">Group admin</ThemedText>
+            <ThemedText variant="title" numberOfLines={1}>Confirm payments</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              Confirm on behalf of a member when they cannot verify on their phone.
+            </ThemedText>
+          </>
+        ) : receivableSuggestions.length ? (
+          <>
+            <ThemedText variant="title" numberOfLines={1}>Waiting to get paid</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">Others in this group still owe you money.</ThemedText>
+          </>
+        ) : (
+          <>
+            <ThemedText variant="title" numberOfLines={1}>All settled up</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">You do not owe anyone in this group right now.</ThemedText>
+          </>
         )}
       </View>
 
@@ -666,6 +727,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       ) : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Select a group with balances before creating UPI settlement intents." /> : null}
 
+      {(intent || canPayAnyone) ? (
       <DataSurface>
         <View style={styles.formBlock}>
           <SettlementStepper state={intent?.state} />
@@ -679,9 +741,12 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
           </View>
         </View>
       </DataSurface>
+      ) : null}
 
       {!intent ? (
         <View style={styles.section}>
+          {canPayAnyone ? (
+            <>
           <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4 }}>How do you want to settle?</ThemedText>
           <View style={styles.methodRow}>
             <Pressable
@@ -722,47 +787,43 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             <View style={styles.section}>
               <SectionHeader title="You need to pay" />
               {suggestionsQuery.error ? <InlineNotice title="Suggestions could not load" body={suggestionsQuery.error.message} tone="owe" /> : null}
-              {payableSuggestions.length ? (
-                  <View style={{ gap: 8 }}>
-                    {payableSuggestions.map((suggestion) => {
-                      const initials = (suggestion.payeeName ?? "?").slice(0, 2).toUpperCase();
-                      return (
-                        <Pressable
-                          key={suggestion.id}
-                          onPress={() => {
-                            setSelectedSuggestion(suggestion);
-                            const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
-                            if (defaultVpa) {
-                              setPayeeVpa(defaultVpa);
-                            }
-                          }}
-                          style={[
-                            styles.suggestion,
-                            {
-                              backgroundColor: theme.colors.surface,
-                              borderColor: selectedSuggestion?.id === suggestion.id ? theme.colors.confirmed : theme.colors.hairline
-                            }
-                          ]}
-                        >
-                          <View style={[styles.suggestionAvatar, { backgroundColor: colorWithAlpha(theme.colors.info, 0.15) }]}>
-                            <ThemedText variant="caption" style={{ color: theme.colors.info, fontWeight: "700" }}>{initials}</ThemedText>
-                          </View>
-                          <View style={styles.titleBlock}>
-                            <ThemedText variant="bodyMedium">Pay {suggestion.payeeName}</ThemedText>
-                            <ThemedText variant="bodySm" tone="muted" numberOfLines={2}>
-                              {suggestion.explanation}
-                            </ThemedText>
-                          </View>
-                          <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-              ) : (
-                <EmptyState title="Nothing to pay" body="You don’t currently owe anyone in this group." />
-              )}
+              <View style={{ gap: 8 }}>
+                {payableSuggestions.map((suggestion) => {
+                  const initials = (suggestion.payeeName ?? "?").slice(0, 2).toUpperCase();
+                  return (
+                    <Pressable
+                      key={suggestion.id}
+                      onPress={() => {
+                        setSelectedSuggestion(suggestion);
+                        const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
+                        if (defaultVpa) {
+                          setPayeeVpa(defaultVpa);
+                        }
+                      }}
+                      style={[
+                        styles.suggestion,
+                        {
+                          backgroundColor: theme.colors.surface,
+                          borderColor: selectedSuggestion?.id === suggestion.id ? theme.colors.confirmed : theme.colors.hairline
+                        }
+                      ]}
+                    >
+                      <View style={[styles.suggestionAvatar, { backgroundColor: colorWithAlpha(theme.colors.info, 0.15) }]}>
+                        <ThemedText variant="caption" style={{ color: theme.colors.info, fontWeight: "700" }}>{initials}</ThemedText>
+                      </View>
+                      <View style={styles.titleBlock}>
+                        <ThemedText variant="bodyMedium">Pay {suggestion.payeeName}</ThemedText>
+                        <ThemedText variant="bodySm" tone="muted" numberOfLines={2}>
+                          {suggestion.explanation}
+                        </ThemedText>
+                      </View>
+                      <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-              {paymentMethod === "upi" && payableSuggestions.length ? (
+              {paymentMethod === "upi" ? (
                 <View style={styles.section}>
                   <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4 }}>Receiver UPI ID</ThemedText>
                   <DataSurface>
@@ -799,41 +860,20 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 </View>
               ) : null}
 
-              {payableSuggestions.length ? (
-                <>
-                  <Button
-                    label={paymentMethod === "cash" ? "Record cash payment" : "Create UPI payment"}
-                    onPress={() => createIntent.mutate()}
-                    loading={createIntent.isPending}
-                    disabled={!canCreateSuggested || !canCreateUpi}
-                  />
-                  <View style={styles.footerNotice}>
-                    <LockSimple size={14} color={theme.colors.inkMuted} weight="fill" />
-                    <ThemedText variant="caption" tone="muted">
-                      You will be able to scan QR or pay using any UPI app
-                    </ThemedText>
-                  </View>
-                </>
-              ) : null}
-
-              {receivableSuggestions.length ? (
-                <>
-                  <SectionHeader title="Waiting to receive" />
-                  <DataSurface>
-                    {receivableSuggestions.map((suggestion) => (
-                      <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline, borderColor: "transparent" }]}>
-                        <View style={styles.titleBlock}>
-                          <ThemedText variant="bodyMedium">{suggestion.payerName} owes you</ThemedText>
-                          <ThemedText variant="bodySm" tone="muted">
-                            Only they can pay this. You’ll confirm after they send proof.
-                          </ThemedText>
-                        </View>
-                        <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
-                      </View>
-                    ))}
-                  </DataSurface>
-                </>
-              ) : null}
+              <Button
+                label={paymentMethod === "cash" ? "Record cash payment" : "Create UPI payment"}
+                onPress={() => createIntent.mutate()}
+                loading={createIntent.isPending}
+                disabled={!canCreateSuggested || !canCreateUpi}
+              />
+              <View style={styles.footerNotice}>
+                <LockSimple size={14} color={theme.colors.inkMuted} weight="fill" />
+                <ThemedText variant="caption" tone="muted">
+                  {paymentMethod === "cash"
+                    ? "The receiver must confirm before balances update."
+                    : "You will be able to scan QR or pay using any UPI app"}
+                </ThemedText>
+              </View>
             </View>
           ) : null}
 
@@ -909,6 +949,65 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 loading={createIntent.isPending}
                 disabled={!canCreateCustom || !canCreateUpi}
               />
+            </View>
+          ) : null}
+            </>
+          ) : null}
+
+          {!canPayAnyone && !receivableSuggestions.length && !pendingAdminConfirmations.length ? (
+            <EmptyState title="All settled up" body="No payments are due for you in this group right now." />
+          ) : null}
+
+          {receivableSuggestions.length ? (
+            <View style={styles.section}>
+              <SectionHeader title="Waiting to receive" />
+              <DataSurface>
+                {receivableSuggestions.map((suggestion) => (
+                  <View key={suggestion.id} style={[styles.suggestion, { borderBottomColor: theme.colors.hairline, borderColor: "transparent" }]}>
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium">{suggestion.payerName} owes you</ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        They need to pay you first. You will confirm once they record the payment.
+                      </ThemedText>
+                    </View>
+                    <ThemedText variant="amount">{formatMoney(suggestion.amountMinor, suggestion.currencyCode)}</ThemedText>
+                  </View>
+                ))}
+              </DataSurface>
+            </View>
+          ) : null}
+
+          {pendingAdminConfirmations.length ? (
+            <View style={styles.section}>
+              <SectionHeader title="Confirm as group admin" />
+              <ThemedText variant="bodySm" tone="muted" style={{ paddingHorizontal: 4, marginBottom: 8 }}>
+                Tap a payment below to confirm on behalf of the receiver when they cannot use their phone.
+              </ThemedText>
+              <View style={{ gap: 8 }}>
+                {pendingAdminConfirmations.map((row) => (
+                  <Pressable
+                    key={row.id}
+                    onPress={() => setIntent(row)}
+                    style={[
+                      styles.suggestion,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.hairline
+                      }
+                    ]}
+                  >
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium">
+                        {lookups ? formatSettlementDirection(row, lookups) : "Payment pending"}
+                      </ThemedText>
+                      <ThemedText variant="bodySm" tone="muted">
+                        {row.paymentMethod === "cash" ? "Cash" : "UPI"} · waiting for confirmation
+                      </ThemedText>
+                    </View>
+                    <ThemedText variant="amount">{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           ) : null}
         </View>
@@ -1235,19 +1334,15 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       <View style={styles.section}>
         <View style={styles.historyHeader}>
           <ThemedText variant="bodyMedium">Settlement history</ThemedText>
-          <Pressable style={styles.viewAllBtn}>
-            <ThemedText variant="bodySm" tone="confirmed">View all</ThemedText>
-            <CaretRight size={14} color={theme.colors.confirmed} weight="bold" />
-          </Pressable>
         </View>
         {historyQuery.error ? <InlineNotice title="History could not load" body={historyQuery.error.message} tone="owe" /> : null}
-        {historyQuery.data?.length ? (
+        {settlementHistory.length ? (
           <View style={styles.historyList}>
-            {historyQuery.data.map((row) => {
+            {visibleHistory.map((row) => {
               const displayLabel = lookups ? formatSettlementDirection(row, lookups) : row.clientReference ?? "Settlement";
               const metaLine = formatSettlementHistoryMeta(row);
               const initials = displayLabel.slice(0, 1).toUpperCase();
-              const canResume = isOpenSettlementForMember(row, myParticipantId);
+              const canResume = isOpenSettlementForMember(row, myParticipantId, isGroupAdmin);
               return (
                 <DataSurface key={row.id}>
                   <Pressable
@@ -1288,6 +1383,27 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 </DataSurface>
               );
             })}
+            {hasMoreHistory ? (
+              <Pressable
+                onPress={() => setShowAllHistory((prev) => !prev)}
+                style={[
+                  styles.seeAllButton,
+                  {
+                    borderColor: theme.colors.hairline,
+                    backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+                  }
+                ]}
+              >
+                <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+                  {showAllHistory ? "Show less" : `See all (${settlementHistory.length})`}
+                </ThemedText>
+                <CaretDown
+                  size={14}
+                  color={theme.colors.info}
+                  style={{ transform: [{ rotate: showAllHistory ? "180deg" : "0deg" }] }}
+                />
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <EmptyState title="No settlement history" body="UPI app opens, proofs, confirmations, and postings will appear here." />
@@ -1558,10 +1674,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 4
   },
-  viewAllBtn: {
+  seeAllButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1
   },
   historyList: {
     gap: 10

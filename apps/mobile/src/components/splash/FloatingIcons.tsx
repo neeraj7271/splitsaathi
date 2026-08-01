@@ -21,7 +21,9 @@ import Animated, {
 } from "react-native-reanimated";
 
 import type { SplashPalette } from "./tokens";
-import { splashTimeline } from "./tokens";
+import { splashLayoutDefaults, splashTimeline } from "./tokens";
+
+const ORBIT_RADIUS = splashLayoutDefaults.orbitRadius;
 
 type IconComponent = React.ComponentType<{
   size?: number;
@@ -49,14 +51,14 @@ const ORBIT_ICONS: OrbitIcon[] = [
 ];
 
 const ORBIT_MS = 22000;
-const ORBIT_RADIUS = 102;
 
 type Props = {
   palette: SplashPalette;
   reduceMotion: boolean;
+  orbitRadius?: number;
 };
 
-export function FloatingIcons({ palette, reduceMotion }: Props) {
+export function FloatingIcons({ palette, reduceMotion, orbitRadius = ORBIT_RADIUS }: Props) {
   const orbit = useSharedValue(0);
   const ringOpacity = useSharedValue(0);
 
@@ -102,7 +104,16 @@ export function FloatingIcons({ palette, reduceMotion }: Props) {
 
   return (
     <View style={styles.stage} pointerEvents="none">
-      <Animated.View style={[styles.ring, ringStyle]}>
+      <Animated.View
+        style={[
+          styles.ring,
+          ringStyle,
+          {
+            width: orbitRadius * 2 + 48,
+            height: orbitRadius * 2 + 48
+          }
+        ]}
+      >
         {slots.map((slot) => (
           <OrbitBubble
             key={slot.id}
@@ -110,6 +121,7 @@ export function FloatingIcons({ palette, reduceMotion }: Props) {
             baseAngle={slot.baseAngle}
             palette={palette}
             counterStyle={counterStyle}
+            orbitRadius={orbitRadius}
           />
         ))}
       </Animated.View>
@@ -121,17 +133,19 @@ function OrbitBubble({
   icon,
   baseAngle,
   palette,
-  counterStyle
+  counterStyle,
+  orbitRadius
 }: {
   icon: OrbitIcon;
   baseAngle: number;
   palette: SplashPalette;
   counterStyle: ReturnType<typeof useAnimatedStyle>;
+  orbitRadius: number;
 }) {
   const Icon = icon.Icon;
   const rad = (baseAngle * Math.PI) / 180;
-  const x = Math.cos(rad) * ORBIT_RADIUS;
-  const y = Math.sin(rad) * ORBIT_RADIUS;
+  const x = Math.cos(rad) * orbitRadius;
+  const y = Math.sin(rad) * orbitRadius;
 
   return (
     <View
@@ -176,8 +190,6 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   ring: {
-    width: ORBIT_RADIUS * 2 + 48,
-    height: ORBIT_RADIUS * 2 + 48,
     alignItems: "center",
     justifyContent: "center"
   },

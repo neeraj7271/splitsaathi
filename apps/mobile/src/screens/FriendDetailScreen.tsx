@@ -283,7 +283,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                 friend.sharedGroups.length > 0 ? (
                   <Pressable onPress={() => setShowAllGroups((prev) => !prev)}>
                     <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
-                      View all ({friend.sharedGroups.length})
+                      See all ({friend.sharedGroups.length})
                     </ThemedText>
                   </Pressable>
                 ) : null
@@ -349,7 +349,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                     <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
                       {showAllGroups
                         ? "Show fewer groups"
-                        : `View all groups (${friend.sharedGroups.length})`}
+                        : `See all (${friend.sharedGroups.length})`}
                     </ThemedText>
                     <CaretDown size={14} color="#10B981" weight="bold" />
                   </Pressable>
@@ -431,7 +431,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                     ]}
                   >
                     <ThemedText variant="bodySm" tone="confirmed" style={{ fontWeight: "600" }}>
-                      {showAllTransactions ? "Show fewer transactions" : "View all transactions"}
+                      {showAllTransactions ? "Show fewer transactions" : `See all (${transactions.length})`}
                     </ThemedText>
                     <CaretDown size={14} color="#10B981" weight="bold" />
                   </Pressable>
