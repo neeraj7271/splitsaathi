@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
@@ -19,6 +19,7 @@ import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { ExportJob, ImportJob } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 export function ImportExportScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -28,7 +29,8 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
   const [exportType, setExportType] = useState<ExportJob["exportType"]>("full_group_csv");
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const selectorGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? selectorGroups[0]?.id;
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
@@ -36,10 +38,10 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
   });
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && selectorGroups[0]?.id) {
+      navigation.setSelectedGroupId(selectorGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [selectorGroups, navigation]);
 
   const importCsv = useMutation({
     mutationFn: async () => {
@@ -108,18 +110,16 @@ export function ImportExportScreen({ navigation }: { navigation: AppNavigation }
 
   return (
     <Screen>
-      <ScreenBackButton navigation={navigation} label="Back" />
-      <View style={styles.header}>
-        <View>
-          <ThemedText variant="caption" tone="muted">
-            Data portability
-          </ThemedText>
-          <ThemedText variant="title">Splitwise CSV import/export</ThemedText>
-        </View>
-        <FileCsv size={28} color={theme.colors.confirmed} weight="duotone" />
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        caption="Data portability"
+        title="Splitwise CSV import/export"
+        trailing={<FileCsv size={28} color={theme.colors.confirmed} weight="duotone" />}
+      />
 
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {selectorGroups.length ? (
+        <GroupSelector groups={selectorGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
 
       <View style={styles.section}>
         <SectionHeader title="Import from Splitwise" />

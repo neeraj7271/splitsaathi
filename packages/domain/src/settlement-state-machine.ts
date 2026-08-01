@@ -23,7 +23,7 @@ const transitions: Record<SettlementState, Partial<Record<SettlementEventName, S
   suggested: { create_intent: 'intent_created' },
   intent_created: {
     generate_intent: 'intent_generated',
-    record_cash: 'confirmed',
+    record_cash: 'awaiting_receiver_confirmation',
     cancel: 'cancelled',
     expire: 'expired'
   },

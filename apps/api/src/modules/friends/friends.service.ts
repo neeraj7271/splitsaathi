@@ -68,6 +68,128 @@ export class FriendsService {
     });
   }
 
+  private friendIdentityKey(input: {
+    userId?: string | null;
+    linkedUserId?: string | null;
+    phoneE164?: string | null;
+    displayName: string;
+    participantId: string;
+  }): string {
+    if (input.userId) {
+      return input.userId;
+    }
+    if (input.linkedUserId) {
+      return input.linkedUserId;
+    }
+    const phone = input.phoneE164?.trim();
+    if (phone) {
+      return `phone:${phone.replace(/[\s()-]/g, '')}`;
+    }
+    const name = input.displayName.trim().toLowerCase();
+    if (name) {
+      return `name:${name}`;
+    }
+    return input.participantId;
+  }
+
+  private collapseFriendMap(
+    map: Map<string, SharedGroupPair[]>,
+    participantById: Map<string, ParticipantEntity>
+  ): Map<string, SharedGroupPair[]> {
+    const aliasToCanonical = new Map<string, string>();
+
+    const resolveKey = (key: string): string => {
+      let current = key;
+      const seen = new Set<string>();
+      while (aliasToCanonical.has(current) && !seen.has(current)) {
+        seen.add(current);
+        current = aliasToCanonical.get(current)!;
+      }
+      return current;
+    };
+
+    const link = (from: string, to: string) => {
+      const canonical = resolveKey(to);
+      if (from !== canonical) {
+        aliasToCanonical.set(from, canonical);
+      }
+    };
+
+    for (const [key, pairs] of map.entries()) {
+      for (const pair of pairs) {
+        const participant = participantById.get(pair.theirParticipantId);
+        if (participant?.linkedUserId) {
+          link(key, participant.linkedUserId);
+        }
+      }
+    }
+
+    const nameToKey = new Map<string, string>();
+    const phoneToKey = new Map<string, string>();
+
+    for (const key of map.keys()) {
+      const resolved = resolveKey(key);
+      const pairs = map.get(key) ?? [];
+
+      if (resolved.startsWith('name:')) {
+        const norm = resolved.slice(5);
+        if (nameToKey.has(norm)) {
+          link(resolved, nameToKey.get(norm)!);
+        } else {
+          nameToKey.set(norm, resolved);
+        }
+        continue;
+      }
+
+      if (resolved.startsWith('phone:')) {
+        const norm = resolved.slice(6);
+        if (phoneToKey.has(norm)) {
+          link(resolved, phoneToKey.get(norm)!);
+        } else {
+          phoneToKey.set(norm, resolved);
+        }
+        continue;
+      }
+
+      for (const pair of pairs) {
+        const participant = participantById.get(pair.theirParticipantId);
+        if (!participant) {
+          continue;
+        }
+        const name = participant.displayName.trim().toLowerCase();
+        if (name) {
+          if (nameToKey.has(name)) {
+            link(resolved, nameToKey.get(name)!);
+          } else {
+            nameToKey.set(name, resolved);
+          }
+        }
+        const phone = participant.phoneE164?.trim().replace(/[\s()-]/g, '');
+        if (phone) {
+          if (phoneToKey.has(phone)) {
+            link(resolved, phoneToKey.get(phone)!);
+          } else {
+            phoneToKey.set(phone, resolved);
+          }
+        }
+      }
+    }
+
+    const merged = new Map<string, SharedGroupPair[]>();
+    for (const [key, pairs] of map.entries()) {
+      const canonical = resolveKey(key);
+      const list = merged.get(canonical) ?? [];
+      for (const pair of pairs) {
+        if (!list.some((row) => row.group.id === pair.group.id)) {
+          list.push(pair);
+        }
+      }
+      merged.set(canonical, list);
+    }
+
+    return merged;
+  }
+
   async getFriendDetail(userId: string, otherUserId: string): Promise<FriendDetailDto> {
     const pairsByFriend = await this.sharedPairsByFriend(userId);
     let pairs = pairsByFriend.get(otherUserId);
@@ -169,6 +291,7 @@ export class FriendsService {
       }),
       this.participants.find({ where: { groupId: In(groupIdsArray) } })
     ]);
+    const participantById = new Map(allParticipants.map((row) => [row.id, row]));
 
     for (const group of groups) {
       const groupMemberships = allMemberships.filter((m) => m.groupId === group.id);
@@ -201,7 +324,12 @@ export class FriendsService {
 
       for (const p of groupParticipants) {
         if (p.id !== myParticipantId) {
-          const targetKey = p.linkedUserId ?? p.id;
+          const targetKey = this.friendIdentityKey({
+            linkedUserId: p.linkedUserId,
+            phoneE164: p.phoneE164,
+            displayName: p.displayName,
+            participantId: p.id
+          });
           if (targetKey !== userId) {
             if (!otherUserMap.has(targetKey)) {
               otherUserMap.set(targetKey, p.id);
@@ -219,7 +347,7 @@ export class FriendsService {
       }
     }
 
-    return map;
+    return this.collapseFriendMap(map, participantById);
   }
 
   private async buildSummary(

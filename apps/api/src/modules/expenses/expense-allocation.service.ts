@@ -112,12 +112,16 @@ export class ExpenseAllocationService {
 
     for (const adjustment of billAdjustments) {
       requireIntegerAmount(adjustment.amountMinor, `Adjustment ${adjustment.label}`);
+      const signedMinor =
+        adjustment.adjustmentType === 'discount'
+          ? -Math.abs(adjustment.amountMinor)
+          : adjustment.amountMinor;
       const basisIds = participantIds.filter((participantId) => (shareTotals.get(participantId) ?? 0) !== 0);
       const idsForAdjustment = basisIds.length > 0 ? basisIds : participantIds;
       const allocations =
         adjustment.allocationBasis === 'equal'
           ? this.roundingAllocator.allocate(
-              adjustment.amountMinor,
+              signedMinor,
               idsForAdjustment.map((participantId) => ({
                 id: participantId,
                 weightNumerator: 1,
@@ -125,7 +129,7 @@ export class ExpenseAllocationService {
               }))
             )
           : this.roundingAllocator.allocate(
-              adjustment.amountMinor,
+              signedMinor,
               idsForAdjustment.map((participantId) => ({
                 id: participantId,
                 weightNumerator: Math.max(1, Math.abs(shareTotals.get(participantId) ?? 0)),

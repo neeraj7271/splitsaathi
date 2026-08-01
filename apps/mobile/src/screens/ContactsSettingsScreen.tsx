@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, UsersThree } from "phosphor-react-native";
+import { Check, UsersThree } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
@@ -37,7 +38,7 @@ export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigati
       setError(null);
       await apiClient.recordConsent("contacts_discovery", granted, "settings");
       if (granted) {
-        await syncDeviceContacts({ forcePrompt: true });
+        await syncDeviceContacts();
       }
     },
     onSuccess: async () => {
@@ -60,12 +61,7 @@ export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigati
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("settings")} style={styles.backButton}>
-          <ArrowLeft size={22} color={theme.colors.ink} />
-        </Pressable>
-        <ThemedText variant="title">Contacts</ThemedText>
-      </View>
+      <ScreenHeader navigation={navigation} fallbackRoute="settings" title="Contacts" />
 
       <DataSurface>
         <Pressable

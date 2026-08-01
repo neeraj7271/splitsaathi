@@ -1,16 +1,18 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 
 import { useTheme } from "../theme";
 
 export function DataSurface({
   children,
   elevated = false,
-  padded = false
+  padded = false,
+  style
 }: {
   children: React.ReactNode;
   elevated?: boolean;
   padded?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
 
@@ -26,7 +28,8 @@ export function DataSurface({
           padding: padded ? theme.spacing.cardPadding : 0,
           overflow: elevated ? "visible" : "hidden"
         },
-        elevated ? theme.cardShadow : null
+        elevated ? theme.cardShadow : null,
+        style
       ]}
     >
       {children}

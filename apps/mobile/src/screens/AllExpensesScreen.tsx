@@ -1,27 +1,53 @@
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CaretDown, Gear, MagnifyingGlass } from "phosphor-react-native";
+import {
+  CalendarBlank,
+  CaretDown,
+  ChartBar,
+  Clock,
+  Hash,
+  MagnifyingGlass,
+  Receipt,
+  SquaresFour,
+  Wallet
+} from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
+import { DataSurface } from "../components/DataSurface";
+import { EmptyState } from "../components/EmptyState";
 import { GroupTypeAvatar } from "../components/GroupTypeAvatar";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import type { ExpenseRow, GroupType } from "../types/domain";
 import type { AppNavigation } from "../types/navigation";
 import { formatMoney } from "../utils/money";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 type TimeFilter = "this_month" | "last_30_days" | "this_year" | "all_time";
 type SortOption = "latest" | "oldest" | "highest";
 
-const TIME_FILTERS: Array<{ label: string; value: TimeFilter }> = [
-  { label: "This month", value: "this_month" },
-  { label: "Last 30 days", value: "last_30_days" },
-  { label: "This year", value: "this_year" },
-  { label: "All time", value: "all_time" }
+const TIME_FILTERS: Array<{
+  label: string;
+  value: TimeFilter;
+  Icon: typeof CalendarBlank;
+  accent: "confirmed" | "info" | "pending" | "receive";
+}> = [
+  { label: "This month", value: "this_month", Icon: CalendarBlank, accent: "confirmed" },
+  { label: "Last 30 days", value: "last_30_days", Icon: Clock, accent: "info" },
+  { label: "This year", value: "this_year", Icon: ChartBar, accent: "pending" },
+  { label: "All time", value: "all_time", Icon: SquaresFour, accent: "receive" }
 ];
+
+const SORT_LABELS: Record<SortOption, string> = {
+  latest: "Latest",
+  oldest: "Oldest",
+  highest: "Highest"
+};
 
 export interface EnrichedExpense extends ExpenseRow {
   groupName: string;
@@ -42,6 +68,7 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
     queryFn: () => apiClient.listGroups()
   });
   const groups = groupsQuery.data ?? [];
+  const selectorGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
 
   const allExpensesQuery = useQuery({
     queryKey: ["allGroupExpenses", groups.map((g) => g.id).join(",")],
@@ -72,7 +99,6 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
 
   const allExpenses = allExpensesQuery.data ?? [];
 
-  // Filter expenses by date, group, and search query
   const filteredExpenses = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -80,12 +106,10 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
     const queryStr = search.trim().toLowerCase();
 
     return allExpenses.filter((expense) => {
-      // Group filter
       if (selectedGroupId !== "all" && expense.groupId !== selectedGroupId) {
         return false;
       }
 
-      // Search filter
       if (queryStr) {
         const matchesName = expense.description.toLowerCase().includes(queryStr);
         const matchesGroup = expense.groupName.toLowerCase().includes(queryStr);
@@ -95,7 +119,6 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
         }
       }
 
-      // Time filter
       const expDate = new Date(expense.expenseDate);
       if (timeFilter === "this_month") {
         return expDate.getFullYear() === currentYear && expDate.getMonth() === currentMonth;
@@ -107,11 +130,10 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
       if (timeFilter === "this_year") {
         return expDate.getFullYear() === currentYear;
       }
-      return true; // all_time
+      return true;
     });
   }, [allExpenses, selectedGroupId, search, timeFilter]);
 
-  // Sort expenses based on sortOrder
   const sortedExpenses = useMemo(() => {
     const list = [...filteredExpenses];
     if (sortOrder === "oldest") {
@@ -123,7 +145,6 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
     return list.sort((a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime());
   }, [filteredExpenses, sortOrder]);
 
-  // Aggregate statistics
   const totalSpendMinor = useMemo(
     () => filteredExpenses.reduce((sum, item) => sum + (item.totalAmountMinor ?? 0), 0),
     [filteredExpenses]
@@ -147,373 +168,382 @@ export function AllExpensesScreen({ navigation }: { navigation: AppNavigation })
     navigation.go("groupDetail");
   }
 
+  const refreshing = groupsQuery.isRefetching || allExpensesQuery.isRefetching;
+
   return (
-    <Screen refreshing={groupsQuery.isRefetching || allExpensesQuery.isRefetching} onRefresh={() => void allExpensesQuery.refetch()}>
-      {/* Top Action Bar (Back & Settings) */}
-      <View style={styles.topBar}>
-        <Pressable
-          style={[styles.topIconBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
-          onPress={() => navigation.back()}
-          hitSlop={8}
-        >
-          <ArrowLeft size={16} color={theme.colors.ink} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.topIconBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
-          onPress={() => navigation.go("settings")}
-          hitSlop={8}
-        >
-          <Gear size={16} color={theme.colors.ink} />
-          <View style={styles.settingsDot} />
-        </Pressable>
-      </View>
-
-      {/* Screen Title Block */}
-      <View style={styles.headerBlock}>
-        <ThemedText variant="caption" tone="muted" style={styles.subTitleText}>
-          COMBINED GROUP HISTORY
-        </ThemedText>
-        <ThemedText variant="title" style={styles.mainTitleText}>
-          All expenses
-        </ThemedText>
-      </View>
-
-      {/* Top Summary Cards (Mockup matching) */}
-      <View style={styles.statsGrid}>
-        {/* Total spend */}
-        <View
-          style={[
-            styles.statCard,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.hairline
-            },
-            styles.cardShadowStyle
-          ]}
-        >
-          <View style={[styles.statIconBadge, { backgroundColor: theme.mode === "dark" ? "#451A03" : "#FEF3C7" }]}>
-            <ThemedText style={{ color: "#D97706", fontWeight: "900", fontSize: 16 }}>₹</ThemedText>
+    <Screen refreshing={refreshing} onRefresh={() => void allExpensesQuery.refetch()}>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        caption="Combined group history"
+        title="All expenses"
+        trailing={
+          <View
+            style={[
+              styles.headerIcon,
+              {
+                backgroundColor: colorWithAlpha(theme.colors.pending, theme.mode === "dark" ? 0.16 : 0.1),
+                borderColor: colorWithAlpha(theme.colors.pending, 0.28),
+                borderRadius: theme.radius.full
+              }
+            ]}
+          >
+            <Receipt size={20} color={theme.colors.pending} weight="duotone" />
           </View>
-          <ThemedText variant="caption" tone="muted" style={styles.statLabelText}>
-            Total spend
-          </ThemedText>
-          <ThemedText variant="bodyMedium" numberOfLines={1} adjustsFontSizeToFit style={styles.statValueText}>
-            {formatMoney(totalSpendMinor)}
-          </ThemedText>
+        }
+      />
+
+      <DataSurface elevated>
+        <View style={styles.summaryRow}>
+          <SummaryStat
+            label="Total spend"
+            value={formatMoney(totalSpendMinor)}
+            Icon={Wallet}
+            accent={theme.colors.pending}
+          />
+          <View style={[styles.summaryDivider, { backgroundColor: theme.colors.hairline }]} />
+          <SummaryStat label="Count" value={String(filteredExpenses.length)} Icon={Hash} accent={theme.colors.info} />
+          <View style={[styles.summaryDivider, { backgroundColor: theme.colors.hairline }]} />
+          <SummaryStat
+            label="Average"
+            value={formatMoney(avgSpendMinor)}
+            Icon={ChartBar}
+            accent={theme.colors.confirmed}
+          />
         </View>
+      </DataSurface>
 
-        {/* Count */}
+      <View style={styles.searchRow}>
         <View
           style={[
-            styles.statCard,
+            styles.searchField,
             {
               backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.hairline
-            },
-            styles.cardShadowStyle
+              borderColor: theme.colors.hairline,
+              borderRadius: theme.radius.md
+            }
           ]}
         >
-          <View style={[styles.statIconBadge, { backgroundColor: theme.mode === "dark" ? "#3B0764" : "#F3E8FF" }]}>
-            <ThemedText style={{ color: "#9333EA", fontWeight: "900", fontSize: 16 }}>#</ThemedText>
-          </View>
-          <ThemedText variant="caption" tone="muted" style={styles.statLabelText}>
-            Count
-          </ThemedText>
-          <ThemedText variant="bodyMedium" numberOfLines={1} style={styles.statValueText}>
-            {filteredExpenses.length}
-          </ThemedText>
-        </View>
-
-        {/* Average */}
-        <View
-          style={[
-            styles.statCard,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.hairline
-            },
-            styles.cardShadowStyle
-          ]}
-        >
-          <View style={[styles.statIconBadge, { backgroundColor: theme.mode === "dark" ? "#042F2E" : "#CCFBF1" }]}>
-            <ThemedText style={{ color: "#0D9488", fontWeight: "900", fontSize: 16 }}>~</ThemedText>
-          </View>
-          <ThemedText variant="caption" tone="muted" style={styles.statLabelText}>
-            Average
-          </ThemedText>
-          <ThemedText variant="bodyMedium" numberOfLines={1} adjustsFontSizeToFit style={styles.statValueText}>
-            {formatMoney(avgSpendMinor)}
-          </ThemedText>
+          <MagnifyingGlass size={18} color={theme.colors.inkMuted} weight="duotone" />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search by title, group, or notes"
+            placeholderTextColor={theme.colors.inkFaint}
+            style={[theme.typography.body, styles.searchInput, { color: theme.colors.ink }]}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
         </View>
       </View>
 
-      {/* Rounded Search Bar */}
-      <View
-        style={[
-          styles.searchBarContainer,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.hairline
-          },
-          styles.cardShadowStyle
-        ]}
-      >
-        <MagnifyingGlass size={18} color={theme.colors.inkMuted} weight="bold" style={styles.searchIcon} />
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search expenses by title or group"
-          placeholderTextColor={theme.colors.inkFaint}
-          style={[theme.typography.body, styles.searchInput, { color: theme.colors.ink }]}
-          autoCorrect={false}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
-        />
-      </View>
-
-      {/* Filter Chips Horizontal Scroll */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
         {TIME_FILTERS.map((option) => {
           const active = option.value === timeFilter;
-          const bg = active ? "#4F46E5" : theme.colors.surface;
-          const border = active ? "#4F46E5" : theme.colors.hairline;
-          const textClr = active ? "#FFFFFF" : theme.colors.ink;
-          const caretClr = active ? "#FFFFFF" : theme.colors.inkMuted;
-
+          const accent = theme.colors[option.accent];
+          const Icon = option.Icon;
           return (
             <Pressable
               key={option.value}
               onPress={() => setTimeFilter(option.value)}
               style={[
-                styles.filterChipPill,
+                styles.filterChip,
                 {
-                  backgroundColor: bg,
-                  borderColor: border
-                },
-                !active && styles.cardShadowStyle
+                  borderRadius: theme.radius.full,
+                  borderColor: active ? accent : theme.colors.hairline,
+                  backgroundColor: active
+                    ? colorWithAlpha(accent, theme.mode === "dark" ? 0.16 : 0.08)
+                    : theme.colors.surface
+                }
               ]}
             >
-              <ThemedText variant="caption" style={{ color: textClr, fontWeight: active ? "700" : "600", fontSize: 13 }}>
+              <Icon size={14} color={accent} weight="duotone" />
+              <ThemedText variant="caption" style={{ color: active ? accent : theme.colors.inkMuted }}>
                 {option.label}
               </ThemedText>
-              <CaretDown size={12} color={caretClr} weight="bold" />
             </Pressable>
           );
         })}
       </ScrollView>
 
-      {/* Section Header: Expenses (Count) & Sort dropdown */}
-      <View style={styles.sectionHeaderRow}>
-        <ThemedText variant="title" style={styles.sectionTitleText}>
-          Expenses ({filteredExpenses.length})
-        </ThemedText>
-
-        <Pressable onPress={toggleSortOrder} style={styles.sortTrigger} hitSlop={8}>
-          <ThemedText variant="bodySm" style={{ color: "#4F46E5", fontWeight: "700" }}>
-            Sort {sortOrder === "latest" ? "Latest" : sortOrder === "highest" ? "Highest" : "Oldest"}
-          </ThemedText>
-          <CaretDown size={14} color="#4F46E5" weight="bold" />
-        </Pressable>
-      </View>
-
-      {/* Loading state or notice */}
-      {allExpensesQuery.isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={theme.colors.inkMuted} />
-        </View>
-      ) : allExpensesQuery.error ? (
-        <InlineNotice title="Could not load expenses" body={allExpensesQuery.error.message} tone="owe" />
-      ) : null}
-
-      {/* Expenses Cards List */}
-      {sortedExpenses.length ? (
-        <View style={styles.expensesListStack}>
-          {visibleExpenses.map((expense) => {
-            const dateFormatted = new Date(expense.expenseDate).toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric"
-            });
-
+      {selectorGroups.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          <Pressable
+            onPress={() => setSelectedGroupId("all")}
+            style={[
+              styles.filterChip,
+              {
+                borderRadius: theme.radius.full,
+                borderColor: selectedGroupId === "all" ? theme.colors.confirmed : theme.colors.hairline,
+                backgroundColor:
+                  selectedGroupId === "all"
+                    ? colorWithAlpha(theme.colors.confirmed, theme.mode === "dark" ? 0.16 : 0.08)
+                    : theme.colors.surface
+              }
+            ]}
+          >
+            <SquaresFour size={14} color={theme.colors.confirmed} weight="duotone" />
+            <ThemedText
+              variant="caption"
+              style={{ color: selectedGroupId === "all" ? theme.colors.confirmed : theme.colors.inkMuted }}
+            >
+              All groups
+            </ThemedText>
+          </Pressable>
+          {selectorGroups.map((group) => {
+            const active = selectedGroupId === group.id;
             return (
               <Pressable
-                key={expense.id}
-                onPress={() => openExpense(expense)}
+                key={group.id}
+                onPress={() => setSelectedGroupId(group.id)}
                 style={[
-                  styles.expenseCardItem,
+                  styles.filterChip,
                   {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.hairline
-                  },
-                  styles.cardShadowStyle
+                    borderRadius: theme.radius.full,
+                    borderColor: active ? theme.colors.info : theme.colors.hairline,
+                    backgroundColor: active
+                      ? colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+                      : theme.colors.surface
+                  }
                 ]}
               >
-                {/* Group Type Icon Avatar */}
-                <GroupTypeAvatar groupType={expense.groupType} size={44} />
-
-                {/* Center Title & Group Tag */}
-                <View style={styles.expenseCardCenter}>
-                  <ThemedText variant="bodyMedium" numberOfLines={1} style={styles.expenseCardTitle}>
-                    {expense.description}
-                  </ThemedText>
-
-                  <View style={[styles.groupNamePill, { backgroundColor: colorWithAlpha("#4F46E5", 0.1) }]}>
-                    <ThemedText variant="caption" style={{ color: "#4F46E5", fontWeight: "700", fontSize: 11 }}>
-                      {expense.groupName}
-                    </ThemedText>
-                  </View>
-                </View>
-
-                {/* Right Amount & Date */}
-                <View style={styles.expenseCardRight}>
-                  <ThemedText variant="bodyMedium" style={styles.expenseCardAmount}>
-                    {formatMoney(expense.totalAmountMinor, expense.currencyCode)}
-                  </ThemedText>
-                  <ThemedText variant="caption" tone="muted" style={{ fontSize: 12 }}>
-                    {dateFormatted}
-                  </ThemedText>
-                </View>
+                <ThemedText variant="caption" style={{ color: active ? theme.colors.info : theme.colors.inkMuted }} numberOfLines={1}>
+                  {group.name}
+                </ThemedText>
               </Pressable>
             );
           })}
+        </ScrollView>
+      ) : null}
 
-          {/* See All / Show Less Toggle Button */}
-          {hasMore ? (
-            <Pressable
-              onPress={() => setShowAll((prev) => !prev)}
-              style={[
-                styles.seeAllButton,
-                {
-                  borderColor: theme.colors.hairline,
-                  backgroundColor: colorWithAlpha("#4F46E5", theme.mode === "dark" ? 0.16 : 0.08)
-                }
-              ]}
-            >
-              <ThemedText variant="bodySm" style={{ color: "#4F46E5", fontWeight: "700" }}>
-                {showAll ? "Show less" : `See all (${sortedExpenses.length})`}
+      <View style={styles.section}>
+        <SectionHeader
+          title={`Expenses (${filteredExpenses.length})`}
+          action={
+            <Pressable onPress={toggleSortOrder} hitSlop={8} style={styles.sortTrigger}>
+              <ThemedText variant="bodySm" tone="info">
+                Sort {SORT_LABELS[sortOrder]}
               </ThemedText>
-              <CaretDown size={14} color="#4F46E5" style={{ transform: [{ rotate: showAll ? "180deg" : "0deg" }] }} />
+              <CaretDown size={14} color={theme.colors.info} weight="bold" />
             </Pressable>
-          ) : null}
-        </View>
-      ) : (
-        <View style={styles.emptyStateWrap}>
-          <ThemedText variant="bodyMedium" tone="muted">
-            {search || timeFilter !== "all_time" ? "No matching expenses found." : "No expenses created yet."}
-          </ThemedText>
-        </View>
-      )}
+          }
+        />
+
+        {allExpensesQuery.isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={theme.colors.inkMuted} />
+          </View>
+        ) : null}
+
+        {allExpensesQuery.error ? (
+          <InlineNotice title="Could not load expenses" body={allExpensesQuery.error.message} tone="owe" />
+        ) : null}
+
+        {sortedExpenses.length ? (
+          <>
+            <DataSurface elevated>
+              {visibleExpenses.map((expense, index) => {
+                const dateFormatted = new Date(expense.expenseDate).toLocaleDateString("en-IN", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric"
+                });
+
+                return (
+                  <Pressable
+                    key={expense.id}
+                    onPress={() => openExpense(expense)}
+                    style={[
+                      styles.dataRow,
+                      {
+                        borderBottomColor: theme.colors.hairline,
+                        borderBottomWidth: index < visibleExpenses.length - 1 ? 1 : 0
+                      }
+                    ]}
+                  >
+                    <GroupTypeAvatar groupType={expense.groupType} size={44} />
+                    <View style={styles.titleBlock}>
+                      <ThemedText variant="bodyMedium" numberOfLines={1}>
+                        {expense.description}
+                      </ThemedText>
+                      <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
+                        {expense.groupName}
+                        {expense.category ? ` · ${expense.category}` : ""}
+                      </ThemedText>
+                      <ThemedText variant="caption" tone="faint">
+                        {dateFormatted}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.trailing}>
+                      <ThemedText variant="amountSm" align="right">
+                        {formatMoney(expense.totalAmountMinor, expense.currencyCode)}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </DataSurface>
+
+            {hasMore ? (
+              <Pressable
+                onPress={() => setShowAll((prev) => !prev)}
+                style={[
+                  styles.seeAllButton,
+                  {
+                    borderColor: theme.colors.hairline,
+                    backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+                  }
+                ]}
+              >
+                <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+                  {showAll ? "Show less" : `See all (${sortedExpenses.length})`}
+                </ThemedText>
+                <CaretDown
+                  size={14}
+                  color={theme.colors.info}
+                  style={{ transform: [{ rotate: showAll ? "180deg" : "0deg" }] }}
+                />
+              </Pressable>
+            ) : null}
+          </>
+        ) : allExpensesQuery.isLoading ? null : (
+          <EmptyState
+            title={search || timeFilter !== "all_time" || selectedGroupId !== "all" ? "No matching expenses" : "No expenses yet"}
+            body={
+              search || timeFilter !== "all_time" || selectedGroupId !== "all"
+                ? "Try another time range, group filter, or search term."
+                : "Expenses from your groups will appear here once they are recorded."
+            }
+            action={
+              selectorGroups.length
+                ? {
+                    label: "Add expense",
+                    onPress: () => {
+                      if (selectorGroups[0]?.id) {
+                        navigation.setSelectedGroupId(selectorGroups[0].id);
+                      }
+                      navigation.setSelectedExpenseId(undefined);
+                      navigation.go("expense");
+                    }
+                  }
+                : {
+                    label: "Create group",
+                    onPress: () => navigation.go("groups")
+                  }
+            }
+          />
+        )}
+      </View>
     </Screen>
   );
 }
 
+function SummaryStat({
+  label,
+  value,
+  Icon,
+  accent
+}: {
+  label: string;
+  value: string;
+  Icon: typeof Wallet;
+  accent: string;
+}) {
+  const theme = useTheme();
+
+  return (
+    <View style={styles.summaryStat}>
+      <View
+        style={[
+          styles.summaryIcon,
+          {
+            backgroundColor: colorWithAlpha(accent, theme.mode === "dark" ? 0.18 : 0.12),
+            borderRadius: theme.radius.md
+          }
+        ]}
+      >
+        <Icon size={16} color={accent} weight="duotone" />
+      </View>
+      <ThemedText variant="caption" tone="muted" numberOfLines={1}>
+        {label}
+      </ThemedText>
+      <ThemedText variant="amountSm" numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  topBar: {
+  header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 4
   },
-  topIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  headerCopy: {
+    flex: 1,
+    gap: 2
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center"
   },
-  settingsDot: {
-    position: "absolute",
-    top: 7,
-    right: 7,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#4F46E5"
-  },
-  headerBlock: {
-    marginBottom: 18
-  },
-  subTitleText: {
-    letterSpacing: 0.8,
-    fontWeight: "700",
-    fontSize: 11,
-    marginBottom: 2
-  },
-  mainTitleText: {
-    fontSize: 28,
-    fontWeight: "800",
-    lineHeight: 34
-  },
-  statsGrid: {
+  summaryRow: {
     flexDirection: "row",
-    gap: 10,
-    marginBottom: 18
+    alignItems: "stretch",
+    padding: 14
   },
-  statCard: {
+  summaryStat: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRadius: 22,
-    borderWidth: 1,
-    gap: 4
+    gap: 4,
+    alignItems: "flex-start"
   },
-  statIconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+  summaryIcon: {
+    width: 32,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4
+    marginBottom: 2
   },
-  statLabelText: {
-    fontSize: 13,
-    fontWeight: "500"
+  summaryDivider: {
+    width: 1,
+    marginHorizontal: 10
   },
-  statValueText: {
-    fontWeight: "800",
-    fontSize: 18
+  searchRow: {
+    marginTop: 4
   },
-  searchBarContainer: {
-    minHeight: 52,
-    borderRadius: 26,
+  searchField: {
+    minHeight: 48,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 18,
-    marginBottom: 18
-  },
-  searchIcon: {
-    marginRight: 10
+    gap: 10,
+    paddingHorizontal: 14
   },
   searchInput: {
     flex: 1,
-    padding: 0,
-    fontSize: 14
+    padding: 0
   },
-  filterChipRow: {
-    gap: 10,
-    marginBottom: 20
+  filterRow: {
+    gap: 8,
+    paddingVertical: 2
   },
-  filterChipPill: {
+  filterChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 24,
-    borderWidth: 1
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8
   },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14
-  },
-  sectionTitleText: {
-    fontSize: 22,
-    fontWeight: "800"
+  section: {
+    gap: 12
   },
   sortTrigger: {
     flexDirection: "row",
@@ -524,62 +554,31 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     alignItems: "center"
   },
-  expensesListStack: {
-    gap: 12,
-    marginBottom: 20
-  },
-  expenseCardItem: {
+  dataRow: {
+    minHeight: 72,
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 22,
-    borderWidth: 1,
+    padding: 14,
     gap: 12
   },
-  expenseCardCenter: {
+  titleBlock: {
     flex: 1,
-    gap: 4,
-    justifyContent: "center"
+    gap: 3,
+    minWidth: 0
   },
-  expenseCardTitle: {
-    fontWeight: "700",
-    fontSize: 16
-  },
-  groupNamePill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8
-  },
-  expenseCardRight: {
+  trailing: {
     alignItems: "flex-end",
-    gap: 4,
-    justifyContent: "center"
-  },
-  expenseCardAmount: {
-    fontWeight: "800",
-    fontSize: 17
+    justifyContent: "center",
+    maxWidth: 108
   },
   seeAllButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: 4
-  },
-  emptyStateWrap: {
-    paddingVertical: 32,
-    alignItems: "center"
-  },
-  cardShadowStyle: {
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2
+    borderRadius: 12,
+    borderWidth: 1
   }
 });

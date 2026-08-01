@@ -7,6 +7,7 @@ import { NotificationDeliveryEntity } from './entities/notification-delivery.ent
 import { NotificationEntity, NotificationTone } from './entities/notification.entity';
 import { NotificationProviderPort } from './ports/notification-provider.port';
 import { DeviceInstallationsService } from './device-installations.service';
+import { preferenceAllowsPushType } from './notification-preferences';
 
 interface CreateNotificationInput {
   userId: string;
@@ -17,57 +18,6 @@ interface CreateNotificationInput {
   tone?: NotificationTone;
   data?: Record<string, unknown>;
   deliver?: boolean;
-}
-
-/** Maps notification types to per-event preference toggles (UI "Email settings" / notification prefs). */
-function preferenceAllowsType(prefs: UserPreferencesEntity | null, type: string): boolean {
-  if (!prefs) {
-    // Missing row → allow (DB defaults); expense_added defaults false in DB historically,
-    // but treat missing prefs as allow so first-time users still get critical alerts.
-    return true;
-  }
-  if (prefs.pushNotificationsEnabled === false) {
-    return false;
-  }
-
-  switch (type) {
-    case 'expense_created':
-      // Prefer explicit opt-in; treat unset as enabled after prefs defaults migration.
-      return prefs.emailExpenseAdded !== false;
-    case 'expense_revised':
-    case 'expense_voided':
-      return prefs.emailExpenseEdited !== false;
-    case 'settlement_confirmation_requested':
-    case 'settlement_awaiting_confirmation':
-    case 'settlement_confirmed':
-    case 'settlement_received_confirmed':
-    case 'settlement_rejected':
-    case 'settlement_disputed':
-      return prefs.emailPaymentReceived !== false;
-    case 'participant_added':
-      // Always notify when someone is added to a group (still gated by push master switch).
-      return true;
-    case 'membership_removed':
-      // Always notify remaining members when someone leaves / is removed after settling.
-      return true;
-    case 'invite_claimed':
-    case 'group_archived':
-    case 'group_unarchived':
-    case 'membership_role_changed':
-    case 'membership_exit_locked':
-    case 'membership_exit_unlocked':
-      return prefs.emailGroupAdded !== false;
-    case 'contact_joined':
-      return prefs.emailFriendAdded !== false;
-    case 'friend_payment_reminder':
-      return prefs.emailExpenseDue !== false;
-    case 'reminder_settlement_day':
-    case 'reminder_recurring_expense':
-    case 'reminder_stale_proof':
-      return prefs.emailExpenseDue !== false;
-    default:
-      return true;
-  }
 }
 
 @Injectable()
@@ -114,7 +64,7 @@ export class NotificationsService {
 
   private async deliver(notification: NotificationEntity): Promise<void> {
     const prefs = await this.preferences.findOne({ where: { userId: notification.userId } });
-    if (!preferenceAllowsType(prefs, notification.type)) {
+    if (!preferenceAllowsPushType(prefs, notification.type)) {
       await this.deliveries.save(
         this.deliveries.create({
           notificationId: notification.id,

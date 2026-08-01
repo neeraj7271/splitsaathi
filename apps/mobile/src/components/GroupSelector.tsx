@@ -4,7 +4,7 @@ import { CaretRight } from "phosphor-react-native";
 
 import { useTheme } from "../theme";
 import { GroupSummary } from "../types/domain";
-import { formatMoney, formatSignedMoney } from "../utils/money";
+import { formatMoney } from "../utils/money";
 import { groupTypeAccent, groupTypeIcon } from "./GroupTypeAvatar";
 import { StatusPill } from "./StatusPill";
 import { ThemedText } from "./ThemedText";
@@ -32,9 +32,7 @@ export function GroupSelector({
         const accent = groupTypeAccent(group.groupType);
         const Icon = groupTypeIcon(group.groupType);
         const net = group.netBalanceMinor ?? 0;
-        const caption = net >= 0 ? "You will get back" : "You owe";
-        const amountLabel =
-          net === 0 ? formatMoney(0, group.baseCurrencyCode) : (formatSignedMoney(net, group.baseCurrencyCode) ?? "").replace(/^[+-]/, "");
+        const balance = groupBalanceCaption(net, group.baseCurrencyCode);
 
         return (
           <Pressable
@@ -65,12 +63,16 @@ export function GroupSelector({
                 </ThemedText>
                 {group.pendingProofCount ? <StatusPill state="proof_submitted" /> : null}
               </View>
-              <ThemedText variant="caption" tone="muted" numberOfLines={1}>
-                {caption}{" "}
-                <ThemedText variant="caption" tone={net >= 0 ? "receive" : "owe"}>
-                  {amountLabel}
+              <View style={styles.balanceRow}>
+                <ThemedText variant="caption" tone={balance.labelTone} numberOfLines={1}>
+                  {balance.label}
                 </ThemedText>
-              </ThemedText>
+                {balance.amount ? (
+                  <ThemedText variant="caption" tone={balance.amountTone} numberOfLines={1}>
+                    {balance.amount}
+                  </ThemedText>
+                ) : null}
+              </View>
             </View>
             <CaretRight size={16} color={theme.colors.inkFaint} weight="bold" />
           </Pressable>
@@ -78,6 +80,34 @@ export function GroupSelector({
       })}
     </ScrollView>
   );
+}
+
+function groupBalanceCaption(
+  netMinor: number,
+  currencyCode: string
+): {
+  label: string;
+  amount: string | null;
+  labelTone: "muted" | "receive" | "owe";
+  amountTone: "receive" | "owe";
+} {
+  if (netMinor === 0) {
+    return { label: "Settled up", amount: null, labelTone: "muted", amountTone: "receive" };
+  }
+  if (netMinor > 0) {
+    return {
+      label: "Owed to you",
+      amount: formatMoney(netMinor, currencyCode),
+      labelTone: "muted",
+      amountTone: "receive"
+    };
+  }
+  return {
+    label: "You owe",
+    amount: formatMoney(Math.abs(netMinor), currencyCode),
+    labelTone: "muted",
+    amountTone: "owe"
+  };
 }
 
 const styles = StyleSheet.create({
@@ -113,5 +143,11 @@ const styles = StyleSheet.create({
   },
   name: {
     flexShrink: 1
+  },
+  balanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexWrap: "wrap"
   }
 });

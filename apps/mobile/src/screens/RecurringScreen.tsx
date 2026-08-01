@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarPlus, Receipt, CurrencyInr, Bell, CaretRight, Buildings, Lightning, WifiHigh } from "phosphor-react-native";
+import { CalendarPlus, Receipt, CurrencyInr, Bell, CaretRight, Buildings, Lightning, WifiHigh } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { Button } from "../components/Button";
@@ -11,12 +11,14 @@ import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -28,7 +30,8 @@ export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const selectorGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? selectorGroups[0]?.id;
   const schedulesQuery = useQuery({
     queryKey: ["recurringSchedules", selectedGroupId],
     queryFn: () => apiClient.listRecurringSchedules(selectedGroupId as string),
@@ -41,10 +44,10 @@ export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
   });
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && selectorGroups[0]?.id) {
+      navigation.setSelectedGroupId(selectorGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [selectorGroups, navigation]);
 
   const createSchedule = useMutation({
     mutationFn: async () => {
@@ -85,25 +88,25 @@ export function RecurringScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
-          <ArrowLeft size={20} color={theme.colors.ink} />
-        </Pressable>
-        <View style={styles.titleBlock}>
-          <ThemedText variant="caption" tone="confirmed">
-            Reminders
-          </ThemedText>
-          <ThemedText variant="title">Recurring bills</ThemedText>
-        </View>
-        <Pressable style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
-          <CalendarPlus size={20} color={theme.colors.confirmed} weight="duotone" />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        caption="Reminders"
+        captionTone="confirmed"
+        title="Recurring bills"
+        trailing={
+          <Pressable style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
+            <CalendarPlus size={20} color={theme.colors.confirmed} weight="duotone" />
+          </Pressable>
+        }
+      />
 
       <ThemedText variant="bodySm" tone="ink" style={{ marginTop: 8, paddingHorizontal: 4 }}>
         Select group
       </ThemedText>
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {selectorGroups.length ? (
+        <GroupSelector groups={selectorGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
       {schedulesQuery.error ? <InlineNotice title="Schedules could not load" body={schedulesQuery.error.message} tone="owe" /> : null}
 
       <View style={styles.section}>

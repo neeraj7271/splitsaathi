@@ -14,6 +14,8 @@ export type ActionSheetAction = {
   icon?: React.ReactNode;
   tone?: ActionSheetTone;
   disabled?: boolean;
+  /** Wait for the sheet to close before running (e.g. opening another modal). */
+  defer?: boolean;
   onPress: () => void;
 };
 
@@ -62,16 +64,18 @@ export function ActionSheet({
     if (action.disabled) {
       return;
     }
+    const run = action.onPress;
     onClose();
-    // Defer so the sheet can dismiss before opening another native UI (gallery, etc.).
-    requestAnimationFrame(() => {
-      action.onPress();
-    });
+    if (action.defer) {
+      setTimeout(run, 150);
+      return;
+    }
+    setTimeout(run, 0);
   }
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.root}>
+      <View style={styles.root} pointerEvents="box-none">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss"
@@ -79,8 +83,10 @@ export function ActionSheet({
           style={[styles.backdrop, { backgroundColor: colorWithAlpha("#000000", theme.mode === "dark" ? 0.55 : 0.35) }]}
         />
         <View
+          pointerEvents="box-none"
           style={[
             styles.sheet,
+            theme.cardShadow,
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.hairline,
@@ -191,7 +197,8 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0
   },
   sheet: {
     borderTopLeftRadius: 24,
@@ -199,7 +206,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 16,
     paddingTop: 10,
-    gap: 14
+    gap: 14,
+    zIndex: 1,
+    elevation: 12
   },
   handle: {
     alignSelf: "center",

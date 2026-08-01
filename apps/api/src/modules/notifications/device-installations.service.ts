@@ -49,4 +49,8 @@ export class DeviceInstallationsService {
       .where('pushToken IN (:...validTokens)', { validTokens })
       .execute();
   }
+
+  async deleteAllForUser(userId: string): Promise<void> {
+    await this.devices.delete({ userId });
+  }
 }

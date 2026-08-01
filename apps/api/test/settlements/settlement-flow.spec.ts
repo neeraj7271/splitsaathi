@@ -231,6 +231,38 @@ describe('settlement lifecycle', () => {
     expect(duplicateReference.intent.state).toBe('duplicate_reference_review');
   });
 
+  it('records cash intent awaiting receiver confirmation and posts ledger only after confirm', async () => {
+    const app = createFinancialTestApp();
+    await seedDebt(app);
+
+    const created = await app.services.settlements.createIntent({
+      idempotencyKey: 'settlement-cash-create',
+      actorId: 'user-b',
+      groupId: 'group-1',
+      settlementIntentId: 'settlement-cash',
+      payerParticipantId: 'p-b',
+      payeeParticipantId: 'p-a',
+      amountMinor: 5000,
+      currencyCode: 'INR',
+      paymentMethod: 'cash',
+      payeeName: 'Alice'
+    });
+    expect(created.intent.state).toBe('awaiting_receiver_confirmation');
+    expect(app.services.balances.getGroupBalances('group-1').balances).toEqual([
+      { groupId: 'group-1', participantId: 'p-a', currencyCode: 'INR', amountMinor: 5000 },
+      { groupId: 'group-1', participantId: 'p-b', currencyCode: 'INR', amountMinor: -5000 }
+    ]);
+
+    const confirmed = await app.services.settlements.confirm({
+      idempotencyKey: 'settlement-cash-confirm',
+      actorId: 'user-a',
+      settlementIntentId: 'settlement-cash',
+      expectedVersion: 2
+    });
+    expect(confirmed.intent.state).toBe('ledger_posted');
+    expect(app.services.balances.getGroupBalances('group-1').balances.every((row) => row.amountMinor === 0)).toBe(true);
+  });
+
   it('rejects invalid settlement transitions before appending events or postings', async () => {
     const app = createFinancialTestApp();
     await seedDebt(app);

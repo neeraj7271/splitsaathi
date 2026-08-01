@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AddressBook,
   CaretDown,
-  CaretLeft,
   CaretRight,
   ChartBar,
   ClockCountdown,
@@ -34,24 +33,27 @@ import { Button } from "../components/Button";
 import { ContactPicker } from "../components/ContactPicker";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
+import { GroupTypeAvatar } from "../components/GroupTypeAvatar";
 import { InlineNotice } from "../components/InlineNotice";
 import { QRScannerModal } from "../components/QRScannerModal";
-import { SpendingCharts } from "../components/SpendingCharts";
+import { ANALYTICS_PERIODS, AnalyticsPeriod, SpendingCharts } from "../components/SpendingCharts";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { colorWithAlpha, useTheme } from "../theme";
-import { ExpenseExplanation, GroupDetail, MembershipRole } from "../types/domain";
+import { ExpenseExplanation, GroupDetail, GroupType, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichActivityRows, enrichBalanceRows, participantList, replaceParticipantIds, resolveActorDisplayName, resolveParticipantDisplayName } from "../utils/displayNames";
 import { activeGroupMemberships, activeGroupParticipants } from "../utils/groupPeople";
+import { formatExpenseListDate, getExpenseCategoryDisplay } from "../utils/expenseCategoryDisplay";
 import { isLedgerActivityEvent } from "../utils/activityFeed";
-import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
+import { ensureContactsAccess, openSystemSettings, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 import { participantColor } from "../utils/participantColor";
@@ -91,9 +93,11 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
   const [availableContacts, setAvailableContacts] = useState<SyncedContact[]>([]);
   const [contactError, setContactError] = useState<string | null>(null);
-  const [reportDays, setReportDays] = useState<30 | 90 | 180>(90);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("monthly");
   const [logoSheetVisible, setLogoSheetVisible] = useState(false);
   const [menuSheetVisible, setMenuSheetVisible] = useState(false);
+  const [tabsOffsetY, setTabsOffsetY] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [membershipActionError, setMembershipActionError] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState(false);
@@ -137,12 +141,22 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     queryFn: () => apiClient.listExpenses(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+  const reportDays = ANALYTICS_PERIODS.find((item) => item.value === analyticsPeriod)?.days ?? 30;
   const reportRange = useMemo(() => {
     const to = new Date();
     const from = new Date(to);
     from.setDate(to.getDate() - reportDays + 1);
     return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
   }, [reportDays]);
+  const chartExpenses = useMemo(() => {
+    const expenses = expensesQuery.data ?? [];
+    const fromMs = new Date(`${reportRange.from}T00:00:00`).getTime();
+    const toMs = new Date(`${reportRange.to}T23:59:59`).getTime();
+    return expenses.filter((expense) => {
+      const stamp = new Date(expense.expenseDate).getTime();
+      return stamp >= fromMs && stamp <= toMs;
+    });
+  }, [expensesQuery.data, reportRange.from, reportRange.to]);
   const monthlyReportQuery = useQuery({
     queryKey: ["reports", "monthly", selectedGroupId, reportRange],
     queryFn: () => apiClient.getMonthlyComparisonReport(selectedGroupId as string, reportRange),
@@ -221,8 +235,15 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     setGroupNameDraft(groupQuery.data?.name ?? "");
     setEditingGroupName(true);
     if (options?.openPeopleTab) {
-      setTab("people");
+      focusTab("people");
     }
+  }
+
+  function focusTab(nextTab: GroupTab) {
+    setTab(nextTab);
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, tabsOffsetY - 8), animated: true });
+    });
   }
 
   function confirmDeleteGroup() {
@@ -389,18 +410,22 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
   async function openContactPicker() {
     setContactError(null);
-    const granted = await hasContactsConsent();
-    if (!granted) {
-      showDialog({
-        title: "Contacts are off",
-        message: "Enable contacts in Settings → Contacts, then try again.",
-        tone: "warning",
-        primaryAction: {
-          label: "Open settings",
-          onPress: () => navigation.go("contactsSettings")
-        },
-        secondaryAction: { label: "Cancel", variant: "ghost" }
-      });
+    const access = await ensureContactsAccess();
+    if (!access.ok) {
+      if (access.openSettings) {
+        showDialog({
+          title: "Allow contacts access",
+          message: access.reason,
+          tone: "warning",
+          primaryAction: {
+            label: "Open settings",
+            onPress: () => void openSystemSettings()
+          },
+          secondaryAction: { label: "Cancel", variant: "ghost" }
+        });
+      } else {
+        setContactError(access.reason);
+      }
       return;
     }
 
@@ -522,25 +547,21 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   }
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
-      <View style={styles.topBar}>
-        <Pressable
-          onPress={() => navigation.back() || navigation.go("groups")}
-          style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <CaretLeft size={18} color={theme.colors.ink} weight="bold" />
-        </Pressable>
-        <Pressable
-          onPress={() => setMenuSheetVisible(true)}
-          style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
-          accessibilityRole="button"
-          accessibilityLabel="Group options"
-        >
-          <DotsThreeVertical size={18} color={theme.colors.ink} weight="bold" />
-        </Pressable>
-      </View>
+    <Screen scrollRef={scrollRef} refreshing={refreshing} onRefresh={() => void refreshScreen()}>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="groups"
+        trailing={
+          <Pressable
+            onPress={() => setMenuSheetVisible(true)}
+            style={[styles.navIconButton, { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.hairline }]}
+            accessibilityRole="button"
+            accessibilityLabel="Group options"
+          >
+            <DotsThreeVertical size={18} color={theme.colors.ink} weight="bold" />
+          </Pressable>
+        }
+      />
 
       <View style={styles.header}>
         <Pressable
@@ -715,17 +736,19 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             </View>
           </DataSurface>
 
-          <SegmentedControl
-            value={tab}
-            options={[
-              { label: "Activity", value: "activity", Icon: ClockCountdown },
-              { label: "Balances", value: "balances", Icon: Scales },
-              { label: "Expenses", value: "expenses", Icon: Wallet },
-              { label: "Charts", value: "charts", Icon: ChartBar },
-              { label: "People", value: "people", Icon: UsersThree }
-            ]}
-            onChange={setTab}
-          />
+          <View onLayout={(event) => setTabsOffsetY(event.nativeEvent.layout.y)}>
+            <SegmentedControl
+              value={tab}
+              options={[
+                { label: "Activity", value: "activity", Icon: ClockCountdown },
+                { label: "Balances", value: "balances", Icon: Scales },
+                { label: "Expenses", value: "expenses", Icon: Wallet },
+                { label: "Charts", value: "charts", Icon: ChartBar },
+                { label: "People", value: "people", Icon: UsersThree }
+              ]}
+              onChange={setTab}
+            />
+          </View>
 
           {tab === "activity" ? (
             <View style={styles.section}>
@@ -851,49 +874,84 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               />
               {expensesQuery.error ? <InlineNotice title="Expenses could not load" body={expensesQuery.error.message} tone="owe" /> : null}
               {expensesQuery.data?.length ? (
-                <DataSurface>
-                  {expensesQuery.data.map((expense) => (
-                    <View key={expense.id} style={[styles.dataRow, { borderBottomColor: theme.colors.hairline }]}>
-                      <Pressable
-                        onPress={() => {
-                          setExpenseActionError(null);
-                          setExpenseVoidReason("");
-                          setExplainingExpenseId(expense.id);
-                        }}
-                        onLongPress={() => {
-                          navigation.setSelectedExpenseId(expense.id);
-                          navigation.go("audit");
-                        }}
-                        style={styles.expenseMain}
+                <DataSurface elevated>
+                  {expensesQuery.data.map((expense, index) => {
+                    const categoryDisplay = getExpenseCategoryDisplay(expense.category);
+                    const metaParts = [
+                      categoryDisplay.label,
+                      formatExpenseListDate(expense.expenseDate)
+                    ];
+                    if (expense.notes?.trim()) {
+                      metaParts.push("Notes");
+                    }
+
+                    return (
+                      <View
+                        key={expense.id}
+                        style={[
+                          styles.expenseRow,
+                          {
+                            borderBottomColor: theme.colors.hairline,
+                            borderBottomWidth: index < expensesQuery.data!.length - 1 ? 1 : 0
+                          }
+                        ]}
                       >
-                        <View style={styles.titleBlock}>
-                          <ThemedText variant="bodyMedium">{expense.description}</ThemedText>
-                          <ThemedText variant="bodySm" tone="muted">
-                            {expense.category || "Expense"} · v{expense.currentVersion}
-                            {expense.notes ? " · has notes" : ""}
-                          </ThemedText>
-                        </View>
-                        <View style={styles.trailing}>
-                          <ThemedText variant="amount">{formatMoney(expense.totalAmountMinor, expense.currencyCode)}</ThemedText>
-                          {expense.state === "voided" ? <StatusPill state="rejected" /> : null}
-                        </View>
-                      </Pressable>
-                      {group.canManageExpenses && expense.state !== "voided" ? (
                         <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Edit ${expense.description}`}
-                          hitSlop={8}
                           onPress={() => {
-                            navigation.setSelectedExpenseId(expense.id);
-                            navigation.go("expense");
+                            setExpenseActionError(null);
+                            setExpenseVoidReason("");
+                            setExplainingExpenseId(expense.id);
                           }}
-                          style={[styles.iconButton, { borderColor: theme.colors.confirmed }]}
+                          onLongPress={() => {
+                            navigation.setSelectedExpenseId(expense.id);
+                            navigation.go("audit");
+                          }}
+                          style={styles.expenseRowMain}
                         >
-                          <PencilSimple size={16} color={theme.colors.confirmed} weight="duotone" />
+                          <ExpenseRowAvatar
+                            category={expense.category}
+                            groupType={group.groupType}
+                            groupImageUrl={group.imageUrl}
+                            groupName={group.name}
+                          />
+                          <View style={styles.expenseCopy}>
+                            <ThemedText variant="bodyMedium" numberOfLines={1}>
+                              {expense.description}
+                            </ThemedText>
+                            <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
+                              {metaParts.join(" · ")}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.expenseTrailing}>
+                            <ThemedText variant="amountSm" align="right">
+                              {formatMoney(expense.totalAmountMinor, expense.currencyCode)}
+                            </ThemedText>
+                            {expense.state === "voided" ? <StatusPill state="rejected" /> : null}
+                          </View>
                         </Pressable>
-                      ) : null}
-                    </View>
-                  ))}
+                        {group.canManageExpenses && expense.state !== "voided" ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Edit ${expense.description}`}
+                            hitSlop={8}
+                            onPress={() => {
+                              navigation.setSelectedExpenseId(expense.id);
+                              navigation.go("expense");
+                            }}
+                            style={[
+                              styles.expenseEditButton,
+                              {
+                                borderColor: colorWithAlpha(theme.colors.confirmed, 0.35),
+                                backgroundColor: colorWithAlpha(theme.colors.confirmed, theme.mode === "dark" ? 0.12 : 0.08)
+                              }
+                            ]}
+                          >
+                            <PencilSimple size={16} color={theme.colors.confirmed} weight="duotone" />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    );
+                  })}
                 </DataSurface>
               ) : (
                 <EmptyState
@@ -943,23 +1001,18 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
           {tab === "charts" ? (
             <View style={styles.section}>
-              <SectionHeader title="Reports" />
-              <View style={styles.reportFilters}>
-                {([30, 90, 180] as const).map((days) => (
-                  <Pressable key={days} onPress={() => setReportDays(days)} style={[styles.reportFilter, { borderColor: reportDays === days ? theme.colors.confirmed : theme.colors.hairline }]}>
-                    <ThemedText variant="caption" tone={reportDays === days ? "confirmed" : "muted"}>{days} days</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
               {monthlyReportQuery.error || contributionsReportQuery.error || settlementMethodsReportQuery.error || netPositionReportQuery.error ? (
                 <InlineNotice title="Could not load reports" body="Try another date range or refresh the group." tone="owe" />
               ) : (
                 <SpendingCharts
                   currencyCode={group.baseCurrencyCode || "INR"}
+                  period={analyticsPeriod}
+                  onPeriodChange={setAnalyticsPeriod}
                   monthly={monthlyReportQuery.data?.items ?? []}
                   contributions={contributionsReportQuery.data?.items ?? []}
                   settlementMethods={settlementMethodsReportQuery.data?.items ?? []}
                   netPositions={netPositionReportQuery.data?.items ?? []}
+                  expenses={chartExpenses}
                 />
               )}
             </View>
@@ -1013,6 +1066,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             icon: <ImageSquare size={20} color={theme.colors.confirmed} weight="duotone" />,
             tone: "confirmed",
             disabled: updateGroupImage.isPending,
+            defer: true,
             onPress: () => updateGroupImage.mutate("change")
           },
           ...(group?.imageUrl
@@ -1024,6 +1078,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                   icon: <Trash size={20} color={theme.colors.owe} weight="duotone" />,
                   tone: "destructive" as const,
                   disabled: updateGroupImage.isPending,
+                  defer: true,
                   onPress: () => updateGroupImage.mutate("remove")
                 }
               ]
@@ -1058,6 +1113,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                   subtitle: "Change or remove photo",
                   icon: <ImageSquare size={20} color={theme.colors.confirmed} weight="duotone" />,
                   tone: "confirmed" as const,
+                  defer: true,
                   onPress: () => setLogoSheetVisible(true)
                 },
                 {
@@ -1082,7 +1138,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
                   key: "share",
                   label: "Share balances",
                   icon: <LinkSimple size={20} color={theme.colors.info} weight="duotone" />,
-                  onPress: () => shareBalanceSummary(group, enrichedBalances)
+                  onPress: () => void shareBalanceSummary(group, enrichedBalances)
                 }
               ]
             : []),
@@ -1090,11 +1146,49 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
             key: "people",
             label: "People",
             icon: <UsersThree size={20} color={theme.colors.info} weight="duotone" />,
-            onPress: () => setTab("people")
+            onPress: () => focusTab("people")
           }
         ]}
       />
     </Screen>
+  );
+}
+
+function ExpenseRowAvatar({
+  category,
+  groupType,
+  groupImageUrl,
+  groupName
+}: {
+  category?: string;
+  groupType?: GroupType;
+  groupImageUrl?: string | null;
+  groupName: string;
+}) {
+  const theme = useTheme();
+  const categoryDisplay = getExpenseCategoryDisplay(category);
+
+  if (!category?.trim() && groupImageUrl) {
+    return <UserAvatar displayName={groupName} avatarUrl={groupImageUrl} size={44} />;
+  }
+
+  if (!category?.trim()) {
+    return <GroupTypeAvatar groupType={groupType} imageUrl={groupImageUrl} size={44} />;
+  }
+
+  const Icon = categoryDisplay.Icon;
+  return (
+    <View
+      style={[
+        styles.expenseCategoryAvatar,
+        {
+          backgroundColor: colorWithAlpha(categoryDisplay.tint, theme.mode === "dark" ? 0.22 : 0.14),
+          borderColor: colorWithAlpha(categoryDisplay.tint, 0.22)
+        }
+      ]}
+    >
+      <Icon size={21} color={categoryDisplay.tint} weight="duotone" />
+    </View>
   );
 }
 
@@ -1524,12 +1618,50 @@ const styles = StyleSheet.create({
   summaryCaption: {
     flex: 1
   },
-  expenseMain: {
+  expenseRow: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10
+  },
+  expenseRowMain: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
+    gap: 12,
+    minWidth: 0
+  },
+  expenseCategoryAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  expenseCopy: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0
+  },
+  expenseTrailing: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 6,
+    maxWidth: 108,
+    flexShrink: 0
+  },
+  expenseEditButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
   },
   historyEntry: {
     gap: 4,

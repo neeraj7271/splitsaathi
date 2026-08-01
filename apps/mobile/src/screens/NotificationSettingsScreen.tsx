@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
-import { Button } from "../components/Button";
+import { useAppDialog } from "../components/AppDialog";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
-import { useTheme } from "../theme";
+import { registerPushIfPossible, unregisterPushIfPossible } from "../notifications/registerPush";
 import { AppNavigation } from "../types/navigation";
 import type { UserPreferences } from "../types/domain";
 
@@ -70,48 +70,72 @@ const PUSH_SECTIONS: Array<{
   }
 ];
 
+async function applyPushSideEffects(
+  preferences: UserPreferences,
+  showDialog: ReturnType<typeof useAppDialog>["showDialog"]
+): Promise<string | undefined> {
+  if (!preferences.pushNotificationsEnabled) {
+    await unregisterPushIfPossible().catch(() => undefined);
+    await apiClient.recordConsent("notification_delivery", false, "settings").catch(() => undefined);
+    return "Push notifications are turned off for this account on this device.";
+  }
+
+  await apiClient.recordConsent("notification_delivery", true, "settings").catch(() => undefined);
+  const result = await registerPushIfPossible({ forcePrompt: true });
+  if (result.status === "registered") {
+    return "This device is registered for push notifications.";
+  }
+  showDialog({
+    title: "Push not registered",
+    message: `${result.reason}\n\nEnable notifications for SplitSaathi in Android Settings if you want alerts on this device.`,
+    tone: "warning",
+    primaryAction: { label: "OK" }
+  });
+  return `Push not registered: ${result.reason}`;
+}
+
 export function NotificationSettingsScreen({ navigation }: { navigation: AppNavigation }) {
-  const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const queryClient = useQueryClient();
   const preferencesQuery = useQuery({ queryKey: ["preferences"], queryFn: () => apiClient.getPreferences() });
   const [draft, setDraft] = useState<UserPreferences>(DEFAULT_PREFERENCES);
-  const [savedSnapshot, setSavedSnapshot] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+  const [pushStatus, setPushStatus] = useState<string>();
 
   useEffect(() => {
     if (preferencesQuery.data) {
       setDraft(preferencesQuery.data);
-      setSavedSnapshot(preferencesQuery.data);
+      if (!preferencesQuery.data.pushNotificationsEnabled) {
+        setPushStatus("Push notifications are turned off for this account.");
+      }
     }
   }, [preferencesQuery.data]);
 
   const savePreferences = useMutation({
-    mutationFn: () => apiClient.updatePreferences(draft),
-    onSuccess: async (preferences) => {
+    mutationFn: (patch: Partial<UserPreferences>) => apiClient.updatePreferences(patch),
+    onSuccess: async (preferences, patch) => {
       queryClient.setQueryData(["preferences"], preferences);
       setDraft(preferences);
-      setSavedSnapshot(preferences);
-      if (preferences.pushNotificationsEnabled) {
-        await import("../notifications/registerPush").then(({ registerPushIfPossible }) =>
-          registerPushIfPossible({ forcePrompt: true }).catch(() => undefined)
-        );
+      if (patch.pushNotificationsEnabled !== undefined) {
+        const status = await applyPushSideEffects(preferences, showDialog);
+        setPushStatus(status);
       }
     }
   });
 
-  const hasChanges = JSON.stringify(draft) !== JSON.stringify(savedSnapshot);
-
-  function updateDraft(key: keyof UserPreferences, value: boolean) {
+  function updatePreference(key: keyof UserPreferences, value: boolean) {
+    const previous = draft[key];
+    const patch = { [key]: value } as Partial<UserPreferences>;
     setDraft((current) => ({ ...current, [key]: value }));
+    savePreferences.mutate(patch, {
+      onError: () => {
+        setDraft((current) => ({ ...current, [key]: previous }));
+      }
+    });
   }
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("profile")} style={styles.backButton}>
-          <ArrowLeft size={22} color={theme.colors.ink} />
-        </Pressable>
-        <ThemedText variant="title">Notifications</ThemedText>
-      </View>
+      <ScreenHeader navigation={navigation} fallbackRoute="profile" title="Notifications" />
 
       {preferencesQuery.isLoading ? (
         <ThemedText variant="bodySm" tone="muted">
@@ -119,6 +143,12 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
         </ThemedText>
       ) : null}
       {preferencesQuery.error ? <InlineNotice title="Settings could not load" body={preferencesQuery.error.message} tone="owe" /> : null}
+      {savePreferences.error ? <InlineNotice title="Save failed" body={savePreferences.error.message} tone="owe" /> : null}
+      {savePreferences.isPending ? (
+        <ThemedText variant="bodySm" tone="muted">
+          Saving…
+        </ThemedText>
+      ) : null}
 
       <DataSurface>
         <View style={styles.block}>
@@ -126,9 +156,14 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
             label="Push notifications"
             subtitle="Master switch for all device alerts"
             value={draft.pushNotificationsEnabled}
-            onValueChange={(value) => updateDraft("pushNotificationsEnabled", value)}
-            disabled={preferencesQuery.isLoading}
+            onValueChange={(value) => updatePreference("pushNotificationsEnabled", value)}
+            disabled={preferencesQuery.isLoading || savePreferences.isPending}
           />
+          {pushStatus ? (
+            <ThemedText variant="caption" tone="muted" style={styles.pushStatus}>
+              {pushStatus}
+            </ThemedText>
+          ) : null}
         </View>
       </DataSurface>
 
@@ -143,8 +178,8 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
                   label={item.label}
                   subtitle={item.subtitle}
                   value={draft[item.key]}
-                  onValueChange={(value) => updateDraft(item.key, value)}
-                  disabled={preferencesQuery.isLoading || !draft.pushNotificationsEnabled}
+                  onValueChange={(value) => updatePreference(item.key, value)}
+                  disabled={preferencesQuery.isLoading || savePreferences.isPending}
                 />
               ))}
             </View>
@@ -160,41 +195,25 @@ export function NotificationSettingsScreen({ navigation }: { navigation: AppNavi
               label="Monthly summary email"
               subtitle="Email a balance summary for each active group (uses your Google/login email)"
               value={draft.emailMonthlySummary}
-              onValueChange={(value) => updateDraft("emailMonthlySummary", value)}
-              disabled={preferencesQuery.isLoading}
+              onValueChange={(value) => updatePreference("emailMonthlySummary", value)}
+              disabled={preferencesQuery.isLoading || savePreferences.isPending}
             />
           </View>
         </DataSurface>
       </View>
-
-      <Button
-        label="Save changes"
-        onPress={() => savePreferences.mutate()}
-        loading={savePreferences.isPending}
-        disabled={!hasChanges || preferencesQuery.isLoading}
-      />
-      {savePreferences.error ? <InlineNotice title="Save failed" body={savePreferences.error.message} tone="owe" /> : null}
-      {savePreferences.isSuccess && !hasChanges ? (
-        <InlineNotice title="Saved" body="Your notification preferences were updated." tone="confirmed" />
-      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12
-  },
-  backButton: {
-    padding: 4
-  },
   section: {
     gap: 8
   },
   block: {
     gap: 8,
     padding: 8
+  },
+  pushStatus: {
+    paddingHorizontal: 4
   }
 });

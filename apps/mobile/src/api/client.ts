@@ -251,7 +251,30 @@ function normalizeRawMinorTotals(detail: string | undefined, currencyCode: strin
       return `Total: ${formatMoney(before, currencyCode)} → ${formatMoney(after, currencyCode)}`;
     }
   );
+  // API: "Expense shares must equal payer total 135000; received 120000."
+  next = next.replace(/payer total (\d+);\s*received (\d+)/gi, (_full, left: string, right: string) => {
+    const before = asMinorAmount(left);
+    const after = asMinorAmount(right);
+    if (before === undefined || after === undefined) {
+      return _full;
+    }
+    return `payer total ${formatMoney(before, currencyCode)}; received ${formatMoney(after, currencyCode)}`;
+  });
+  // API: "Itemized split must sum to 135000; received 145000."
+  next = next.replace(/Itemized split must sum to (\d+);\s*received (\d+)/gi, (_full, left: string, right: string) => {
+    const expected = asMinorAmount(left);
+    const received = asMinorAmount(right);
+    if (expected === undefined || received === undefined) {
+      return _full;
+    }
+    return `Itemized split must sum to ${formatMoney(expected, currencyCode)}; received ${formatMoney(received, currencyCode)}`;
+  });
   return next;
+}
+
+export function formatApiErrorMessage(message: string, currencyCode = "INR"): string {
+  const formatted = normalizeRawMinorTotals(message, currencyCode);
+  return formatted || message;
 }
 
 function formatExpenseHistoryChangeDetail(
@@ -639,6 +662,13 @@ export class SplitSaathiApiClient {
     });
   }
 
+  async unregisterDevicePush(pushToken?: string) {
+    return this.request<{ removed: boolean }>("/v1/device-installations/me", {
+      method: "DELETE",
+      body: pushToken ? { pushToken } : {}
+    });
+  }
+
   async listGroups() {
     return this.request<GroupSummary[]>("/v1/groups");
   }
@@ -1013,6 +1043,11 @@ export class SplitSaathiApiClient {
   async listSettlementHistory(groupId: string) {
     const rows = await this.request<Array<Record<string, any>>>(`/v1/groups/${groupId}/settlement-intents`);
     return rows.map(mapSettlementIntent);
+  }
+
+  async getSettlementIntent(intentId: string) {
+    const row = await this.request<Record<string, any>>(`/v1/settlement-intents/${intentId}`);
+    return mapSettlementIntent(row);
   }
 
   async uploadAttachment(file: { uri: string; name: string; type: string }, purpose: "receipt" | "payment_proof" | "avatar" | "group_image" | "export") {

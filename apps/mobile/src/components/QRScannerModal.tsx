@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, View, Alert } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, View } from "react-native";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import { Camera, QrCode, X } from "phosphor-react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client";
+import { useAppDialog } from "./AppDialog";
 import { useTheme } from "../theme";
 import { Button } from "./Button";
 import { InlineNotice } from "./InlineNotice";
@@ -19,6 +20,7 @@ export interface QRScannerModalProps {
 
 export function QRScannerModal({ visible, onClose, onJoined }: QRScannerModalProps) {
   const theme = useTheme();
+  const { showDialog } = useAppDialog();
   const queryClient = useQueryClient();
   const [permission, requestPermission] = useCameraPermissions();
   const [manualInput, setManualInput] = useState("");
@@ -31,13 +33,19 @@ export function QRScannerModal({ visible, onClose, onJoined }: QRScannerModalPro
     onSuccess: (group) => {
       void queryClient.invalidateQueries({ queryKey: ["groups"] });
       void queryClient.invalidateQueries({ queryKey: ["group", group.id] });
+      void queryClient.invalidateQueries({ queryKey: ["friends"] });
       void queryClient.invalidateQueries({ queryKey: ["settlementSuggestions", group.id] });
       void queryClient.invalidateQueries({ queryKey: ["balances", group.id] });
-      Alert.alert("Success", `You have successfully joined ${group.name}!`);
       onClose();
-      if (onJoined) {
-        onJoined(group.id);
-      }
+      showDialog({
+        title: "Joined group",
+        message: `You're now in ${group.name}.`,
+        tone: "success",
+        primaryAction: {
+          label: onJoined ? "View group" : "Continue",
+          onPress: () => onJoined?.(group.id)
+        }
+      });
     },
     onError: (err) => {
       setErrorText(err instanceof Error ? err.message : "Could not join group from this QR code.");

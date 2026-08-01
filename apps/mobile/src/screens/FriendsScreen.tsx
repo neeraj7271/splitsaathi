@@ -12,6 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { FriendSummaryCard } from "../components/FriendSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
@@ -115,30 +116,30 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen refreshing={friendsQuery.isRefetching} onRefresh={() => void friendsQuery.refetch()}>
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <ThemedText variant="caption" tone="muted">
-            Across your groups
-          </ThemedText>
-          <ThemedText variant="title">Friends</ThemedText>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Invite friends"
-          onPress={() => void shareInvite()}
-          hitSlop={8}
-          style={[
-            styles.headerAction,
-            {
-              backgroundColor: colorWithAlpha(theme.colors.confirmed, theme.mode === "dark" ? 0.16 : 0.1),
-              borderColor: colorWithAlpha(theme.colors.confirmed, 0.28),
-              borderRadius: theme.radius.full
-            }
-          ]}
-        >
-          <UserPlus size={20} color={theme.colors.confirmed} weight="duotone" />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        caption="Across your groups"
+        title="Friends"
+        trailing={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Invite friends"
+            onPress={() => void shareInvite()}
+            hitSlop={8}
+            style={[
+              styles.headerAction,
+              {
+                backgroundColor: colorWithAlpha(theme.colors.confirmed, theme.mode === "dark" ? 0.16 : 0.1),
+                borderColor: colorWithAlpha(theme.colors.confirmed, 0.28),
+                borderRadius: theme.radius.full
+              }
+            ]}
+          >
+            <UserPlus size={20} color={theme.colors.confirmed} weight="duotone" />
+          </Pressable>
+        }
+      />
 
       <View style={styles.searchRow}>
         <View
@@ -354,16 +355,6 @@ function FriendSection({
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  headerCopy: {
-    flex: 1,
-    gap: 2
-  },
   headerAction: {
     width: 44,
     height: 44,

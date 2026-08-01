@@ -9,29 +9,39 @@ import {
   Car,
   CaretDown,
   Clock,
+  CurrencyInr,
   DotsThree,
   FilmSlate,
   ForkKnife,
+  HandCoins,
   ListBullets,
   Lightning,
   NotePencil,
   Paperclip,
+  Percent,
+  Plus,
+  Receipt,
+  Scales,
   ShoppingBag,
+  Storefront,
+  Tag,
   X
 } from "phosphor-react-native";
 
-import { ApiError, apiClient, CreateExpenseRequest } from "../api/client";
+import { ApiError, apiClient, CreateExpenseRequest, formatApiErrorMessage } from "../api/client";
 import { useOptionalAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { CalculatorModal } from "../components/CalculatorModal";
 import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
+import { groupTypeAccent } from "../components/GroupTypeAvatar";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { ParticipantPicker } from "../components/ParticipantPicker";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
@@ -40,8 +50,10 @@ import { colorWithAlpha, useTheme } from "../theme";
 import { ExpenseDetail, SplitType } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { enqueueCommand, getOutboxStatus } from "../offline/outbox";
-import { amountToRupeeWords, formatMoney, parseAmountToMinor } from "../utils/money";
-import { activeGroupParticipants } from "../utils/groupPeople";
+import { amountToRupeeWords, formatMoney, formatSignedMoney, parseAmountToMinor } from "../utils/money";
+import { activeGroupParticipants, reconcileParticipantSelection } from "../utils/groupPeople";
+import { buildGroupDisplayLookups, resolveParticipantDisplayName } from "../utils/displayNames";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 type AdjustmentType = "tax" | "gst_cgst" | "gst_sgst" | "service_charge" | "tip" | "discount" | "rounding";
 type PartyTab = "payers" | "beneficiaries";
@@ -60,6 +72,21 @@ const EXPENSE_CATEGORIES: Array<{
   { id: "Utilities", label: "Utilities", Icon: Lightning, tint: "#EAB308" },
   { id: "Entertainment", label: "Entertainment", Icon: FilmSlate, tint: "#EC4899" },
   { id: "__more__", label: "More", Icon: DotsThree, tint: "#94A3B8" }
+];
+
+const ADJUSTMENT_TYPE_OPTIONS: Array<{
+  label: string;
+  value: AdjustmentType;
+  Icon: React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "fill" | "regular" }>;
+  iconColor: string;
+}> = [
+  { label: "GST (CGST)", value: "gst_cgst", Icon: Receipt, iconColor: "#0D9488" },
+  { label: "GST (SGST)", value: "gst_sgst", Icon: Percent, iconColor: "#6366F1" },
+  { label: "Tax", value: "tax", Icon: Scales, iconColor: "#3B82F6" },
+  { label: "Service charge", value: "service_charge", Icon: Storefront, iconColor: "#F97316" },
+  { label: "Tip", value: "tip", Icon: HandCoins, iconColor: "#EAB308" },
+  { label: "Discount", value: "discount", Icon: Tag, iconColor: "#22C55E" },
+  { label: "Rounding", value: "rounding", Icon: Calculator, iconColor: "#8B5CF6" }
 ];
 
 interface DraftLineItem {
@@ -83,7 +110,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const hydratedExpenseId = useRef<string | undefined>(undefined);
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const expenseGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? expenseGroups[0]?.id;
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
@@ -113,6 +141,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const [lineAmount, setLineAmount] = useState("");
   const [adjustments, setAdjustments] = useState<DraftAdjustment[]>([]);
   const [showAdjustments, setShowAdjustments] = useState(false);
+  const [adjustmentPickerOpen, setAdjustmentPickerOpen] = useState(false);
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("gst_cgst");
   const [partyTab, setPartyTab] = useState<PartyTab>("payers");
@@ -132,9 +161,16 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     }
   }
 
-  const participants = groupQuery.data ? activeGroupParticipants(groupQuery.data) : [];
-  const participantNameById = useMemo(() => new Map(participants.map((participant) => [participant.id, participant.displayName])), [participants]);
-  const nameForParticipant = (participantId: string) => participantNameById.get(participantId) ?? "Unknown participant";
+  const participants = useMemo(
+    () => (groupQuery.data ? activeGroupParticipants(groupQuery.data) : []),
+    [groupQuery.data]
+  );
+  const groupLookups = useMemo(
+    () => (groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : null),
+    [groupQuery.data]
+  );
+  const nameForParticipant = (participantId: string) =>
+    (groupLookups ? resolveParticipantDisplayName(participantId, groupLookups) : undefined) ?? "Unknown participant";
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const myRole = groupQuery.data?.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.role;
   const canManageExpense =
@@ -145,10 +181,10 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const isVoided = editingExpense?.state === "voided";
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && expenseGroups[0]?.id) {
+      navigation.setSelectedGroupId(expenseGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [expenseGroups, navigation]);
 
   useEffect(() => {
     let active = true;
@@ -198,13 +234,15 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     if (isEditing) {
       return;
     }
-    if (participants.length && selectedShares.length === 0) {
-      setSelectedShares(participants.map((participant) => participant.id));
-    }
-    if (participants.length && selectedPayers.length === 0) {
-      setSelectedPayers([participants[0].id]);
-    }
-  }, [participants, selectedPayers.length, selectedShares.length, isEditing]);
+    setSelectedShares((current) => {
+      const next = reconcileParticipantSelection(current, participants, "all");
+      return next.join() === current.join() ? current : next;
+    });
+    setSelectedPayers((current) => {
+      const next = reconcileParticipantSelection(current, participants, "first");
+      return next.join() === current.join() ? current : next;
+    });
+  }, [participants, isEditing, selectedGroupId]);
 
   const activeAdjustments = showAdjustments ? adjustments : [];
   const totalMinor = splitType === "itemized" ? itemizedTotalMinor(lineItems, activeAdjustments) : parseAmountToMinor(amount);
@@ -222,6 +260,17 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const payerDifference = payerTotalMinor - totalMinor;
   const shareDifference = shareTotalMinor - totalMinor;
   const balanced = totalMinor > 0 && payerDifference === 0 && shareDifference === 0 && selectedPayers.length > 0 && selectedShares.length > 0;
+  const summaryBalances = useMemo(
+    () =>
+      [...new Set([...selectedPayers, ...selectedShares])]
+        .map((participantId) => {
+          const paidMinor = payerPaidMinor(participantId, selectedPayers, totalMinor, payerAmounts);
+          const owedMinor = computedShares.allocations[participantId] ?? 0;
+          return { participantId, paidMinor, owedMinor, netMinor: paidMinor - owedMinor };
+        })
+        .sort((left, right) => right.netMinor - left.netMinor),
+    [computedShares.allocations, payerAmounts, selectedPayers, selectedShares, totalMinor]
+  );
 
   const addLineItem = () => {
     if (!lineLabel.trim() || !lineAmount.trim()) {
@@ -239,19 +288,30 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     setLineAmount("");
   };
 
+  const removeLineItem = (index: number) => {
+    markFormDirty();
+    setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const addAdjustment = () => {
     if (!adjustmentAmount.trim()) {
       return;
     }
+    const selectedOption = ADJUSTMENT_TYPE_OPTIONS.find((option) => option.value === adjustmentType);
     setAdjustments((current) => [
       ...current,
       {
         adjustmentType,
-        label: (adjustmentType ?? "").replace(/_/g, " "),
+        label: selectedOption?.label ?? adjustmentType.replace(/_/g, " "),
         amount: adjustmentAmount
       }
     ]);
     setAdjustmentAmount("");
+  };
+
+  const removeAdjustment = (index: number) => {
+    markFormDirty();
+    setAdjustments((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const attachReceipt = async () => {
@@ -389,7 +449,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       }
     } catch (error) {
       if (error instanceof ApiError) {
-        setMessage(error.message);
+        setMessage(formatApiErrorMessage(error.message));
       } else if (!isEditing) {
         await enqueueCommand("expense.create", payload as unknown as Record<string, unknown>);
         resetExpenseForm();
@@ -417,6 +477,8 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     setPayerAmounts({});
     setShareAmounts({});
     setShareWeights({});
+    setSelectedPayers([]);
+    setSelectedShares([]);
   }
 
   const confirmDelete = () => {
@@ -437,43 +499,66 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
     });
   };
 
+  const selectedGroupSummary = expenseGroups.find((group) => group.id === selectedGroupId);
+  const selectedGroupName = groupQuery.data?.name ?? selectedGroupSummary?.name;
+  const selectedGroupAccent = groupTypeAccent(groupQuery.data?.groupType ?? selectedGroupSummary?.groupType);
+
   return (
     <>
     <Screen>
-      <View style={styles.topBar}>
-        <ScreenBackButton navigation={navigation} label="" fallbackRoute="home" />
-        <View style={styles.headerTitle}>
-          <ThemedText variant="caption" tone="confirmed">
-            {isEditing ? "Expense edit" : "Expense entry"}
-          </ThemedText>
-          <ThemedText variant="title" numberOfLines={1}>
-            {isEditing ? "Edit expense" : "Add expense"}
-          </ThemedText>
-        </View>
-        {isEditing ? (
-          <Button label="History" variant="secondary" size="compact" onPress={() => navigation.go("audit")} style={styles.headerButton} />
-        ) : (
-          <Pressable
-            onPress={() => navigation.go("offline")}
-            style={[
-              styles.queueChip,
-              {
-                borderColor: colorWithAlpha(theme.colors.confirmed, 0.4),
-                backgroundColor: theme.colors.surface,
-                borderRadius: theme.radius.full
-              }
-            ]}
-          >
-            <Clock size={14} color={theme.colors.confirmed} weight="duotone" />
-            <ThemedText variant="caption" tone="confirmed">
-              Queue{queueCount ? ` (${queueCount})` : ""}
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        titleContent={
+          <View style={styles.headerTitle}>
+            <ThemedText variant="title" numberOfLines={1}>
+              {isEditing ? "Edit expense" : "Add expense"}
             </ThemedText>
-          </Pressable>
-        )}
-      </View>
+            {selectedGroupId && selectedGroupName ? (
+              <View
+                style={[
+                  styles.groupTag,
+                  {
+                    borderColor: colorWithAlpha(selectedGroupAccent, 0.35),
+                    backgroundColor: colorWithAlpha(selectedGroupAccent, 0.12),
+                    borderRadius: theme.radius.full
+                  }
+                ]}
+              >
+                <Tag size={12} color={selectedGroupAccent} weight="duotone" />
+                <ThemedText variant="caption" numberOfLines={1} style={{ color: selectedGroupAccent, flexShrink: 1 }}>
+                  {selectedGroupName}
+                </ThemedText>
+              </View>
+            ) : null}
+          </View>
+        }
+        trailing={
+          isEditing ? (
+            <Button label="History" variant="secondary" size="compact" onPress={() => navigation.go("audit")} style={styles.headerButton} />
+          ) : (
+            <Pressable
+              onPress={() => navigation.go("offline")}
+              style={[
+                styles.queueChip,
+                {
+                  borderColor: colorWithAlpha(theme.colors.confirmed, 0.4),
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: theme.radius.full
+                }
+              ]}
+            >
+              <Clock size={14} color={theme.colors.confirmed} weight="duotone" />
+              <ThemedText variant="caption" tone="confirmed">
+                Queue{queueCount ? ` (${queueCount})` : ""}
+              </ThemedText>
+            </Pressable>
+          )
+        }
+      />
 
-      {groups.length && !isEditing ? (
-        <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      {expenseGroups.length && !isEditing ? (
+        <GroupSelector groups={expenseGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
       ) : null}
       {!selectedGroupId ? <EmptyState title="No group available" body="Create or import a group before posting expenses." action={{ label: "Groups", onPress: () => navigation.go("groups") }} /> : null}
       {groupQuery.error ? <InlineNotice title="Group could not load" body={groupQuery.error.message} tone="owe" /> : null}
@@ -727,17 +812,37 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
               />
               {selectedPayers.length > 1 ? (
                 <DataSurface>
-                  {selectedPayers.map((payerId) => (
-                    <View key={payerId} style={[styles.amountRow, { borderBottomColor: theme.colors.hairline }]}>
-                      <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
-                      <InputField
-                        label="Paid amount"
-                        value={payerAmounts[payerId] ?? ""}
-                        onChangeText={(value) => setPayerAmounts((current) => ({ ...current, [payerId]: value }))}
-                        keyboardType="decimal-pad"
-                        amount
-                        style={styles.inlineInput}
-                      />
+                  {selectedPayers.map((payerId, index) => (
+                    <View
+                      key={payerId}
+                      style={[
+                        styles.itemizeRow,
+                        index > 0 ? { borderTopColor: theme.colors.hairline } : { borderTopWidth: 0 }
+                      ]}
+                    >
+                      <ThemedText variant="bodyMedium" numberOfLines={1} style={styles.itemizeRowCopy}>
+                        {nameForParticipant(payerId)}
+                      </ThemedText>
+                      <View
+                        style={[
+                          styles.itemizeAmountField,
+                          {
+                            backgroundColor: theme.colors.surface,
+                            borderColor: theme.colors.hairline,
+                            borderRadius: theme.radius.md
+                          }
+                        ]}
+                      >
+                        <CurrencyInr size={14} color={theme.colors.inkMuted} weight="bold" />
+                        <TextInput
+                          value={payerAmounts[payerId] ?? ""}
+                          onChangeText={(value) => setPayerAmounts((current) => ({ ...current, [payerId]: value }))}
+                          placeholder="0"
+                          placeholderTextColor={theme.colors.inkFaint}
+                          keyboardType="decimal-pad"
+                          style={[theme.typography.body, styles.itemizeAmountInput, { color: theme.colors.ink }]}
+                        />
+                      </View>
                     </View>
                   ))}
                 </DataSurface>
@@ -795,27 +900,91 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
 
           {splitType === "itemized" ? (
             <View style={styles.section}>
-              <SectionHeader title="Manual itemization" />
+              <SectionHeader
+                title="Manual itemization"
+                action={
+                  <ThemedText variant="caption" tone="muted" numberOfLines={1}>
+                    Split with selected beneficiaries
+                  </ThemedText>
+                }
+              />
               <DataSurface>
-                <View style={styles.formBlock}>
-                  <InputField label="Line item" value={lineLabel} onChangeText={setLineLabel} />
-                  <InputField label="Line amount" value={lineAmount} onChangeText={setLineAmount} keyboardType="decimal-pad" amount />
-                  <Button
-                    label="Add line item for selected beneficiaries"
-                    variant="secondary"
+                <View style={[styles.itemizeComposer, { borderBottomColor: theme.colors.hairline }]}>
+                  <View
+                    style={[
+                      styles.itemizeField,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.hairline,
+                        borderRadius: theme.radius.md
+                      }
+                    ]}
+                  >
+                    <TextInput
+                      value={lineLabel}
+                      onChangeText={setLineLabel}
+                      placeholder="Item name"
+                      placeholderTextColor={theme.colors.inkFaint}
+                      style={[theme.typography.body, styles.itemizeInput, { color: theme.colors.ink }]}
+                    />
+                  </View>
+                  <View
+                    style={[
+                      styles.itemizeAmountField,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.hairline,
+                        borderRadius: theme.radius.md
+                      }
+                    ]}
+                  >
+                    <CurrencyInr size={14} color={theme.colors.inkMuted} weight="bold" />
+                    <TextInput
+                      value={lineAmount}
+                      onChangeText={setLineAmount}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.inkFaint}
+                      keyboardType="decimal-pad"
+                      style={[theme.typography.body, styles.itemizeAmountInput, { color: theme.colors.ink }]}
+                    />
+                  </View>
+                  <Pressable
                     onPress={addLineItem}
                     disabled={!lineLabel.trim() || !lineAmount.trim()}
-                  />
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add line item"
+                    style={[
+                      styles.iconActionButton,
+                      {
+                        borderColor: theme.colors.hairline,
+                        opacity: !lineLabel.trim() || !lineAmount.trim() ? 0.4 : 1
+                      }
+                    ]}
+                  >
+                    <Plus size={16} color={theme.colors.confirmed} weight="bold" />
+                  </Pressable>
                 </View>
                 {lineItems.map((lineItem, index) => (
-                  <View key={`${lineItem.label}-${index}`} style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
-                    <View>
-                      <ThemedText variant="bodyMedium">{lineItem.label}</ThemedText>
-                      <ThemedText variant="bodySm" tone="muted">
-                        {lineItem.participantIds.length} assigned
+                  <View key={`${lineItem.label}-${index}`} style={[styles.itemizeRow, { borderTopColor: theme.colors.hairline }]}>
+                    <View style={styles.itemizeRowCopy}>
+                      <ThemedText variant="bodyMedium" numberOfLines={1}>
+                        {lineItem.label}
+                      </ThemedText>
+                      <ThemedText variant="caption" tone="muted" numberOfLines={1}>
+                        {lineItem.participantIds.length} people
                       </ThemedText>
                     </View>
-                    <ThemedText variant="amount">{formatMoney(parseAmountToMinor(lineItem.amount))}</ThemedText>
+                    <ThemedText variant="amountSm">{formatMoney(parseAmountToMinor(lineItem.amount))}</ThemedText>
+                    <Pressable
+                      onPress={() => removeLineItem(index)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${lineItem.label}`}
+                      style={[styles.removeButton, { borderColor: theme.colors.hairline }]}
+                    >
+                      <X size={16} color={theme.colors.owe} weight="bold" />
+                    </Pressable>
                   </View>
                 ))}
               </DataSurface>
@@ -825,35 +994,71 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
           <View style={styles.section}>
             <SettingsToggleRow label="Adjustments and rounding" value={showAdjustments} onValueChange={setShowAdjustments} />
             {showAdjustments ? (
-              <DataSurface>
-                <View style={styles.formBlock}>
-                  <ThemedText variant="caption" tone="muted">
-                    Tax, tip, discount, or explicit rounding paisa. Equal/share splits also auto-distribute leftover paisa by largest remainder.
-                  </ThemedText>
-                  <SegmentedControl
+              <DataSurface elevated={adjustmentPickerOpen} style={adjustmentPickerOpen ? styles.expandedPickerSurface : undefined}>
+                <View style={[styles.itemizeComposer, { borderBottomColor: theme.colors.hairline }]}>
+                  <SearchableSelect
+                    compact
                     value={adjustmentType}
-                    options={[
-                      { label: "GST", value: "gst_cgst" },
-                      { label: "Service", value: "service_charge" },
-                      { label: "Tip", value: "tip" },
-                      { label: "Discount", value: "discount" },
-                      { label: "Round", value: "rounding" }
-                    ]}
+                    options={ADJUSTMENT_TYPE_OPTIONS}
                     onChange={setAdjustmentType}
+                    placeholder="Adjustment type"
+                    onOpenChange={setAdjustmentPickerOpen}
                   />
-                  <InputField
-                    label={adjustmentType === "rounding" ? "Rounding amount (±)" : "Adjustment amount"}
-                    value={adjustmentAmount}
-                    onChangeText={setAdjustmentAmount}
-                    keyboardType="decimal-pad"
-                    amount
-                  />
-                  <Button label="Add adjustment" variant="secondary" onPress={addAdjustment} disabled={!adjustmentAmount.trim()} />
+                  <View
+                    style={[
+                      styles.itemizeAmountField,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.hairline,
+                        borderRadius: theme.radius.md
+                      }
+                    ]}
+                  >
+                    <CurrencyInr size={14} color={theme.colors.inkMuted} weight="bold" />
+                    <TextInput
+                      value={adjustmentAmount}
+                      onChangeText={setAdjustmentAmount}
+                      placeholder={adjustmentType === "rounding" ? "±0" : "0"}
+                      placeholderTextColor={theme.colors.inkFaint}
+                      keyboardType="decimal-pad"
+                      style={[theme.typography.body, styles.itemizeAmountInput, { color: theme.colors.ink }]}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={addAdjustment}
+                    disabled={!adjustmentAmount.trim()}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add adjustment"
+                    style={[
+                      styles.iconActionButton,
+                      {
+                        borderColor: theme.colors.hairline,
+                        opacity: !adjustmentAmount.trim() ? 0.4 : 1
+                      }
+                    ]}
+                  >
+                    <Plus size={16} color={theme.colors.confirmed} weight="bold" />
+                  </Pressable>
                 </View>
                 {adjustments.map((adjustment, index) => (
-                  <View key={`${adjustment.adjustmentType}-${index}`} style={[styles.dataRow, { borderTopColor: theme.colors.hairline }]}>
-                    <ThemedText variant="bodyMedium">{adjustment.label}</ThemedText>
-                    <ThemedText variant="amount">{formatMoney(parseAmountToMinor(adjustment.amount))}</ThemedText>
+                  <View key={`${adjustment.adjustmentType}-${index}`} style={[styles.itemizeRow, { borderTopColor: theme.colors.hairline }]}>
+                    <ThemedText variant="bodyMedium" numberOfLines={1} style={styles.itemizeRowCopy}>
+                      {adjustment.label}
+                    </ThemedText>
+                    <ThemedText variant="amountSm">
+                      {adjustment.adjustmentType === "discount" ? "-" : ""}
+                      {formatMoney(parseAmountToMinor(adjustment.amount))}
+                    </ThemedText>
+                    <Pressable
+                      onPress={() => removeAdjustment(index)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${adjustment.label}`}
+                      style={[styles.removeButton, { borderColor: theme.colors.hairline }]}
+                    >
+                      <X size={16} color={theme.colors.owe} weight="bold" />
+                    </Pressable>
                   </View>
                 ))}
                 {computedShares.residualMinor > 0 ? (
@@ -862,7 +1067,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                       Auto rounding effect
                     </ThemedText>
                     <ThemedText variant="bodySm" tone="muted">
-                      {computedShares.residualMinor}p by largest remainder
+                      {formatMoney(computedShares.residualMinor)} auto-rounded
                     </ThemedText>
                   </View>
                 ) : null}
@@ -882,7 +1087,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   Paid by
                 </ThemedText>
                 {selectedPayers.map((payerId) => {
-                  const paid = selectedPayers.length === 1 ? totalMinor : parseAmountToMinor(payerAmounts[payerId] ?? "");
+                  const paid = payerPaidMinor(payerId, selectedPayers, totalMinor, payerAmounts);
                   return (
                     <View key={payerId} style={styles.reviewRow}>
                       <ThemedText variant="bodyMedium">{nameForParticipant(payerId)}</ThemedText>
@@ -932,6 +1137,31 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                   </View>
                 ) : null}
 
+                {summaryBalances.length > 0 ? (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: theme.colors.hairline }]} />
+                    <ThemedText variant="caption" tone="muted" style={styles.reviewSubhead}>
+                      Balance
+                    </ThemedText>
+                    {summaryBalances.map(({ participantId, netMinor }) => (
+                      <View key={participantId} style={styles.reviewRow}>
+                        <ThemedText variant="bodyMedium">{nameForParticipant(participantId)}</ThemedText>
+                        <View style={styles.balanceAmountCol}>
+                          <ThemedText
+                            variant="amountSm"
+                            tone={netMinor > 0 ? "confirmed" : netMinor < 0 ? "owe" : "muted"}
+                          >
+                            {formatSignedMoney(netMinor)}
+                          </ThemedText>
+                          <ThemedText variant="caption" tone={netMinor > 0 ? "confirmed" : netMinor < 0 ? "owe" : "muted"}>
+                            {netMinor > 0 ? "gets back" : netMinor < 0 ? "owes" : "even"}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                ) : null}
+
                 <View style={[styles.statusBarTrack, { backgroundColor: theme.colors.hairline, borderRadius: theme.radius.full }]}>
                   <View
                     style={[
@@ -946,7 +1176,7 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
                 </View>
                 {computedShares.residualMinor > 0 ? (
                   <ThemedText variant="bodySm" tone="muted">
-                    {computedShares.residualMinor}p rounding distributed by largest-remainder.
+                    {formatMoney(computedShares.residualMinor)} auto-rounded across shares (largest remainder).
                   </ThemedText>
                 ) : null}
               </View>
@@ -1033,12 +1263,29 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   );
 }
 
+function payerPaidMinor(
+  participantId: string,
+  selectedPayers: string[],
+  totalMinor: number,
+  payerAmounts: Record<string, string>
+): number {
+  if (!selectedPayers.includes(participantId)) {
+    return 0;
+  }
+  if (selectedPayers.length === 1) {
+    return totalMinor;
+  }
+  return parseAmountToMinor(payerAmounts[participantId] ?? "");
+}
+
+function adjustmentAmountMinor(adjustment: DraftAdjustment): number {
+  const amount = parseAmountToMinor(adjustment.amount);
+  return adjustment.adjustmentType === "discount" ? -Math.abs(amount) : amount;
+}
+
 function itemizedTotalMinor(lineItems: DraftLineItem[], adjustments: DraftAdjustment[]) {
   const lineTotal = lineItems.reduce((total, line) => total + parseAmountToMinor(line.amount), 0);
-  const adjustmentTotal = adjustments.reduce((total, adjustment) => {
-    const amount = parseAmountToMinor(adjustment.amount);
-    return total + (adjustment.adjustmentType === "discount" ? -amount : amount);
-  }, 0);
+  const adjustmentTotal = adjustments.reduce((total, adjustment) => total + adjustmentAmountMinor(adjustment), 0);
 
   return Math.max(0, lineTotal + adjustmentTotal);
 }
@@ -1047,8 +1294,8 @@ function allocateByWeight(totalMinor: number, ids: string[], weights: Record<str
   const sign = totalMinor < 0 ? -1 : 1;
   const absoluteTotalMinor = Math.abs(totalMinor);
   const totalWeight = ids.reduce((total, id) => total + Math.max(0, weights[id] ?? 1), 0);
-  if (!totalWeight) {
-    return { allocations: {}, residualMinor: totalMinor };
+  if (!ids.length || !totalWeight) {
+    return { allocations: {}, residualMinor: 0 };
   }
 
   const rows = ids.map((id) => {
@@ -1056,19 +1303,20 @@ function allocateByWeight(totalMinor: number, ids: string[], weights: Record<str
     const floor = Math.floor(raw);
     return { id, floor, remainder: raw - floor };
   });
-  let residual = absoluteTotalMinor - rows.reduce((total, row) => total + row.floor, 0);
+  let remainingMinor = absoluteTotalMinor - rows.reduce((total, row) => total + row.floor, 0);
+  const autoRoundedMinor = remainingMinor;
   rows
     .sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id))
     .forEach((row) => {
-      if (residual > 0) {
+      if (remainingMinor > 0) {
         row.floor += 1;
-        residual -= 1;
+        remainingMinor -= 1;
       }
     });
 
   return {
     allocations: Object.fromEntries(rows.map((row) => [row.id, row.floor * sign])),
-    residualMinor: absoluteTotalMinor - ids.reduce((total, id) => total + Math.floor((absoluteTotalMinor * Math.max(0, weights[id] ?? 1)) / totalWeight), 0)
+    residualMinor: autoRoundedMinor
   };
 }
 
@@ -1082,7 +1330,7 @@ function computeShares(
   adjustments: DraftAdjustment[]
 ) {
   if (!selectedShares.length) {
-    return { allocations: {} as Record<string, number>, residualMinor: totalMinor };
+    return { allocations: {} as Record<string, number>, residualMinor: 0 };
   }
 
   if (splitType === "exact") {
@@ -1108,7 +1356,7 @@ function computeShares(
         allocations[id] = (allocations[id] ?? 0) + value;
       });
     });
-    const adjustmentMinor = adjustments.reduce((total, adjustment) => total + (adjustment.adjustmentType === "discount" ? -parseAmountToMinor(adjustment.amount) : parseAmountToMinor(adjustment.amount)), 0);
+    const adjustmentMinor = adjustments.reduce((total, adjustment) => total + adjustmentAmountMinor(adjustment), 0);
     const adjustmentAllocation = allocateByWeight(adjustmentMinor, selectedShares, Object.fromEntries(selectedShares.map((id) => [id, 1])));
     Object.entries(adjustmentAllocation.allocations).forEach(([id, value]) => {
       allocations[id] = (allocations[id] ?? 0) + value;
@@ -1166,7 +1414,7 @@ function buildExpensePayload(input: {
     billAdjustments: input.adjustments.map((adjustment) => ({
       adjustmentType: adjustment.adjustmentType,
       label: adjustment.label,
-      amountMinor: parseAmountToMinor(adjustment.amount),
+      amountMinor: adjustmentAmountMinor(adjustment),
       allocationBasis: "subtotal_proportional"
     }))
   };
@@ -1246,21 +1494,28 @@ function applyExpenseToForm(
   const nextAdjustments = expense.billAdjustments.map((adjustment) => ({
     adjustmentType: (adjustment.adjustmentType as AdjustmentType) || "tax",
     label: adjustment.label,
-    amount: minorToAmountInput(adjustment.amountMinor)
+    amount: minorToAmountInput(
+      adjustment.adjustmentType === "discount" ? Math.abs(adjustment.amountMinor) : adjustment.amountMinor
+    )
   }));
   setters.setAdjustments(nextAdjustments);
   setters.setShowAdjustments(nextAdjustments.length > 0);
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12
-  },
   headerTitle: {
     flex: 1,
-    gap: 2
+    gap: 6
+  },
+  groupTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    maxWidth: "100%"
   },
   headerButton: {
     flexShrink: 0
@@ -1361,6 +1616,57 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12
   },
+  itemizeComposer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12
+  },
+  expandedPickerSurface: {
+    overflow: "visible",
+    zIndex: 30
+  },
+  itemizeField: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  itemizeInput: {
+    padding: 0,
+    minHeight: 42
+  },
+  itemizeAmountField: {
+    width: 92,
+    minHeight: 44,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    flexShrink: 0
+  },
+  itemizeAmountInput: {
+    flex: 1,
+    padding: 0,
+    minHeight: 42,
+    textAlign: "right"
+  },
+  itemizeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1
+  },
+  itemizeRowCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
   section: {
     gap: 10
   },
@@ -1380,6 +1686,29 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: 12
   },
+  dataRowCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  removeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  iconActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
   reviewBlock: {
     gap: 8,
     padding: 14
@@ -1389,6 +1718,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12
+  },
+  balanceAmountCol: {
+    alignItems: "flex-end",
+    gap: 2
   },
   reviewSubhead: {
     marginTop: 4

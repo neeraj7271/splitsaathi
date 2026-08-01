@@ -13,11 +13,12 @@ import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -27,7 +28,8 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const selectorGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? selectorGroups[0]?.id;
   const activityQuery = useQuery({
     queryKey: ["groupActivity", selectedGroupId, { limit: 50, feed: "all" }],
     queryFn: () => apiClient.getGroupActivity(selectedGroupId as string, { limit: 50, feed: "all" }),
@@ -52,10 +54,10 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
   }, [groupQuery.data, historyQuery.data]);
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && selectorGroups[0]?.id) {
+      navigation.setSelectedGroupId(selectorGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [selectorGroups, navigation]);
 
   const activityItems = activityQuery.data?.items ?? [];
   const enrichedActivity = useMemo(() => {
@@ -90,18 +92,16 @@ export function AuditScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen>
-      <ScreenBackButton navigation={navigation} label="Back" />
-      <View style={styles.header}>
-        <View>
-          <ThemedText variant="caption" tone="muted">
-            Immutable history
-          </ThemedText>
-          <ThemedText variant="title">Activity and audit</ThemedText>
-        </View>
-        <Button label="Group" variant="secondary" onPress={() => navigation.go("groupDetail")} />
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        caption="Immutable history"
+        title="Activity and audit"
+        trailing={<Button label="Group" variant="secondary" onPress={() => navigation.go("groupDetail")} />}
+      />
 
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {selectorGroups.length ? (
+        <GroupSelector groups={selectorGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
       {activityQuery.error ? <InlineNotice title="Activity could not load" body={activityQuery.error.message} tone="owe" /> : null}
 
       <View style={styles.section}>

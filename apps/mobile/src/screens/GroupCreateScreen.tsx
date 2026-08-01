@@ -7,6 +7,7 @@ import {
   AddressBook,
   CaretDown,
   Clock,
+  FileArrowDown,
   ListBullets,
   QrCode,
   SquaresFour,
@@ -27,13 +28,14 @@ import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { QRScannerModal } from "../components/QRScannerModal";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { colorWithAlpha, useTheme } from "../theme";
 import { GroupMode, GroupSummary, GroupType, MembershipRole } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
-import { hasContactsConsent, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
+import { ensureContactsAccess, openSystemSettings, syncDeviceContacts, type SyncedContact } from "../utils/contactDiscovery";
 import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 
 const groupTypes: Array<{ label: string; value: GroupType }> = [
@@ -136,18 +138,22 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
 
   async function openContactPicker() {
     setContactError(null);
-    const granted = await hasContactsConsent();
-    if (!granted) {
-      showDialog({
-        title: "Contacts are off",
-        message: "Enable contacts in Settings → Contacts, then try again.",
-        tone: "warning",
-        primaryAction: {
-          label: "Open settings",
-          onPress: () => navigation.go("contactsSettings")
-        },
-        secondaryAction: { label: "Cancel", variant: "ghost" }
-      });
+    const access = await ensureContactsAccess();
+    if (!access.ok) {
+      if (access.openSettings) {
+        showDialog({
+          title: "Allow contacts access",
+          message: access.reason,
+          tone: "warning",
+          primaryAction: {
+            label: "Open settings",
+            onPress: () => void openSystemSettings()
+          },
+          secondaryAction: { label: "Cancel", variant: "ghost" }
+        });
+      } else {
+        setContactError(access.reason);
+      }
       return;
     }
 
@@ -180,52 +186,46 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
 
   return (
     <Screen refreshing={groupsQuery.isRefetching} onRefresh={() => void groupsQuery.refetch()}>
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <ThemedText variant="title">Groups</ThemedText>
-          <ThemedText variant="bodySm" tone="muted">
-            {activeTab === "create" ? "Create a new group" : "Manage your groups and balances."}
-          </ThemedText>
-        </View>
-        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-          <Pressable
-            onPress={() => setShowQrScanner(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Scan QR to Join"
-            style={[
-              styles.importChip,
-              {
-                borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
-                backgroundColor: theme.colors.surface,
-                borderRadius: theme.radius.full
-              }
-            ]}
-          >
-            <QrCode size={16} color={theme.colors.info} weight="duotone" />
-            <ThemedText variant="caption" tone="info">
-              Scan QR
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.go("importExport")}
-            accessibilityRole="button"
-            accessibilityLabel="Import CSV"
-            style={[
-              styles.importChip,
-              {
-                borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
-                backgroundColor: theme.colors.surface,
-                borderRadius: theme.radius.full
-              }
-            ]}
-          >
-            <UserPlus size={16} color={theme.colors.info} weight="duotone" />
-            <ThemedText variant="caption" tone="info">
-              Import CSV
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        title="Groups"
+        subtitle={activeTab === "create" ? "Create a new group" : "Manage your groups and balances."}
+        trailing={
+          <>
+            <Pressable
+              onPress={() => setShowQrScanner(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Scan QR to join"
+              style={[
+                styles.headerIconButton,
+                {
+                  borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: theme.radius.full
+                }
+              ]}
+            >
+              <QrCode size={18} color={theme.colors.info} weight="duotone" />
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.go("importExport")}
+              accessibilityRole="button"
+              accessibilityLabel="Import CSV"
+              style={[
+                styles.headerIconButton,
+                {
+                  borderColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.45 : 0.35),
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: theme.radius.full
+                }
+              ]}
+            >
+              <FileArrowDown size={18} color={theme.colors.info} weight="duotone" />
+            </Pressable>
+          </>
+        }
+      />
 
       <QRScannerModal
         visible={showQrScanner}
@@ -624,22 +624,11 @@ function formatGroupType(groupType: GroupType): string {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  headerCopy: {
-    flex: 1,
-    gap: 4
-  },
-  importChip: {
-    flexDirection: "row",
+  headerIconButton: {
+    width: 36,
+    height: 36,
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    justifyContent: "center",
     borderWidth: 1
   },
   section: {

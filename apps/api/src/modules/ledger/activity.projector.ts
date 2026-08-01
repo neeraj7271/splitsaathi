@@ -158,7 +158,7 @@ function settlementCopy(event: DomainEvent, payload: Record<string, unknown>): A
   };
   const statuses: Partial<Record<DomainEvent['type'], string>> = {
     SettlementIntentCreated: 'intent_created',
-    CashSettlementRecorded: 'confirmed',
+    CashSettlementRecorded: 'awaiting_receiver_confirmation',
     UpiIntentGenerated: 'intent_generated',
     UpiAppOpened: 'payer_opened_upi_app',
     PaymentProofSubmitted: 'proof_submitted',

@@ -11,13 +11,15 @@ export function Screen({
   scroll = true,
   footer,
   refreshing,
-  onRefresh
+  onRefresh,
+  scrollRef
 }: {
   children: React.ReactNode;
   scroll?: boolean;
   footer?: React.ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
+  scrollRef?: React.Ref<ScrollView>;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -47,9 +49,11 @@ export function Screen({
       <StatusBar barStyle={theme.mode === "dark" ? "light-content" : "dark-content"} />
       {scroll ? (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
           refreshControl={
             onRefresh ? (
               <RefreshControl

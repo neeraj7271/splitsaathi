@@ -32,6 +32,7 @@ import { AppNavigation } from "../types/navigation";
 import { isLedgerActivityEvent } from "../utils/activityFeed";
 import { formatActivityTitle, humanizeEventType } from "../utils/displayNames";
 import { formatMoney, formatSignedMoney } from "../utils/money";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 const HOME_ACTIVITY_LIMIT = 8;
 const HOME_GROUPS_PREVIEW = 5;
@@ -44,22 +45,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() });
   const monthlySpendQuery = useQuery({ queryKey: ["myMonthlySpend"], queryFn: () => apiClient.getMyMonthlySpend() });
   const groups = groupsQuery.data ?? [];
-  const activeGroups = useMemo(() => {
-    const active = groups.filter((group) => group.state === "active");
-    return active.sort((a, b) => {
-      const balA = Math.abs(a.netBalanceMinor ?? 0);
-      const balB = Math.abs(b.netBalanceMinor ?? 0);
-      const hasBalA = balA > 0 ? 1 : 0;
-      const hasBalB = balB > 0 ? 1 : 0;
-      if (hasBalA !== hasBalB) {
-        return hasBalB - hasBalA; // Non-zero balance groups first
-      }
-      if (hasBalA && hasBalB) {
-        return balB - balA; // Higher absolute balance first
-      }
-      return new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime();
-    });
-  }, [groups]);
+  const activeGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
 
   const activityQueries = useQueries({
     queries: activeGroups.slice(0, 6).map((group) => ({

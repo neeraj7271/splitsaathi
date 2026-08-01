@@ -21,7 +21,7 @@ import { EmptyState } from "../components/EmptyState";
 import { friendAccent } from "../components/FriendSummaryCard";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
@@ -167,17 +167,20 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
 
   return (
     <Screen refreshing={detailQuery.isRefetching} onRefresh={() => void detailQuery.refetch()}>
-      <View style={styles.topBar}>
-        <ScreenBackButton navigation={navigation} label="" fallbackRoute="friends" />
-        <Pressable
-          onPress={() => setMenuOpen(true)}
-          style={[styles.navIconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
-          accessibilityRole="button"
-          accessibilityLabel="Friend options"
-        >
-          <DotsThreeVertical size={20} color={theme.colors.ink} weight="bold" />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="friends"
+        trailing={
+          <Pressable
+            onPress={() => setMenuOpen(true)}
+            style={[styles.navIconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
+            accessibilityRole="button"
+            accessibilityLabel="Friend options"
+          >
+            <DotsThreeVertical size={20} color={theme.colors.ink} weight="bold" />
+          </Pressable>
+        }
+      />
 
       {!friendUserId ? <InlineNotice title="No friend selected" body="Go back and pick a friend." tone="owe" /> : null}
       {detailQuery.error ? <InlineNotice title="Could not load friend" body={detailQuery.error.message} tone="owe" /> : null}

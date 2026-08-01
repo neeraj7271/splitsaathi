@@ -81,46 +81,15 @@ export class SettlementCommandService {
         }
       ];
     if (paymentMethod === 'cash') {
-      eventsToAppend.push(
-        {
-          type: 'CashSettlementRecorded',
-          aggregateType: 'settlement_intent',
-          aggregateId: settlementIntentId,
-          groupId: command.groupId,
-          actorId: command.actorId,
-          payload: { settlementIntentId, reason: 'Marked as paid in cash' },
-          metadata: { command: 'record_cash_settlement' }
-        },
-        {
-          type: 'SettlementLedgerPosted',
-          aggregateType: 'settlement_intent',
-          aggregateId: settlementIntentId,
-          groupId: command.groupId,
-          actorId: command.actorId,
-          payload: { settlementIntentId },
-          postings: settlementPostings(
-            {
-              settlementIntentId,
-              groupId: command.groupId,
-              payerParticipantId: command.payerParticipantId,
-              payeeParticipantId: command.payeeParticipantId,
-              amountMinor: command.amountMinor,
-              currencyCode,
-              note,
-              paymentMethod,
-              state: 'confirmed',
-              createdBy: command.actorId,
-              createdAt: '',
-              updatedAt: '',
-              proofs: [],
-              appOpenEvents: [],
-              timeline: []
-            },
-            'cash_settlement'
-          ),
-          metadata: { command: 'post_cash_settlement_ledger' }
-        }
-      );
+      eventsToAppend.push({
+        type: 'CashSettlementRecorded',
+        aggregateType: 'settlement_intent',
+        aggregateId: settlementIntentId,
+        groupId: command.groupId,
+        actorId: command.actorId,
+        payload: { settlementIntentId, reason: 'Marked as paid in cash' },
+        metadata: { command: 'record_cash_settlement' }
+      });
     } else {
       eventsToAppend.push({
         type: 'UpiIntentGenerated',

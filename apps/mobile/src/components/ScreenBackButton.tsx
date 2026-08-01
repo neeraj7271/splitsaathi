@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, ViewStyle } from "react-native";
 import { CaretLeft } from "phosphor-react-native";
 
 import { useTheme } from "../theme";
@@ -9,11 +9,15 @@ import { ThemedText } from "./ThemedText";
 export function ScreenBackButton({
   navigation,
   label = "Back",
-  fallbackRoute = "home"
+  fallbackRoute = "home",
+  embedded = false,
+  style
 }: {
   navigation: AppNavigation;
   label?: string;
   fallbackRoute?: Parameters<AppNavigation["go"]>[0];
+  embedded?: boolean;
+  style?: ViewStyle;
 }) {
   const theme = useTheme();
 
@@ -24,10 +28,10 @@ export function ScreenBackButton({
           navigation.go(fallbackRoute);
         }
       }}
-      style={styles.row}
+      style={[styles.row, embedded ? styles.rowEmbedded : null, style]}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={label || "Back"}
     >
       <View style={[styles.icon, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surfaceRaised }]}>
         <CaretLeft size={18} color={theme.colors.ink} weight="bold" />
@@ -48,6 +52,11 @@ const styles = StyleSheet.create({
     gap: 8,
     alignSelf: "flex-start",
     marginBottom: 4
+  },
+  rowEmbedded: {
+    marginBottom: 0,
+    alignSelf: "center",
+    flexShrink: 0
   },
   icon: {
     width: 32,

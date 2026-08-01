@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ImageSquare, Trash, Bell, ShieldCheck, Palette, Star, Headset, SealCheck, PencilSimple, EnvelopeSimple, CurrencyInr, Phone, Gear } from "phosphor-react-native";
+import { ImageSquare, Trash, Bell, ShieldCheck, Palette, Star, Headset, SealCheck, PencilSimple, EnvelopeSimple, CurrencyInr, Phone, X } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
@@ -11,6 +11,7 @@ import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingsLinkRow } from "../components/SettingsLinkRow";
 import { ThemedText } from "../components/ThemedText";
@@ -130,17 +131,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
-          <ArrowLeft size={20} color={theme.colors.ink} />
-        </Pressable>
-        <View style={styles.titleBlock}>
-          <ThemedText variant="caption" tone="confirmed">
-            Account
-          </ThemedText>
-          <ThemedText variant="title">Profile</ThemedText>
-        </View>
-      </View>
+      <ScreenHeader navigation={navigation} fallbackRoute="home" caption="Account" captionTone="confirmed" title="Profile" />
 
       {profileQuery.error ? <InlineNotice title="Profile could not load" body={profileQuery.error.message} tone="owe" /> : null}
 
@@ -158,11 +149,16 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
           <View style={styles.identity}>
             <View style={styles.nameRow}>
               <View style={styles.nameWrapper}>
-                <ThemedText variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>{profile?.displayName ?? "Your profile"}</ThemedText>
-                <SealCheck size={20} color={theme.colors.confirmed} weight="fill" />
+                <ThemedText variant="section" numberOfLines={2} ellipsizeMode="tail" style={styles.displayName}>
+                  {profile?.displayName ?? "Your profile"}
+                </ThemedText>
+                <SealCheck size={18} color={theme.colors.confirmed} weight="fill" style={styles.verifiedBadge} />
               </View>
               <Pressable
-                style={[styles.editButton, { borderColor: theme.colors.confirmed }]}
+                style={[styles.editIconButton, { borderColor: theme.colors.hairline, backgroundColor: theme.colors.surface }]}
+                accessibilityRole="button"
+                accessibilityLabel={isEditing ? "Cancel editing" : "Edit profile"}
+                hitSlop={8}
                 onPress={() => {
                   if (isEditing) {
                     setDisplayName(savedDisplayName);
@@ -172,10 +168,11 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
                   setIsEditing((value) => !value);
                 }}
               >
-                <PencilSimple size={14} color={theme.colors.confirmed} />
-                <ThemedText variant="bodySm" tone="confirmed">
-                  {isEditing ? "Cancel" : "Edit profile"}
-                </ThemedText>
+                {isEditing ? (
+                  <X size={16} color={theme.colors.inkMuted} weight="bold" />
+                ) : (
+                  <PencilSimple size={16} color={theme.colors.confirmed} weight="bold" />
+                )}
               </Pressable>
             </View>
             <View style={[styles.activeTag, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
@@ -389,24 +386,6 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 8
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  titleBlock: {
-    flex: 1,
-    gap: 0
-  },
   profileBlock: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -426,18 +405,27 @@ const styles = StyleSheet.create({
   },
   nameWrapper: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     flex: 1,
+    minWidth: 0,
     gap: 6
   },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+  displayName: {
+    flexShrink: 1,
+    minWidth: 0,
+    flex: 1
+  },
+  verifiedBadge: {
+    marginTop: 2,
+    flexShrink: 0
+  },
+  editIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 100,
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0
   },
   activeTag: {

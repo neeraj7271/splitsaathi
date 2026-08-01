@@ -1,12 +1,15 @@
-import { Platform } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import { Linking, Platform } from "react-native";
 
 import { apiClient } from "../api/client";
 import { hashPhoneE164, normalizePhoneE164 } from "./phoneHash";
 
-const CONTACTS_ASKED_KEY = "splitsaathi.contactsPermissionAsked.v1";
-
 type ContactsModule = typeof import("expo-contacts");
+
+type PermissionFailure = {
+  granted: false;
+  reason: string;
+  openSettings?: boolean;
+};
 
 async function loadContactsModule(): Promise<ContactsModule> {
   try {
@@ -18,23 +21,6 @@ async function loadContactsModule(): Promise<ContactsModule> {
     }
     throw error;
   }
-}
-
-async function getFlag(key: string) {
-  if (Platform.OS === "web") {
-    return typeof window !== "undefined" && window.localStorage.getItem(key) === "1";
-  }
-  return (await SecureStore.getItemAsync(key)) === "1";
-}
-
-async function setFlag(key: string) {
-  if (Platform.OS === "web") {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(key, "1");
-    }
-    return;
-  }
-  await SecureStore.setItemAsync(key, "1");
 }
 
 export interface DeviceContact {
@@ -55,47 +41,80 @@ function isGranted(permission: { granted?: boolean; status?: string }) {
 }
 
 /**
- * Request contacts access only when still undetermined (or when Settings forces a prompt).
- * Never re-shows the system dialog after the user already granted or denied.
+ * Ask for contacts access when the OS still allows a prompt.
+ * Only falls back to Settings after the user has permanently blocked access.
  */
-export async function requestContactsPermission(options?: { forcePrompt?: boolean }) {
+export async function requestContactsPermission() {
   if (Platform.OS === "web") {
-    return { granted: false, reason: "Contacts are not available in the browser preview." };
+    return { granted: false, reason: "Contacts are not available in the browser preview." } satisfies PermissionFailure;
   }
 
   const Contacts = await loadContactsModule();
   const current = await Contacts.getPermissionsAsync();
   if (isGranted(current)) {
-    await setFlag(CONTACTS_ASKED_KEY);
     return { granted: true as const };
   }
 
-  const previouslyAsked = await getFlag(CONTACTS_ASKED_KEY);
-  const undetermined = current.status === "undetermined" || current.status === undefined;
-  const canAsk = current.canAskAgain !== false;
-
-  if (!options?.forcePrompt && (previouslyAsked || !undetermined || !canAsk)) {
+  if (current.canAskAgain === false) {
     return {
       granted: false as const,
-      reason: "Contacts permission was previously denied. Enable it in system Settings."
-    };
+      reason: "Contacts access is blocked. Enable Contacts for SplitSaathi in system Settings.",
+      openSettings: true
+    } satisfies PermissionFailure;
   }
 
   const requested = await Contacts.requestPermissionsAsync();
-  await setFlag(CONTACTS_ASKED_KEY);
-  if (!isGranted(requested)) {
-    return { granted: false as const, reason: "Contacts permission was denied." };
+  if (isGranted(requested)) {
+    return { granted: true as const };
   }
 
-  return { granted: true as const };
+  if (requested.canAskAgain === false) {
+    return {
+      granted: false as const,
+      reason: "Contacts access was denied. Enable Contacts for SplitSaathi in system Settings.",
+      openSettings: true
+    } satisfies PermissionFailure;
+  }
+
+  return {
+    granted: false as const,
+    reason: "Contacts access was denied."
+  } satisfies PermissionFailure;
 }
 
-export async function readDeviceContacts(options?: { forcePrompt?: boolean }): Promise<DeviceContact[]> {
-  const permission = await requestContactsPermission(options);
+export async function openSystemSettings() {
+  await Linking.openSettings();
+}
+
+/** OS permission + in-app contacts consent before reading the address book. */
+export async function ensureContactsAccess() {
+  const permission = await requestContactsPermission();
   if (!permission.granted) {
-    throw new Error(permission.reason ?? "Contacts permission is required.");
+    return {
+      ok: false as const,
+      reason: permission.reason,
+      openSettings: permission.openSettings
+    };
   }
 
+  const consented = await hasContactsConsent();
+  if (!consented) {
+    await apiClient.recordConsent("contacts_discovery", true, "contact_picker");
+  }
+
+  return { ok: true as const };
+}
+
+export async function readDeviceContacts(): Promise<DeviceContact[]> {
+  const access = await ensureContactsAccess();
+  if (!access.ok) {
+    throw new Error(access.reason);
+  }
+
+  return loadDeviceContacts();
+}
+
+async function loadDeviceContacts(): Promise<DeviceContact[]> {
   const Contacts = await loadContactsModule();
   const response = await Contacts.getContactsAsync({
     fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name]
@@ -119,8 +138,8 @@ export async function readDeviceContacts(options?: { forcePrompt?: boolean }): P
   return [...uniqueByHash.values()].sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-export async function syncDeviceContacts(options?: { forcePrompt?: boolean }) {
-  const deviceContacts = await readDeviceContacts(options);
+export async function syncDeviceContacts() {
+  const deviceContacts = await readDeviceContacts();
   if (!deviceContacts.length) {
     return { importedCount: 0, matchedOnSplitSaathi: 0, contacts: [] as SyncedContact[] };
   }

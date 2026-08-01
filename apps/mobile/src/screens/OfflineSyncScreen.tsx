@@ -9,7 +9,7 @@ import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
@@ -50,16 +50,12 @@ export function OfflineSyncScreen({ navigation }: { navigation: AppNavigation })
 
   return (
     <Screen refreshing={false} onRefresh={() => void refreshStatus()}>
-      <ScreenBackButton navigation={navigation} label="Back" />
-      <View style={styles.header}>
-        <View>
-          <ThemedText variant="caption" tone="muted">
-            Offline queue
-          </ThemedText>
-          <ThemedText variant="title">Sync status</ThemedText>
-        </View>
-        <CloudArrowUp size={28} color={theme.colors.confirmed} weight="duotone" />
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        caption="Offline queue"
+        title="Sync status"
+        trailing={<CloudArrowUp size={28} color={theme.colors.confirmed} weight="duotone" />}
+      />
 
       <DataSurface>
         <View style={styles.metrics}>

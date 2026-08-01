@@ -11,13 +11,14 @@ import { EmptyState } from "../components/EmptyState";
 import { GroupSelector } from "../components/GroupSelector";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
-import { ScreenBackButton } from "../components/ScreenBackButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichBalanceRows, enrichSettlementSuggestions } from "../utils/displayNames";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 
 export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -55,7 +56,8 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
     }
   });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const selectorGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? selectorGroups[0]?.id;
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
@@ -73,10 +75,10 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   });
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && selectorGroups[0]?.id) {
+      navigation.setSelectedGroupId(selectorGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [selectorGroups, navigation]);
 
   const lookups = useMemo(() => (groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined), [groupQuery.data]);
   const balances = useMemo(
@@ -106,18 +108,16 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
-      <ScreenBackButton navigation={navigation} label="Back" />
-      <View style={styles.header}>
-        <View style={styles.headerTitle}>
-          <ThemedText variant="caption" tone="muted">
-            Explainability
-          </ThemedText>
-          <ThemedText variant="title">Balances and suggestions</ThemedText>
-        </View>
-        <Button label="Settle" variant="secondary" onPress={() => navigation.go("settlement")} />
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        caption="Explainability"
+        title="Balances and suggestions"
+        trailing={<Button label="Settle" variant="secondary" onPress={() => navigation.go("settlement")} />}
+      />
 
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {selectorGroups.length ? (
+        <GroupSelector groups={selectorGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Create or import a group before reviewing balances." action={{ label: "Groups", onPress: () => navigation.go("groups") }} /> : null}
       {balancesQuery.error ? <InlineNotice title="Balances could not load" body={balancesQuery.error.message} tone="owe" /> : null}
 

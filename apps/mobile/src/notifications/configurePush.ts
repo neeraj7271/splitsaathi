@@ -13,7 +13,6 @@ export async function configurePushNotifications() {
   if (configured) {
     return;
   }
-  configured = true;
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -33,4 +32,6 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC
     });
   }
+
+  configured = true;
 }

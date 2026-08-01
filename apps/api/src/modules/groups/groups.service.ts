@@ -685,6 +685,13 @@ export class GroupsService {
     });
   }
 
+  async isGroupAdminOrOwner(userId: string, groupId: string): Promise<boolean> {
+    const membership = await this.memberships.findOne({
+      where: { groupId, userId, status: In(['active', 'locked_for_exit']) }
+    });
+    return membership?.role === 'owner' || membership?.role === 'admin';
+  }
+
   async assertPermission(userId: string, groupId: string, permission: GroupPermission): Promise<void> {
     const membership = await this.memberships.findOne({
       where: { groupId, userId, status: In(['active', 'locked_for_exit']) }

@@ -208,8 +208,8 @@ export function enrichActivityRows(
         body = `${actor ?? payer} voided "${description}"${reason ? ` — ${reason}` : ""}.`;
         break;
       case "CashSettlementRecorded":
-        title = "Cash payment recorded";
-        body = `${payer} marked ${amount} as paid in cash to ${payee}${groupSuffix}.`;
+        title = "Cash payment pending confirmation";
+        body = `${payer} marked ${amount} as paid in cash to ${payee}${groupSuffix}. Waiting for ${payee} to confirm.`;
         break;
       case "SettlementLedgerPosted":
         title = paymentMethod === "cash" ? "Cash payment posted" : paymentMethod === "upi" ? "UPI payment posted" : "Settlement posted";

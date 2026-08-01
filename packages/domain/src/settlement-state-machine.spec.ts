@@ -56,6 +56,7 @@ describe('SettlementStateMachine', () => {
   it.each([
     ['suggested', 'create_intent', 'intent_created'],
     ['intent_created', 'generate_intent', 'intent_generated'],
+    ['intent_created', 'record_cash', 'awaiting_receiver_confirmation'],
     ['intent_created', 'cancel', 'cancelled'],
     ['intent_generated', 'open_upi_app', 'payer_opened_upi_app'],
     ['intent_generated', 'submit_proof', 'proof_submitted'],

@@ -16,6 +16,7 @@ import { NotificationsService } from './notifications.service';
 import { DevNotificationProvider } from './providers/dev-notification.provider';
 import { ExpoPushProvider } from './providers/expo-push.provider';
 import { FcmPushProvider } from './providers/fcm-push.provider';
+import { CompositePushProvider } from './providers/composite-push.provider';
 
 @Module({
   imports: [
@@ -32,14 +33,16 @@ import { FcmPushProvider } from './providers/fcm-push.provider';
     DevNotificationProvider,
     ExpoPushProvider,
     FcmPushProvider,
+    CompositePushProvider,
     {
       provide: NOTIFICATION_PROVIDER,
-      inject: [ApiConfigService, DevNotificationProvider, ExpoPushProvider, FcmPushProvider],
+      inject: [ApiConfigService, DevNotificationProvider, ExpoPushProvider, FcmPushProvider, CompositePushProvider],
       useFactory: (
         config: ApiConfigService,
         dev: DevNotificationProvider,
         expo: ExpoPushProvider,
-        fcm: FcmPushProvider
+        fcm: FcmPushProvider,
+        composite: CompositePushProvider
       ) => {
         if (
           config.env.NODE_ENV === 'production' &&
@@ -52,7 +55,7 @@ import { FcmPushProvider } from './providers/fcm-push.provider';
           return expo;
         }
         if (config.env.NOTIFICATION_PROVIDER_DRIVER === 'fcm') {
-          return fcm;
+          return composite;
         }
         return dev;
       }

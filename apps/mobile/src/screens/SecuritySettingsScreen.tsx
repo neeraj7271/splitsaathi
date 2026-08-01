@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { writeCachedBiometricPrefs } from "../auth/biometricPrefsCache";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
@@ -66,12 +66,7 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("profile")} style={styles.backButton}>
-          <ArrowLeft size={22} color={theme.colors.ink} />
-        </Pressable>
-        <ThemedText variant="title">Security</ThemedText>
-      </View>
+      <ScreenHeader navigation={navigation} fallbackRoute="profile" title="Security" />
 
       {preferencesQuery.error ? <InlineNotice title="Settings could not load" body={preferencesQuery.error.message} tone="owe" /> : null}
       {savePreferences.error ? <InlineNotice title="Save failed" body={savePreferences.error.message} tone="owe" /> : null}

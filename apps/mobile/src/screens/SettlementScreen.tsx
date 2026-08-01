@@ -16,8 +16,10 @@ import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { NumericKeypad } from "../components/NumericKeypad";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { SectionHeader } from "../components/SectionHeader";
 import { SegmentedControl } from "../components/SegmentedControl";
+import { useSettlementDetailModal } from "../components/SettlementDetailModalProvider";
 import { SettlementStepper } from "../components/SettlementStepper";
 import { StatusPill } from "../components/StatusPill";
 import { ThemedText } from "../components/ThemedText";
@@ -26,8 +28,10 @@ import { colorWithAlpha, useTheme } from "../theme";
 import { SettlementIntent, SettlementState, SettlementSuggestion } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
-import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName, formatSettlementHistoryLabel } from "../utils/displayNames";
+import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName } from "../utils/displayNames";
+import { formatSettlementDirection, formatSettlementHistoryMeta, settlementHasViewableProof } from "../utils/settlementDisplay";
 import { activeGroupParticipants } from "../utils/groupPeople";
+import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 import { openAuthenticatedAttachment } from "../utils/authenticatedAttachment";
 import {
   detectInstalledUpiApps,
@@ -90,6 +94,13 @@ function isTerminalState(state: SettlementState | undefined): boolean {
   return Boolean(state && TERMINAL_STATES.includes(state));
 }
 
+function isOpenSettlementForMember(row: SettlementIntent, myParticipantId: string | undefined): boolean {
+  if (!myParticipantId || isTerminalState(row.state)) {
+    return false;
+  }
+  return row.payerParticipantId === myParticipantId || row.payeeParticipantId === myParticipantId;
+}
+
 export function SettlementScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const dialog = useOptionalAppDialog();
@@ -121,31 +132,33 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
   const [proofPreviewUri, setProofPreviewUri] = useState<string>();
   const [proofLoading, setProofLoading] = useState(false);
+  const settlementDetail = useSettlementDetailModal();
 
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const groups = groupsQuery.data ?? [];
-  const selectedGroupId = navigation.selectedGroupId ?? groups[0]?.id;
+  const settleGroups = useMemo(() => activeGroupsByOutstandingBalance(groups), [groups]);
+  const selectedGroupId = navigation.selectedGroupId ?? settleGroups[0]?.id;
   const groupQuery = useQuery({
     queryKey: ["group", selectedGroupId],
     queryFn: () => apiClient.getGroup(selectedGroupId as string),
     enabled: Boolean(selectedGroupId)
   });
+  const shouldPollSettlements = Boolean(intent && !isTerminalState(intent.state));
+
   const suggestionsQuery = useQuery({
     queryKey: ["settlementSuggestions", selectedGroupId],
     queryFn: () => apiClient.getSettlementSuggestions(selectedGroupId as string),
     enabled: Boolean(selectedGroupId),
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchInterval: 3000
+    staleTime: 60_000,
+    refetchInterval: shouldPollSettlements ? 20_000 : false
   });
   const historyQuery = useQuery({
     queryKey: ["settlementHistory", selectedGroupId],
     queryFn: () => apiClient.listSettlementHistory(selectedGroupId as string),
     enabled: Boolean(selectedGroupId),
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchInterval: 3000
+    staleTime: 60_000,
+    refetchInterval: shouldPollSettlements ? 20_000 : false
   });
 
   const myParticipantId = useMemo(
@@ -166,10 +179,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   }, []);
 
   useEffect(() => {
-    if (!navigation.selectedGroupId && groups[0]?.id) {
-      navigation.setSelectedGroupId(groups[0].id);
+    if (!navigation.selectedGroupId && settleGroups[0]?.id) {
+      navigation.setSelectedGroupId(settleGroups[0].id);
     }
-  }, [groups, navigation]);
+  }, [settleGroups, navigation]);
 
   const lookups = useMemo(() => (groupQuery.data ? buildGroupDisplayLookups(groupQuery.data) : undefined), [groupQuery.data]);
   const suggestions = useMemo(
@@ -239,14 +252,17 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       return;
     }
     const openForMe = historyQuery.data.find((row) => {
-      if (row.paymentMethod === "cash") {
-        return false;
-      }
       if (["ledger_posted", "confirmed", "rejected", "cancelled", "expired", "reversed", "refunded"].includes(row.state)) {
         return false;
       }
-      if (row.payeeParticipantId === myParticipantId && isConfirmableState(row.state)) {
-        return true;
+      if (isConfirmableState(row.state)) {
+        if (row.payeeParticipantId === myParticipantId) {
+          return true;
+        }
+        const adminRole = groupQuery.data?.currentUserRole;
+        if ((adminRole === "owner" || adminRole === "admin") && row.payerParticipantId !== myParticipantId) {
+          return true;
+        }
       }
       if (
         row.payerParticipantId === myParticipantId &&
@@ -261,7 +277,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     if (openForMe) {
       setIntent(openForMe);
     }
-  }, [historyQuery.data, intent, myParticipantId, selectedGroupId]);
+  }, [groupQuery.data?.currentUserRole, historyQuery.data, intent, myParticipantId, selectedGroupId]);
 
   useEffect(() => {
     if (!payableSuggestions.length) {
@@ -294,7 +310,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const isPayer = Boolean(intent && myParticipantId && intent.payerParticipantId === myParticipantId);
   const isPayee = Boolean(intent && myParticipantId && intent.payeeParticipantId === myParticipantId);
+  const isGroupAdmin = groupQuery.data?.currentUserRole === "owner" || groupQuery.data?.currentUserRole === "admin";
   const canConfirmAsPayee = isPayee && isConfirmableState(intent?.state);
+  const canConfirmAsAdmin = isGroupAdmin && !isPayee && !isPayer && isConfirmableState(intent?.state);
+  const canConfirmSettlement = canConfirmAsPayee || canConfirmAsAdmin;
   const isSettled = Boolean(intent?.state && SETTLED_STATES.includes(intent.state));
   const waitingForPayerProof =
     isPayee && Boolean(intent?.state && WAITING_FOR_PAYER_STATES.includes(intent.state)) && !isConfirmableState(intent?.state);
@@ -383,7 +402,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
           setPayeeVpa(fromUri);
         }
       }
-      if (response.paymentMethod === "cash" || response.state === "ledger_posted") {
+      if (response.state === "ledger_posted") {
         invalidateSettlementBalances(response.groupId);
         setSelectedSuggestion(undefined);
       } else {
@@ -563,26 +582,25 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       ? intent.amountMinor
       : selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
   const refreshing =
-    groupsQuery.isRefetching || groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching || profileQuery.isRefetching;
+    groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching;
 
   async function refreshScreen() {
     if (isTerminalState(intent?.state)) {
       resetSettlementForm();
     }
     await Promise.all([
-      groupsQuery.refetch(),
-      selectedGroupId ? groupQuery.refetch() : Promise.resolve(),
       selectedGroupId ? suggestionsQuery.refetch() : Promise.resolve(),
       selectedGroupId ? historyQuery.refetch() : Promise.resolve(),
-      profileQuery.refetch()
+      selectedGroupId ? groupQuery.refetch() : Promise.resolve()
     ]);
   }
 
-  // Keep amounts fresh when returning to the app while sitting on Settle.
+  // Refresh open settlement state when returning to the app.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "active" && selectedGroupId) {
-        void refreshScreen();
+      if (next === "active" && selectedGroupId && intent && !isTerminalState(intent.state)) {
+        void suggestionsQuery.refetch();
+        void historyQuery.refetch();
       }
     });
     return () => sub.remove();
@@ -613,14 +631,11 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refreshScreen()}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("home")} style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
-          <CaretLeft size={20} color={theme.colors.ink} weight="bold" />
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        <StatusPill state={intent?.state ?? "intent_created"} />
-
-      </View>
+      <ScreenHeader
+        navigation={navigation}
+        fallbackRoute="home"
+        trailing={<StatusPill state={intent?.state ?? "intent_created"} />}
+      />
 
       <View style={styles.titleSection}>
         {intent ? (
@@ -637,12 +652,18 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               {paymentMethod === "cash" ? "Cash settlement" : "UPI settlement"}
             </ThemedText>
             <ThemedText variant="title" numberOfLines={1}>{paymentMethod === "cash" ? "Mark cash payment" : "Proof before posted"}</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">Complete payment and add proof to settle</ThemedText>
+            <ThemedText variant="bodySm" tone="muted">
+              {paymentMethod === "cash"
+                ? "The receiver must confirm before balances update."
+                : "Complete payment and add proof to settle"}
+            </ThemedText>
           </>
         )}
       </View>
 
-      {groups.length ? <GroupSelector groups={groups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} /> : null}
+      {settleGroups.length ? (
+        <GroupSelector groups={settleGroups} selectedGroupId={selectedGroupId} onSelect={navigation.setSelectedGroupId} />
+      ) : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Select a group with balances before creating UPI settlement intents." /> : null}
 
       <DataSurface>
@@ -781,7 +802,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               {payableSuggestions.length ? (
                 <>
                   <Button
-                    label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
+                    label={paymentMethod === "cash" ? "Record cash payment" : "Create UPI payment"}
                     onPress={() => createIntent.mutate()}
                     loading={createIntent.isPending}
                     disabled={!canCreateSuggested || !canCreateUpi}
@@ -883,7 +904,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 </View>
               </DataSurface>
               <Button
-                label={paymentMethod === "cash" ? "Confirm cash payment" : "Create UPI payment"}
+                label={paymentMethod === "cash" ? "Record cash payment" : "Create UPI payment"}
                 onPress={() => createIntent.mutate()}
                 loading={createIntent.isPending}
                 disabled={!canCreateCustom || !canCreateUpi}
@@ -891,18 +912,16 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             </View>
           ) : null}
         </View>
-      ) : intent.paymentMethod === "cash" ? (
-        <DataSurface>
-          <View style={styles.formBlock}>
-            <ThemedText variant="bodyMedium">Cash payment recorded</ThemedText>
-            <ThemedText variant="bodySm" tone="muted">
-              This settlement was immediately posted to the ledger. Balances have been updated.
-            </ThemedText>
-          </View>
-        </DataSurface>
       ) : (
         <View style={styles.section}>
-          {isPayer && !isSettled ? (
+          {intent.paymentMethod === "cash" && isPayer && awaitingPayeeConfirm ? (
+            <InlineNotice
+              title="Waiting for receiver confirmation"
+              body="Cash payment recorded. The receiver must confirm they got the cash before balances update."
+              tone="pending"
+            />
+          ) : null}
+          {intent.paymentMethod !== "cash" && isPayer && !isSettled ? (
             <>
               <DataSurface>
                 <View style={styles.upiHandoffHeader}>
@@ -1036,24 +1055,46 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               {awaitingPayeeConfirm ? (
                 <InlineNotice
                   title="Waiting for receiver confirmation"
-                  body="Proof submitted. Only the person receiving the money can confirm — then balances update."
+                  body={
+                    intent.paymentMethod === "cash"
+                      ? "Cash payment recorded. Only the person receiving the money can confirm — then balances update."
+                      : "Proof submitted. Only the person receiving the money can confirm — then balances update."
+                  }
                   tone="pending"
                 />
               ) : null}
             </>
           ) : null}
 
-          {canConfirmAsPayee ? (
+          {canConfirmSettlement ? (
             <>
-              <SectionHeader title="Confirm you received payment" />
+              <SectionHeader
+                title={
+                  canConfirmAsAdmin
+                    ? "Confirm payment as group admin"
+                    : intent.paymentMethod === "cash"
+                      ? "Confirm you received cash"
+                      : "Confirm you received payment"
+                }
+              />
               <DataSurface>
                 <View style={styles.formBlock}>
                   <View style={styles.handoffRow}>
                     <ShieldCheck size={24} color={theme.colors.confirmed} weight="duotone" />
                     <View style={styles.titleBlock}>
-                      <ThemedText variant="bodyMedium">Verify before you confirm</ThemedText>
+                      <ThemedText variant="bodyMedium">
+                        {canConfirmAsAdmin
+                          ? "Confirm on behalf of receiver"
+                          : intent.paymentMethod === "cash"
+                            ? "Confirm cash received"
+                            : "Verify before you confirm"}
+                      </ThemedText>
                       <ThemedText variant="bodySm" tone="muted">
-                        Confirm only after the money has arrived in your account.
+                        {canConfirmAsAdmin
+                          ? `Only group admins can confirm when ${lookups ? resolveParticipantDisplayName(intent.payeeParticipantId, lookups) : "the receiver"} is unavailable.`
+                          : intent.paymentMethod === "cash"
+                            ? "Confirm only after you have received the cash amount."
+                            : "Confirm only after the money has arrived in your account."}
                       </ThemedText>
                     </View>
                     {(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
@@ -1075,40 +1116,46 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                       </Pressable>
                     ) : null}
                   </View>
-                  {!(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
+                  {intent.paymentMethod !== "cash" && !(intent.proofAttachmentId || intent.proofUrl || intent.proofs?.length) ? (
                     <InlineNotice
                       title="No screenshot attached"
                       body="The payer submitted a UTR reference. Confirm if the amount matches your bank credit."
                       tone="info"
                     />
                   ) : null}
-                  <InputField label="Reject reason (required to reject)" value={reason} onChangeText={setReason} />
+                  {canConfirmAsPayee ? (
+                    <InputField label="Reject reason (required to reject)" value={reason} onChangeText={setReason} />
+                  ) : null}
                   <View style={styles.choiceButtons}>
                     <Button
-                      label="Confirm"
+                      label={canConfirmAsAdmin ? "Confirm as admin" : "Confirm"}
                       size="compact"
                       onPress={() => confirm.mutate()}
                       loading={confirm.isPending}
                       style={styles.inlineButton}
                     />
-                    <Button
-                      label="Reject"
-                      size="compact"
-                      variant="destructive"
-                      onPress={() => reject.mutate()}
-                      loading={reject.isPending}
-                      disabled={!reason.trim()}
-                      style={styles.inlineButton}
-                    />
+                    {canConfirmAsPayee ? (
+                      <Button
+                        label="Reject"
+                        size="compact"
+                        variant="destructive"
+                        onPress={() => reject.mutate()}
+                        loading={reject.isPending}
+                        disabled={!reason.trim()}
+                        style={styles.inlineButton}
+                      />
+                    ) : null}
                   </View>
-                  <Button
-                    label="Open dispute"
-                    size="compact"
-                    variant="ghost"
-                    onPress={() => dispute.mutate()}
-                    loading={dispute.isPending}
-                    disabled={!reason.trim()}
-                  />
+                  {canConfirmAsPayee ? (
+                    <Button
+                      label="Open dispute"
+                      size="compact"
+                      variant="ghost"
+                      onPress={() => dispute.mutate()}
+                      loading={dispute.isPending}
+                      disabled={!reason.trim()}
+                    />
+                  ) : null}
                 </View>
               </DataSurface>
             </>
@@ -1166,6 +1213,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         </View>
       )}
 
+
       <Modal visible={Boolean(proofPreviewUri)} transparent animationType="fade" onRequestClose={() => setProofPreviewUri(undefined)}>
         <View style={styles.proofModalRoot}>
           <Pressable style={styles.proofModalBackdrop} onPress={() => setProofPreviewUri(undefined)} />
@@ -1196,46 +1244,47 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         {historyQuery.data?.length ? (
           <View style={styles.historyList}>
             {historyQuery.data.map((row) => {
-              const rowIsPayee = Boolean(myParticipantId && row.payeeParticipantId === myParticipantId);
-              const rowCanConfirm = rowIsPayee && row.paymentMethod !== "cash" && isConfirmableState(row.state);
-              const hasProof = Boolean(row.proofAttachmentId || row.proofUrl);
-              const displayLabel = lookups ? formatSettlementHistoryLabel(row, lookups) : row.clientReference ?? "Settlement";
+              const displayLabel = lookups ? formatSettlementDirection(row, lookups) : row.clientReference ?? "Settlement";
+              const metaLine = formatSettlementHistoryMeta(row);
               const initials = displayLabel.slice(0, 1).toUpperCase();
+              const canResume = isOpenSettlementForMember(row, myParticipantId);
               return (
                 <DataSurface key={row.id}>
-                  <View style={styles.historyRow}>
+                  <Pressable
+                    onPress={() =>
+                      settlementDetail.open({
+                        settlement: row,
+                        lookups,
+                        actions: canResume
+                          ? [
+                              {
+                                label: "Continue settlement",
+                                onPress: (settlement) => setIntent(settlement)
+                              }
+                            ]
+                          : undefined
+                      })
+                    }
+                    style={({ pressed }) => [styles.historyRow, pressed ? { opacity: 0.72 } : undefined]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View settlement ${displayLabel}`}
+                  >
                     <View style={[styles.historyAvatar, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
                       <ThemedText variant="caption" tone="confirmed">{initials}</ThemedText>
                     </View>
                     <View style={styles.titleBlock}>
                       <ThemedText variant="bodyMedium" numberOfLines={1}>{displayLabel}</ThemedText>
-                      <ThemedText variant="bodySm" tone="muted">
-                        {row.createdAt ? new Date(row.createdAt).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', year: 'numeric' }) : ""}
-                        {row.createdAt ? `, ${new Date(row.createdAt).toLocaleTimeString("en-GB", { hour: '2-digit', minute: '2-digit' })}` : ""}
-                        {row.paymentMethod ? ` • ${row.paymentMethod.toUpperCase()}` : ""}
+                      <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
+                        {metaLine}
+                        {settlementHasViewableProof(row) ? " • Proof" : ""}
                       </ThemedText>
-                      {row.state === "rejected" && row.rejectionReason ? (
-                        <ThemedText variant="bodySm" tone="owe">Rejected: {row.rejectionReason}</ThemedText>
-                      ) : null}
-                      {row.state === "disputed" && row.rejectionReason ? (
-                        <ThemedText variant="bodySm" tone="owe">Dispute: {row.rejectionReason}</ThemedText>
-                      ) : null}
-                      {rowCanConfirm ? (
-                        <Button
-                          label={intent?.id === row.id ? "Reviewing above" : "Review"}
-                          size="compact"
-                          variant="secondary"
-                          onPress={() => setIntent(row)}
-                          style={styles.historyReviewButton}
-                        />
-                      ) : null}
                     </View>
                     <View style={styles.trailing}>
                       <ThemedText variant="title" style={{ fontSize: 15 }}>{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
                       <StatusPill state={row.state} />
                     </View>
                     <CaretRight size={16} color={theme.colors.inkMuted} />
-                  </View>
+                  </Pressable>
                 </DataSurface>
               );
             })}
@@ -1363,7 +1412,8 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     flex: 1,
-    gap: 4
+    gap: 4,
+    minWidth: 0
   },
   participantChoice: {
     gap: 8
@@ -1523,10 +1573,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-  historyReviewButton: {
-    alignSelf: "flex-start",
-    marginTop: 4
-  },
   proofModalRoot: {
     flex: 1,
     justifyContent: "center",
@@ -1561,6 +1607,7 @@ const styles = StyleSheet.create({
   },
   trailing: {
     alignItems: "flex-end",
-    gap: 6
+    gap: 6,
+    flexShrink: 0
   }
 });

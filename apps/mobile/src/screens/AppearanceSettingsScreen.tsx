@@ -1,12 +1,13 @@
 import React, { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check } from "phosphor-react-native";
+import { Check } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme, type ThemeMode } from "../theme";
 import { AppNavigation } from "../types/navigation";
@@ -40,12 +41,7 @@ export function AppearanceSettingsScreen({ navigation }: { navigation: AppNaviga
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.back() || navigation.go("profile")} style={styles.backButton}>
-          <ArrowLeft size={22} color={theme.colors.ink} />
-        </Pressable>
-        <ThemedText variant="title">Appearance</ThemedText>
-      </View>
+      <ScreenHeader navigation={navigation} fallbackRoute="profile" title="Appearance" />
 
       {preferencesQuery.error ? <InlineNotice title="Settings could not load" body={preferencesQuery.error.message} tone="owe" /> : null}
       {savePreferences.error ? <InlineNotice title="Save failed" body={savePreferences.error.message} tone="owe" /> : null}

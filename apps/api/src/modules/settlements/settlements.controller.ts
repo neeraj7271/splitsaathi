@@ -76,12 +76,16 @@ export class SettlementsController {
     }
 
     try {
-      return await this.commands.createIntent({
+      const result = await this.commands.createIntent({
         ...dto,
         payeeVpa,
         actorId: currentUser.userId,
         idempotencyKey: this.requireIdempotencyKey(idempotencyKey, dto)
       });
+      if ((dto.paymentMethod ?? result.intent.paymentMethod) === 'cash') {
+        await this.notifySettlementConfirmationRequested(result.intent, 'cash');
+      }
+      return result;
     } catch (error) {
       if (error instanceof Error && /UPI|VPA|minor-unit/.test(error.message)) {
         throw new BadRequestException(error.message);
@@ -218,7 +222,7 @@ export class SettlementsController {
     settlementIntentId: string,
     dto: Omit<SettlementTransitionCommand, 'actorId' | 'idempotencyKey' | 'settlementIntentId'>
   ): ReturnType<SettlementCommandService['confirm']> {
-    await this.assertActorIsPayee(currentUser.userId, settlementIntentId);
+    await this.assertActorCanConfirm(currentUser.userId, settlementIntentId);
     const result = await this.commands.confirm(
       await this.transitionCommand(currentUser, idempotencyKey, settlementIntentId, dto)
     );
@@ -429,6 +433,29 @@ export class SettlementsController {
     }
   }
 
+  private async assertActorCanConfirm(userId: string, settlementIntentId: string): Promise<SettlementIntentRow> {
+    const intent = await this.assertCanActOnIntent(userId, settlementIntentId, 'settlement.confirm');
+    if (!intent) {
+      throw new BadRequestException('Settlement intent not found.');
+    }
+    if (!this.groups) {
+      return intent;
+    }
+    const payerUserId = await this.groups.resolveUserIdForParticipant(intent.groupId, intent.payerParticipantId);
+    if (payerUserId && payerUserId === userId) {
+      throw new ForbiddenException('The payer cannot confirm their own payment.');
+    }
+    const payeeUserId = await this.groups.resolveUserIdForParticipant(intent.groupId, intent.payeeParticipantId);
+    if (payeeUserId && payeeUserId === userId) {
+      return intent;
+    }
+    const isAdmin = await this.groups.isGroupAdminOrOwner(userId, intent.groupId);
+    if (isAdmin) {
+      return intent;
+    }
+    throw new ForbiddenException('Only the payee or a group admin can confirm this payment.');
+  }
+
   private async assertActorIsPayee(userId: string, settlementIntentId: string): Promise<SettlementIntentRow> {
     const intent = await this.assertCanActOnIntent(userId, settlementIntentId, 'settlement.confirm');
     if (!intent) {
@@ -444,7 +471,10 @@ export class SettlementsController {
     return intent;
   }
 
-  private async notifySettlementConfirmationRequested(intent: SettlementIntentRow): Promise<void> {
+  private async notifySettlementConfirmationRequested(
+    intent: SettlementIntentRow,
+    paymentMethod?: 'cash' | 'upi'
+  ): Promise<void> {
     if (!this.notifications || !this.groups) {
       return;
     }
@@ -455,20 +485,25 @@ export class SettlementsController {
         this.groups.getGroupName(intent.groupId)
       ]);
       const amountLabel = formatInrMinor(intent.amountMinor, intent.currencyCode);
+      const methodLabel = paymentMethod === 'cash' ? 'cash payment' : 'payment';
       const data = {
         settlementIntentId: intent.settlementIntentId,
         amountMinor: intent.amountMinor,
         currencyCode: intent.currencyCode,
         payerParticipantId: intent.payerParticipantId,
-        payeeParticipantId: intent.payeeParticipantId
+        payeeParticipantId: intent.payeeParticipantId,
+        ...(paymentMethod ? { paymentMethod } : {})
       };
       if (payeeUserId) {
         await this.notifications.create({
           userId: payeeUserId,
           groupId: intent.groupId,
           type: 'settlement_confirmation_requested',
-          title: 'Confirm payment',
-          body: `${groupName} · Please confirm you received ${amountLabel}.`,
+          title: paymentMethod === 'cash' ? 'Confirm cash payment' : 'Confirm payment',
+          body:
+            paymentMethod === 'cash'
+              ? `${groupName} · Please confirm you received ${amountLabel} in cash.`
+              : `${groupName} · Please confirm you received ${amountLabel}.`,
           tone: 'action_required',
           data
         });
@@ -479,7 +514,7 @@ export class SettlementsController {
           groupId: intent.groupId,
           type: 'settlement_awaiting_confirmation',
           title: 'Waiting for confirmation',
-          body: `${groupName} · Your ${amountLabel} payment is waiting for the receiver to confirm.`,
+          body: `${groupName} · Your ${amountLabel} ${methodLabel} is waiting for the receiver to confirm.`,
           data
         });
       }

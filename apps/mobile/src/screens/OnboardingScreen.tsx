@@ -276,10 +276,10 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         apiClient.recordConsent("upi_proof_storage", consents.proofStorage)
       ]);
       if (consents.contacts) {
-        await syncDeviceContacts({ forcePrompt: true }).catch(() => undefined);
+        await syncDeviceContacts().catch(() => undefined);
       }
       if (consents.notifications) {
-        await registerPushIfPossible({ forcePrompt: true });
+        await registerPushIfPossible({ forcePrompt: true }).catch(() => undefined);
       }
       if (inviteLink.trim()) {
         await apiClient.claimInvite(inviteLink, displayName.trim());
@@ -390,7 +390,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         {step === "phone" ? (
           <AuthPanel
             title="Add your phone"
-            body="Friends find you by number — this is required so they can add you to groups. No OTP for now."
+            body="Friends find you by number — this is required so they can add you to groups."
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
             {phoneCandidates.length > 0 ? (

@@ -47,3 +47,22 @@ export function activeGroupParticipants(group: Pick<GroupDetail, "participants" 
   );
   return group.participants.filter((participant) => activeIds.has(participant.id));
 }
+
+export function reconcileParticipantSelection(
+  selectedIds: string[],
+  participants: Participant[],
+  fallback: "all" | "first" | "none" = "all"
+): string[] {
+  const validIds = new Set(participants.map((participant) => participant.id));
+  const next = selectedIds.filter((id) => validIds.has(id));
+  if (next.length > 0) {
+    return next;
+  }
+  if (!participants.length || fallback === "none") {
+    return [];
+  }
+  if (fallback === "first") {
+    return [participants[0].id];
+  }
+  return participants.map((participant) => participant.id);
+}

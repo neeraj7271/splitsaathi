@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -23,5 +23,18 @@ export class DeviceInstallationsController {
       appVersion: body.appVersion ?? 'development',
       pushToken: body.pushToken
     });
+  }
+
+  @Delete('me')
+  async unregister(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() body?: { pushToken?: string }
+  ): Promise<{ removed: boolean }> {
+    if (body?.pushToken?.trim()) {
+      await this.devices.deletePushTokens([body.pushToken.trim()]);
+      return { removed: true };
+    }
+    await this.devices.deleteAllForUser(currentUser.userId);
+    return { removed: true };
   }
 }

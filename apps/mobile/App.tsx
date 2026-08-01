@@ -10,6 +10,7 @@ import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fon
 import { BottomTabs } from "./src/components/BottomTabs";
 import { AnimatedBrandLoader } from "./src/components/AnimatedBrandLoader";
 import { AppDialogProvider, useAppDialog } from "./src/components/AppDialog";
+import { SettlementDetailModalProvider } from "./src/components/SettlementDetailModalProvider";
 import { BiometricGate } from "./src/components/BiometricGate";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
@@ -89,7 +90,9 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <AppDialogProvider>
-            <AppBootstrap fontsLoaded={fontsLoaded || Boolean(fontError)} />
+            <SettlementDetailModalProvider>
+              <AppBootstrap fontsLoaded={fontsLoaded || Boolean(fontError)} />
+            </SettlementDetailModalProvider>
           </AppDialogProvider>
         </ThemeProvider>
       </QueryClientProvider>
@@ -117,14 +120,24 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     return () => clearTimeout(timer);
   }, []);
 
+  const goTab = useCallback((next: AppRoute) => {
+    if (!TAB_ROUTES.includes(next)) {
+      return;
+    }
+    setHistory([next]);
+  }, []);
+
   const go = useCallback((next: AppRoute) => {
     setHistory((prev) => {
-      if (TAB_ROUTES.includes(next)) {
-        return [next];
-      }
       const current = prev[prev.length - 1];
       if (current === next) {
         return prev;
+      }
+      if (TAB_ROUTES.includes(next)) {
+        if (TAB_ROUTES.includes(current)) {
+          return [next];
+        }
+        return [...prev, next];
       }
       return [...prev, next];
     });
@@ -162,17 +175,23 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     if (!authenticated) {
       return;
     }
-    const syncPush = () => {
-      void import("./src/notifications/registerPush").then(({ registerPushIfPossible }) =>
-        registerPushIfPossible().catch(() => undefined)
+    const syncPush = (forcePrompt = false) => {
+      void import("./src/notifications/syncPushRegistration").then(({ syncPushRegistration }) =>
+        syncPushRegistration(queryClient, { forcePrompt }).then((result) => {
+          if (__DEV__) {
+            console.log("[SplitSaathi] push sync complete");
+          }
+        }).catch((error) => {
+          console.warn("[SplitSaathi] push sync failed", error);
+        })
       );
     };
 
-    // Refresh FCM token on every authenticated session and when app becomes active.
-    syncPush();
+    // Ask on login; retry whenever app returns to foreground.
+    syncPush(true);
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        syncPush();
+        syncPush(false);
       }
     });
 
@@ -199,7 +218,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       receivedSub?.remove();
       responseSub?.remove();
     };
-  }, [authenticated]);
+  }, [authenticated, queryClient]);
 
   // Apply server appearance only after splash finishes — prevents dark→light double splash.
   useEffect(() => {
@@ -232,6 +251,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         setSelectedGroupId(group.id);
         go("groupDetail");
         await queryClient.invalidateQueries({ queryKey: ["groups"] });
+        await queryClient.invalidateQueries({ queryKey: ["friends"] });
         showDialog({
           title: "Joined group",
           message: `You're now in ${group.name}.`,
@@ -352,7 +372,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
                 ? "home"
                 : route
         }
-        onChange={go}
+        onChange={goTab}
         onFab={() => {
           setSelectedExpenseId(undefined);
           go("expense");
