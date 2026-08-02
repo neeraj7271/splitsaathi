@@ -44,7 +44,14 @@ crontab -l | grep -A1 CRON_TZ
 
 ## Required env (in `deploy/api.docker.env`)
 
-- `CRON_SECRET` (≥16 chars)
+This file is **not in git**. On the server, create it if missing:
+
+```bash
+cp deploy/env.example deploy/api.docker.env
+# edit deploy/api.docker.env — set at minimum:
+```
+
+- `CRON_SECRET` (≥16 chars) — **must match** what the API container loads
 - Email provider (pick one):
   - **Brevo (recommended):** `EMAIL_PROVIDER_DRIVER=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME`
   - **Resend:** `EMAIL_PROVIDER_DRIVER=resend`, `RESEND_API_KEY`, `EMAIL_FROM`
@@ -63,7 +70,18 @@ Single-user smoke test with **live DB data** (one email, all their groups):
 
 ```bash
 chmod +x deploy/cron/trigger-monthly-summary-test-user.sh
+
+# If deploy/api.docker.env has CRON_SECRET:
 ./deploy/cron/trigger-monthly-summary-test-user.sh neerajsuman766@gmail.com
+
+# Or pass secret inline (must match API container env):
+CRON_SECRET=your-secret-at-least-16-chars ./deploy/cron/trigger-monthly-summary-test-user.sh neerajsuman766@gmail.com
+```
+
+After adding `CRON_SECRET` to `deploy/api.docker.env`, restart the API:
+
+```bash
+bash deploy/start.sh
 ```
 
 Or from the API package (direct DB + Brevo, no HTTP):
