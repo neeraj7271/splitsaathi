@@ -115,16 +115,17 @@ pm2 stop splitsaathi-api
 ## Before real users
 
 1. Set `ALLOW_INSECURE_DEV_PROVIDERS=false`
-2. Wire Twilio / Resend / Expo push / Razorpay (or keep features off)
-3. Point a domain at the VM and run:
+2. Wire Twilio / Brevo / Expo push / Razorpay (or keep features off)
+3. **Monthly settlement emails** — set `EMAIL_PROVIDER_DRIVER=brevo`, Brevo keys, and `CRON_SECRET` in `deploy/api.docker.env`, then install host cron (see `deploy/cron/README.md` — **08:00 IST on the 1st**)
+4. Point a domain at the VM and run:
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d api.thesplitsaathi.com
 ```
 
-4. Switch mobile `EXPO_PUBLIC_API_URL` to `https://api.thesplitsaathi.com` and rebuild the APK
-5. Set API env (invite links use this):
+5. Switch mobile `EXPO_PUBLIC_API_URL` to `https://api.thesplitsaathi.com` and rebuild the APK
+6. Set API env (invite links use this):
 
 ```bash
 APP_PUBLIC_URL=https://api.thesplitsaathi.com

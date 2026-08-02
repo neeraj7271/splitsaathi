@@ -39,10 +39,13 @@ export const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
-  EMAIL_PROVIDER_DRIVER: z.enum(['dev', 'resend']).default('dev'),
-  /** Plain email or Resend display form, e.g. `SplitSaathi <noreply@example.com>`. */
+  EMAIL_PROVIDER_DRIVER: z.enum(['dev', 'resend', 'brevo']).default('dev'),
+  /** Plain email or display form, e.g. `SplitSaathi <noreply@example.com>`. Used by Resend and as Brevo fallback. */
   EMAIL_FROM: z.string().min(3).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  BREVO_API_KEY: z.string().min(1).optional(),
+  BREVO_SENDER_EMAIL: z.string().email().optional(),
+  BREVO_SENDER_NAME: z.string().min(1).optional(),
   EMAIL_DEV_CODE: z.string().regex(/^\d{6}$/).default('123456'),
   /** Shared secret for external cron hitting `POST /v1/jobs/*` (`x-cron-secret` header). */
   CRON_SECRET: z.string().min(16).optional(),

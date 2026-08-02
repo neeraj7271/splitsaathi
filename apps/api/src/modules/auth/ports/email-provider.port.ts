@@ -6,7 +6,7 @@ export interface SendEmailOtpInput {
 }
 
 export interface SendEmailOtpResult {
-  deliveryMode: 'development' | 'resend';
+  deliveryMode: 'development' | 'resend' | 'brevo';
   devCode?: string;
 }
 
@@ -18,7 +18,7 @@ export interface SendEmailInput {
 }
 
 export interface SendEmailResult {
-  deliveryMode: 'development' | 'resend';
+  deliveryMode: 'development' | 'resend' | 'brevo';
 }
 
 export interface EmailProviderPort {

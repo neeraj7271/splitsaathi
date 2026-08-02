@@ -7,12 +7,12 @@ import { MonthlySummaryMailService, type MonthlySummaryJobResult } from './month
 /**
  * External cron job endpoints.
  *
- * Example (monthly, 1st of month ~09:00 UTC):
+ * Example (scheduled via host cron at 08:00 IST on the 1st — see deploy/cron/README.md):
  *   curl -X POST "$APP_PUBLIC_URL/v1/jobs/monthly-settlement-summaries" \
  *     -H "x-cron-secret: $CRON_SECRET"
  *
  * Requires CRON_SECRET in the API environment. Uses EMAIL_PROVIDER_DRIVER
- * (dev logs locally; resend when RESEND_API_KEY + EMAIL_FROM are set).
+ * (dev logs locally; brevo or resend when configured).
  */
 @ApiTags('jobs')
 @Controller('jobs')

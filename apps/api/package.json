@@ -11,9 +11,11 @@
     "test:unit": "jest --testPathIgnorePatterns=e2e-spec",
     "test:integration": "jest --testMatch **/*.e2e-spec.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "migration:run": "npm run migration:run -w @splitsaathi/db"
+    "migration:run": "npm run migration:run -w @splitsaathi/db",
+    "email:test": "ts-node --transpile-only scripts/send-test-monthly-email.ts"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.2",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.4.15",

@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import express from 'express';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { ApiConfigService } from './config/api-config.service';
@@ -12,10 +14,16 @@ import { setupSwagger } from './swagger/setup-swagger';
 loadEnvFile(resolve(__dirname, '../.env'));
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const config = app.get(ApiConfigService);
 
   app.use(
+    '/brand',
+    express.static(resolve(__dirname, '../assets/brand'), {
+      maxAge: '7d',
+      immutable: true
+    })
+  );
     json({
       verify: (request: any, _response, buffer) => {
         request.rawBody = buffer.toString('utf8');

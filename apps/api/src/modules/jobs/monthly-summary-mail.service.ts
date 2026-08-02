@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { GreedySettlementOptimizer } from '@splitsaathi/domain';
 import { In, Repository } from 'typeorm';
 import { EMAIL_PROVIDER } from '../auth/auth.constants';
 import { AuthIdentityEntity } from '../auth/entities/auth-identity.entity';
@@ -10,16 +11,24 @@ import { GroupEntity } from '../groups/entities/group.entity';
 import { ParticipantEntity } from '../groups/entities/participant.entity';
 import { BalanceProjector } from '../ledger/balance.projector';
 import { UserPreferencesEntity } from '../users/entities/user-preferences.entity';
+import {
+  formatMonthlySummaryHtml,
+  formatMonthlySummaryTextInbox,
+  monthlySummarySubject,
+  type MonthlySummaryRecipientContext
+} from './monthly-summary-mail.template';
 
 export interface MonthlySummaryJobResult {
   groupsProcessed: number;
   emailsSent: number;
+  emailsFailed: number;
   skipped: number;
 }
 
 @Injectable()
 export class MonthlySummaryMailService {
   private readonly logger = new Logger(MonthlySummaryMailService.name);
+  private readonly settlementOptimizer = new GreedySettlementOptimizer();
 
   constructor(
     @InjectRepository(GroupEntity)
@@ -46,6 +55,7 @@ export class MonthlySummaryMailService {
   async sendMonthlySettlementSummaries(): Promise<MonthlySummaryJobResult> {
     const activeGroups = await this.groups.find({ where: { state: 'active' } });
     let emailsSent = 0;
+    let emailsFailed = 0;
     let skipped = 0;
 
     for (const group of activeGroups) {
@@ -55,10 +65,23 @@ export class MonthlySummaryMailService {
       const participants = await this.participants.find({ where: { groupId: group.id } });
       const nameByParticipantId = new Map(participants.map((row) => [row.id, row.displayName]));
       const balanceRows = this.balances.listGroupBalances(group.id, { includeZero: true });
-      const summaryBody = this.formatGroupSummary(group, balanceRows, nameByParticipantId);
+      const settlements = this.settlementOptimizer.suggest(
+        balanceRows.map((row) => ({
+          participantId: row.participantId,
+          amountMinor: row.amountMinor,
+          currencyCode: row.currencyCode
+        }))
+      );
+
+      const emailedUserIds = new Set<string>();
 
       for (const membership of memberships) {
         if (!membership.userId) {
+          skipped += 1;
+          continue;
+        }
+
+        if (emailedUserIds.has(membership.userId)) {
           skipped += 1;
           continue;
         }
@@ -75,23 +98,65 @@ export class MonthlySummaryMailService {
           continue;
         }
 
-        await this.emailProvider.send({
-          to,
-          subject: `SplitSaathi monthly summary — ${group.name}`,
-          text: summaryBody
-        });
-        emailsSent += 1;
+        const recipient = this.resolveRecipientContext(membership, participants);
+        const summaryText = formatMonthlySummaryTextInbox(group, balanceRows, recipient);
+        const summaryHtml = formatMonthlySummaryHtml(
+          group,
+          balanceRows,
+          nameByParticipantId,
+          settlements,
+          recipient
+        );
+
+        try {
+          await this.emailProvider.send({
+            to,
+            subject: monthlySummarySubject(group.name),
+            text: summaryText,
+            html: summaryHtml
+          });
+          emailedUserIds.add(membership.userId);
+          emailsSent += 1;
+        } catch (error) {
+          emailsFailed += 1;
+          this.logger.error(
+            `Monthly summary failed for user=${membership.userId} group=${group.id} to=${to}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
       }
     }
 
     this.logger.log(
-      `Monthly settlement summaries: groups=${activeGroups.length} sent=${emailsSent} skipped=${skipped}`
+      `Monthly settlement summaries: groups=${activeGroups.length} sent=${emailsSent} failed=${emailsFailed} skipped=${skipped}`
     );
 
     return {
       groupsProcessed: activeGroups.length,
       emailsSent,
+      emailsFailed,
       skipped
+    };
+  }
+
+  private resolveRecipientContext(
+    membership: GroupMembershipEntity,
+    participants: ParticipantEntity[]
+  ): MonthlySummaryRecipientContext | undefined {
+    const participant =
+      (membership.participantId
+        ? participants.find((row) => row.id === membership.participantId)
+        : undefined) ??
+      participants.find((row) => row.linkedUserId === membership.userId);
+
+    if (!participant) {
+      return undefined;
+    }
+
+    return {
+      displayName: participant.displayName,
+      participantId: participant.id
     };
   }
 
@@ -102,37 +167,5 @@ export class MonthlySummaryMailService {
     }
     const emailIdentity = await this.identities.findOne({ where: { userId, provider: 'email' } });
     return emailIdentity?.identifier ?? null;
-  }
-
-  private formatGroupSummary(
-    group: GroupEntity,
-    balanceRows: ReturnType<BalanceProjector['listGroupBalances']>,
-    nameByParticipantId: Map<string, string>
-  ): string {
-    const monthLabel = new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    const lines = [
-      `Monthly settlement summary for ${group.name} (${monthLabel})`,
-      `Base currency: ${group.baseCurrencyCode}`,
-      ''
-    ];
-
-    if (balanceRows.length === 0) {
-      lines.push('No projected balances yet for this group.');
-    } else {
-      lines.push('Balances:');
-      for (const row of balanceRows) {
-        const name = nameByParticipantId.get(row.participantId) ?? row.participantId;
-        if (row.amountMinor === 0) {
-          lines.push(`- ${name}: Settled (${row.currencyCode})`);
-          continue;
-        }
-        const amount = (Math.abs(row.amountMinor) / 100).toFixed(2);
-        const direction = row.amountMinor > 0 ? 'is owed' : 'owes';
-        lines.push(`- ${name}: ${direction} ${amount} ${row.currencyCode}`);
-      }
-    }
-
-    lines.push('', 'You can manage this email in SplitSaathi notification settings.');
-    return lines.join('\n');
   }
 }

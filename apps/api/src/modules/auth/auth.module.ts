@@ -17,6 +17,7 @@ import { OtpChallengeEntity } from './entities/otp-challenge.entity';
 import { RefreshSessionEntity } from './entities/refresh-session.entity';
 import { DevOtpProvider } from './providers/dev-otp.provider';
 import { DevEmailProvider } from './providers/dev-email.provider';
+import { BrevoEmailProvider } from './providers/brevo-email.provider';
 import { ResendEmailProvider } from './providers/resend-email.provider';
 import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider';
 
@@ -43,6 +44,7 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
     TwilioVerifyOtpProvider,
     DevEmailProvider,
     ResendEmailProvider,
+    BrevoEmailProvider,
     {
       provide: OTP_PROVIDER,
       inject: [ApiConfigService, DevOtpProvider, TwilioVerifyOtpProvider],
@@ -59,8 +61,13 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
     },
     {
       provide: EMAIL_PROVIDER,
-      inject: [ApiConfigService, DevEmailProvider, ResendEmailProvider],
-      useFactory: (config: ApiConfigService, dev: DevEmailProvider, resend: ResendEmailProvider) => {
+      inject: [ApiConfigService, DevEmailProvider, ResendEmailProvider, BrevoEmailProvider],
+      useFactory: (
+        config: ApiConfigService,
+        dev: DevEmailProvider,
+        resend: ResendEmailProvider,
+        brevo: BrevoEmailProvider
+      ) => {
         if (
           config.env.NODE_ENV === 'production' &&
           config.env.EMAIL_PROVIDER_DRIVER === 'dev' &&
@@ -68,7 +75,13 @@ import { TwilioVerifyOtpProvider } from './providers/twilio-verify-otp.provider'
         ) {
           throw new Error('EMAIL_PROVIDER_DRIVER=dev is not allowed in production.');
         }
-        return config.env.EMAIL_PROVIDER_DRIVER === 'resend' ? resend : dev;
+        if (config.env.EMAIL_PROVIDER_DRIVER === 'brevo') {
+          return brevo;
+        }
+        if (config.env.EMAIL_PROVIDER_DRIVER === 'resend') {
+          return resend;
+        }
+        return dev;
       }
     }
   ],
