@@ -12,7 +12,8 @@
     "test:integration": "jest --testMatch **/*.e2e-spec.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "migration:run": "npm run migration:run -w @splitsaathi/db",
-    "email:test": "ts-node --transpile-only scripts/send-test-monthly-email.ts"
+    "email:test": "ts-node --transpile-only scripts/send-test-monthly-email.ts",
+    "email:monthly-user": "ts-node --transpile-only scripts/send-monthly-summary-for-user.ts"
   },
   "dependencies": {
     "@getbrevo/brevo": "^6.0.2",

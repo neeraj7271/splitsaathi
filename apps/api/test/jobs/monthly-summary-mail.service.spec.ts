@@ -140,4 +140,69 @@ describe('MonthlySummaryMailService', () => {
     expect(result).toEqual({ groupsProcessed: 1, emailsSent: 1, emailsFailed: 1, skipped: 0 });
     expect(emailProvider.send).toHaveBeenCalledTimes(2);
   });
+
+  it('sendForUserEmail delivers real summaries only for the requested user', async () => {
+    const groups = {
+      find: jest.fn(async () => [
+        { id: 'g1', name: 'Flat', baseCurrencyCode: 'INR', state: 'active' },
+        { id: 'g2', name: 'Trip', baseCurrencyCode: 'INR', state: 'active' }
+      ]),
+      findOne: jest.fn()
+    };
+    const memberships = {
+      find: jest.fn(async ({ where }: { where: { userId?: string; groupId?: string } }) => {
+        if (where.userId === 'u-1') {
+          return [
+            { groupId: 'g1', userId: 'u-1', status: 'active' },
+            { groupId: 'g2', userId: 'u-1', status: 'active' }
+          ];
+        }
+        return [];
+      })
+    };
+    const participants = {
+      find: jest.fn(async ({ where }: { where: { groupId: string } }) => [
+        { id: `p-${where.groupId}`, groupId: where.groupId, displayName: 'Neeraj', linkedUserId: 'u-1' }
+      ])
+    };
+    const preferences = {
+      findOne: jest.fn(async () => ({ userId: 'u-1', emailMonthlySummary: false }))
+    };
+    const emailCredentials = {
+      findOne: jest.fn(async ({ where }: { where: { userId?: string; email?: string } }) => {
+        if (where.email === 'neeraj@example.com' || where.userId === 'u-1') {
+          return { userId: 'u-1', email: 'neeraj@example.com', verifiedAt: new Date() };
+        }
+        return null;
+      })
+    };
+    const identities = { findOne: jest.fn(async () => null) };
+    const emailProvider = {
+      send: jest.fn(async () => ({ deliveryMode: 'brevo' as const })),
+      sendOtp: jest.fn()
+    };
+    const balances = new BalanceProjector();
+
+    const service = new MonthlySummaryMailService(
+      groups as any,
+      memberships as any,
+      participants as any,
+      preferences as any,
+      emailCredentials as any,
+      identities as any,
+      balances,
+      emailProvider as any
+    );
+
+    const result = await service.sendForUserEmail('neeraj@example.com');
+
+    expect(result).toEqual({
+      groupsProcessed: 2,
+      emailsSent: 2,
+      emailsFailed: 0,
+      skipped: 0,
+      testEmail: 'neeraj@example.com'
+    });
+    expect(emailProvider.send).toHaveBeenCalledTimes(2);
+  });
 });

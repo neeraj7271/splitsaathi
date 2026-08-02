@@ -24,6 +24,7 @@ async function bootstrap(): Promise<void> {
       immutable: true
     })
   );
+  app.use(
     json({
       verify: (request: any, _response, buffer) => {
         request.rawBody = buffer.toString('utf8');

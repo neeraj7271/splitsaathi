@@ -53,8 +53,23 @@ crontab -l | grep -A1 CRON_TZ
 
 ## Manual test
 
+Full cron (all users):
+
 ```bash
 ./deploy/cron/monthly-settlement-summary.sh
+```
+
+Single-user smoke test with **live DB data** (one email, all their groups):
+
+```bash
+chmod +x deploy/cron/trigger-monthly-summary-test-user.sh
+./deploy/cron/trigger-monthly-summary-test-user.sh neerajsuman766@gmail.com
+```
+
+Or from the API package (direct DB + Brevo, no HTTP):
+
+```bash
+cd apps/api && npm run email:monthly-user -- neerajsuman766@gmail.com
 ```
 
 Logs use `Asia/Kolkata` timestamps (script sets `TZ=Asia/Kolkata`).
