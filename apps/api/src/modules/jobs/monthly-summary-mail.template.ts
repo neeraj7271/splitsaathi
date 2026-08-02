@@ -30,10 +30,29 @@ export interface MonthlySummaryRecipientContext {
   participantId: string | null;
 }
 
+export interface GroupSummarySlice {
+  group: Pick<GroupEntity, 'name' | 'baseCurrencyCode'> & { id?: string };
+  balanceRows: BalanceRow[];
+  settlements: SettlementSuggestion[];
+  nameByParticipantId: Map<string, string>;
+  recipient?: MonthlySummaryRecipientContext;
+}
+
 type BalanceRow = ReturnType<BalanceProjector['listGroupBalances']>[number];
 
 export function monthlySummarySubject(groupName: string, referenceDate?: Date): string {
   return `SplitSaathi monthly summary — ${groupName} (${monthLabelForSummary(referenceDate)})`;
+}
+
+export function consolidatedMonthlySummarySubject(
+  groupCount: number,
+  referenceDate?: Date
+): string {
+  const monthLabel = monthLabelForSummary(referenceDate);
+  if (groupCount <= 1) {
+    return `SplitSaathi monthly summary (${monthLabel})`;
+  }
+  return `SplitSaathi monthly summary — ${monthLabel} (${groupCount} groups)`;
 }
 
 export function formatMonthlySummaryText(
@@ -132,24 +151,50 @@ export function formatMonthlySummaryTextInbox(
   return lines.join('\n\n');
 }
 
-export function formatMonthlySummaryHtml(
-  group: Pick<GroupEntity, 'name' | 'baseCurrencyCode'>,
-  balanceRows: BalanceRow[],
-  nameByParticipantId: Map<string, string>,
-  settlements: SettlementSuggestion[],
-  recipient?: MonthlySummaryRecipientContext
-): string {
+export function formatConsolidatedMonthlySummaryTextInbox(slices: GroupSummarySlice[]): string {
   const monthLabel = monthLabelForSummary();
-  const stats = computeSummaryStats(balanceRows, recipient?.participantId ?? null);
-  const greeting = recipient?.displayName
-    ? `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Hi <strong>${escapeHtml(recipient.displayName)}</strong>, here is your monthly settlement snapshot for <strong>${escapeHtml(group.name)}</strong>.</p>`
-    : `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Your monthly settlement snapshot for <strong>${escapeHtml(group.name)}</strong>.</p>`;
+  const displayName = slices[0]?.recipient?.displayName;
+  const lines = [
+    `SplitSaathi monthly summary for ${monthLabel}.`,
+    displayName ? `Hi ${displayName},` : undefined,
+    `You are in ${slices.length} group${slices.length === 1 ? '' : 's'}.`
+  ].filter((line): line is string => Boolean(line));
 
-  const recipientBanner = renderRecipientBanner(stats, group.baseCurrencyCode, recipient?.participantId ?? null);
-  const statsCards = renderStatsCards(stats, group.baseCurrencyCode, balanceRows.length);
-  const balanceTable = renderBalanceTable(balanceRows, nameByParticipantId, recipient?.participantId ?? null);
-  const settlementTable = renderSettlementTable(settlements, nameByParticipantId, recipient?.participantId ?? null);
-  const headerBrand = renderEmailHeader(monthLabel, group.name);
+  for (const slice of slices) {
+    const stats = computeSummaryStats(slice.balanceRows, slice.recipient?.participantId ?? null);
+    let line = `${slice.group.name}: ${stats.membersWithBalance} open balance(s), ${formatAmount(stats.totalOutstandingMinor, slice.group.baseCurrencyCode)} outstanding`;
+    if (stats.recipientBalanceMinor !== null && stats.recipientBalanceMinor !== 0) {
+      line += `; your balance ${formatSignedAmount(stats.recipientBalanceMinor, slice.group.baseCurrencyCode)}`;
+    }
+    lines.push(line);
+  }
+
+  if (slices.length > 1) {
+    lines.push('See the attached Excel workbook for full balances and settlements across all groups.');
+  }
+  lines.push('The full tables are in the HTML version of this email.');
+  lines.push('Open SplitSaathi to record a payment or review live balances.');
+
+  return lines.join('\n\n');
+}
+
+export function formatConsolidatedMonthlySummaryHtml(slices: GroupSummarySlice[]): string {
+  const monthLabel = monthLabelForSummary();
+  const displayName = slices[0]?.recipient?.displayName;
+  const groupCount = slices.length;
+  const greeting = displayName
+    ? `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Hi <strong>${escapeHtml(displayName)}</strong>, here is your monthly settlement snapshot across <strong>${groupCount}</strong> group${groupCount === 1 ? '' : 's'}.</p>`
+    : `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Your monthly settlement snapshot across <strong>${groupCount}</strong> group${groupCount === 1 ? '' : 's'}.</p>`;
+
+  const attachmentNote =
+    groupCount > 1
+      ? `<p style="margin:0 0 28px;padding:14px 16px;background:${BRAND.tealSoft};border:1px solid ${BRAND.teal};border-radius:12px;font-size:14px;line-height:1.55;color:${BRAND.text};">📎 An Excel workbook is attached with balances and settlements for all ${groupCount} groups.</p>`
+      : '';
+
+  const groupSections = slices.map((slice) => renderGroupSummarySection(slice)).join('');
+  const headerSubtitle =
+    groupCount === 1 ? slices[0]!.group.name : `${groupCount} groups`;
+  const headerBrand = renderEmailHeader(monthLabel, headerSubtitle);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -157,7 +202,7 @@ export function formatMonthlySummaryHtml(
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="x-apple-disable-message-reformatting" />
-    <title>${escapeHtml(monthlySummarySubject(group.name))}</title>
+    <title>${escapeHtml(consolidatedMonthlySummarySubject(groupCount))}</title>
     ${wordmarkFontLinks()}
     ${emailStyles()}
   </head>
@@ -170,15 +215,8 @@ export function formatMonthlySummaryHtml(
             <tr>
               <td class="body-cell" style="background:${BRAND.card};padding:32px 32px 24px;">
                 ${greeting}
-                ${recipientBanner}
-                <h2 style="margin:0 0 12px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Overview</h2>
-                ${statsCards}
-                <h2 style="margin:0 0 8px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Group balances</h2>
-                <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.muted};">Every member's net position in ${escapeHtml(group.baseCurrencyCode)}. Positive means they are owed; negative means they owe.</p>
-                ${balanceTable}
-                <h2 style="margin:32px 0 8px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Suggested settlements</h2>
-                <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.muted};">The fewest payments needed to bring everyone back to zero.</p>
-                ${settlementTable}
+                ${attachmentNote}
+                ${groupSections}
               </td>
             </tr>
             <tr>
@@ -200,6 +238,93 @@ export function formatMonthlySummaryHtml(
     </table>
   </body>
 </html>`;
+}
+
+export function formatMonthlySummaryHtml(
+  group: Pick<GroupEntity, 'name' | 'baseCurrencyCode'>,
+  balanceRows: BalanceRow[],
+  nameByParticipantId: Map<string, string>,
+  settlements: SettlementSuggestion[],
+  recipient?: MonthlySummaryRecipientContext
+): string {
+  const monthLabel = monthLabelForSummary();
+  const stats = computeSummaryStats(balanceRows, recipient?.participantId ?? null);
+  const greeting = recipient?.displayName
+    ? `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Hi <strong>${escapeHtml(recipient.displayName)}</strong>, here is your monthly settlement snapshot for <strong>${escapeHtml(group.name)}</strong>.</p>`
+    : `<p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:${BRAND.text};">Your monthly settlement snapshot for <strong>${escapeHtml(group.name)}</strong>.</p>`;
+
+  const headerBrand = renderEmailHeader(monthLabel, group.name);
+  const groupSection = renderGroupSummarySection({
+    group,
+    balanceRows,
+    settlements,
+    nameByParticipantId,
+    recipient
+  });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>${escapeHtml(monthlySummarySubject(group.name))}</title>
+    ${wordmarkFontLinks()}
+    ${emailStyles()}
+  </head>
+  <body style="margin:0;padding:0;width:100%;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;background:${BRAND.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,Arial,sans-serif;color:${BRAND.text};">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:${BRAND.bg};">
+      <tr>
+        <td class="outer-pad" align="center" style="padding:32px 20px;">
+          <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;margin:0 auto;border:1px solid ${BRAND.border};border-radius:18px;overflow:hidden;">
+            ${headerBrand}
+            <tr>
+              <td class="body-cell" style="background:${BRAND.card};padding:32px 32px 24px;">
+                ${greeting}
+                ${groupSection}
+              </td>
+            </tr>
+            <tr>
+              <td class="footer-cell" style="background:${BRAND.card};padding:8px 32px 32px;border-top:1px solid ${BRAND.border};">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="center" style="padding:12px 0 24px;">
+                      <a href="https://thesplitsaathi.com" class="cta-btn" style="display:inline-block;background-color:${BRAND.purple};background-image:linear-gradient(135deg,${BRAND.teal} 0%,${BRAND.purple} 100%);color:${BRAND.white} !important;text-decoration:none;font-size:15px;font-weight:600;padding:14px 32px;border-radius:12px;">Open SplitSaathi</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;font-size:12px;line-height:1.65;color:${BRAND.muted};text-align:center;">You are receiving this because monthly settlement summaries are enabled.<br />Manage preferences in SplitSaathi notification settings.</p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:16px 0 0;font-size:11px;line-height:1.5;color:${BRAND.muted};text-align:center;">© ${new Date().getFullYear()} SplitSaathi · Fair splits, clear balances</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function renderGroupSummarySection(slice: GroupSummarySlice): string {
+  const { group, balanceRows, settlements, nameByParticipantId, recipient } = slice;
+  const stats = computeSummaryStats(balanceRows, recipient?.participantId ?? null);
+  const recipientBanner = renderRecipientBanner(stats, group.baseCurrencyCode, recipient?.participantId ?? null);
+  const statsCards = renderStatsCards(stats, group.baseCurrencyCode, balanceRows.length);
+  const balanceTable = renderBalanceTable(balanceRows, nameByParticipantId, recipient?.participantId ?? null);
+  const settlementTable = renderSettlementTable(settlements, nameByParticipantId, recipient?.participantId ?? null);
+
+  return `<section style="margin:0 0 40px;padding:0 0 32px;border-bottom:1px solid ${BRAND.border};">
+    <h2 style="margin:0 0 16px;font-size:20px;line-height:1.35;font-weight:700;color:${BRAND.text};">${escapeHtml(group.name)}</h2>
+    ${recipientBanner}
+    <h3 style="margin:0 0 12px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Overview</h3>
+    ${statsCards}
+    <h3 style="margin:0 0 8px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Group balances</h3>
+    <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.muted};">Every member's net position in ${escapeHtml(group.baseCurrencyCode)}. Positive means they are owed; negative means they owe.</p>
+    ${balanceTable}
+    <h3 style="margin:32px 0 8px;font-size:17px;line-height:1.35;font-weight:700;color:${BRAND.text};">Suggested settlements</h3>
+    <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.muted};">The fewest payments needed to bring everyone back to zero.</p>
+    ${settlementTable}
+  </section>`;
 }
 
 function renderEmailHeader(monthLabel: string, groupName: string): string {
@@ -419,7 +544,7 @@ function computeSummaryStats(balanceRows: BalanceRow[], recipientParticipantId: 
   };
 }
 
-function sortBalanceRows(balanceRows: BalanceRow[]): BalanceRow[] {
+export function sortBalanceRows(balanceRows: BalanceRow[]): BalanceRow[] {
   return [...balanceRows].sort((left, right) => {
     if (left.amountMinor === 0 && right.amountMinor !== 0) return 1;
     if (right.amountMinor === 0 && left.amountMinor !== 0) return -1;
@@ -427,7 +552,7 @@ function sortBalanceRows(balanceRows: BalanceRow[]): BalanceRow[] {
   });
 }
 
-function balanceStatusLabel(amountMinor: number): string {
+export function balanceStatusLabel(amountMinor: number): string {
   if (amountMinor > 0) return 'Gets back';
   if (amountMinor < 0) return 'Owes';
   return 'Settled';
@@ -453,7 +578,7 @@ function amountColor(amountMinor: number): string {
   return BRAND.muted;
 }
 
-function formatAmount(amountMinor: number, currencyCode: string): string {
+export function formatAmount(amountMinor: number, currencyCode: string): string {
   const value = Math.abs(amountMinor) / 100;
   const formatted = value.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
@@ -462,7 +587,7 @@ function formatAmount(amountMinor: number, currencyCode: string): string {
   return `${currencyCode} ${formatted}`;
 }
 
-function formatSignedAmount(amountMinor: number, currencyCode: string): string {
+export function formatSignedAmount(amountMinor: number, currencyCode: string): string {
   if (amountMinor === 0) {
     return `${currencyCode} 0.00`;
   }

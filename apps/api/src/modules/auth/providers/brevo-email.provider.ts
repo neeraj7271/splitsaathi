@@ -61,7 +61,11 @@ export class BrevoEmailProvider implements EmailProviderPort {
         to: [{ email: input.to }],
         subject: input.subject,
         textContent: input.text,
-        htmlContent: input.html ?? `<p>${escapeHtml(input.text).replace(/\n/g, '<br />')}</p>`
+        htmlContent: input.html ?? `<p>${escapeHtml(input.text).replace(/\n/g, '<br />')}</p>`,
+        attachment: input.attachments?.map((file) => ({
+          name: file.filename,
+          content: file.content.toString('base64')
+        }))
       });
       this.logger.log(`Brevo email sent to ${input.to}`);
     } catch (error) {

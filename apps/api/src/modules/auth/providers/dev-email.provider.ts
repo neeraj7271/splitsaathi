@@ -23,8 +23,11 @@ export class DevEmailProvider implements EmailProviderPort {
   }
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
+    const attachmentNote = input.attachments?.length
+      ? ` attachments=${input.attachments.map((file) => file.filename).join(',')}`
+      : '';
     this.logger.log(
-      `Development email to=${input.to} subject=${JSON.stringify(input.subject)} body=${JSON.stringify(input.text)}`
+      `Development email to=${input.to} subject=${JSON.stringify(input.subject)}${attachmentNote} body=${JSON.stringify(input.text)}`
     );
     return { deliveryMode: 'development' };
   }

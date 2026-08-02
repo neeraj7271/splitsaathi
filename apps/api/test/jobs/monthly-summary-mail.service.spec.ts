@@ -78,7 +78,7 @@ describe('MonthlySummaryMailService', () => {
 
     const result = await service.sendMonthlySettlementSummaries();
 
-    expect(result).toEqual({ groupsProcessed: 1, emailsSent: 1, emailsFailed: 0, skipped: 3 });
+    expect(result).toEqual({ groupsProcessed: 1, emailsSent: 1, emailsFailed: 0, skipped: 2 });
     expect(emailProvider.send).toHaveBeenCalledTimes(1);
     expect(emailProvider.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -198,11 +198,20 @@ describe('MonthlySummaryMailService', () => {
 
     expect(result).toEqual({
       groupsProcessed: 2,
-      emailsSent: 2,
+      emailsSent: 1,
       emailsFailed: 0,
       skipped: 0,
       testEmail: 'neeraj@example.com'
     });
-    expect(emailProvider.send).toHaveBeenCalledTimes(2);
+    expect(emailProvider.send).toHaveBeenCalledTimes(1);
+    expect(emailProvider.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'neeraj@example.com',
+        subject: expect.stringContaining('2 groups'),
+        attachments: expect.arrayContaining([
+          expect.objectContaining({ filename: expect.stringContaining('.xls') })
+        ])
+      })
+    );
   });
 });

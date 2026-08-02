@@ -48,7 +48,20 @@ This file is **not in git**. On the server, create it if missing:
 
 ```bash
 cp deploy/env.example deploy/api.docker.env
-# edit deploy/api.docker.env — set at minimum:
+```
+
+Quick setup for `CRON_SECRET`:
+
+```bash
+chmod +x deploy/cron/ensure-cron-secret.sh
+./deploy/cron/ensure-cron-secret.sh splitsaathi-cron-secret-123456
+bash deploy/start.sh
+```
+
+Or set manually in `deploy/api.docker.env`:
+
+```env
+CRON_SECRET=splitsaathi-cron-secret-123456
 ```
 
 - `CRON_SECRET` (≥16 chars) — **must match** what the API container loads

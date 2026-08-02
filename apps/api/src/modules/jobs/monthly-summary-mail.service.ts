@@ -11,10 +11,15 @@ import { GroupEntity } from '../groups/entities/group.entity';
 import { ParticipantEntity } from '../groups/entities/participant.entity';
 import { BalanceProjector } from '../ledger/balance.projector';
 import { UserPreferencesEntity } from '../users/entities/user-preferences.entity';
+import { buildMonthlySummaryExcel } from './monthly-summary-mail.excel';
 import {
+  consolidatedMonthlySummarySubject,
+  formatConsolidatedMonthlySummaryHtml,
+  formatConsolidatedMonthlySummaryTextInbox,
   formatMonthlySummaryHtml,
   formatMonthlySummaryTextInbox,
   monthlySummarySubject,
+  type GroupSummarySlice,
   type MonthlySummaryRecipientContext
 } from './monthly-summary-mail.template';
 
@@ -26,7 +31,7 @@ export interface MonthlySummaryJobResult {
   testEmail?: string;
 }
 
-interface SendMembershipOptions {
+interface SendUserSummaryOptions {
   bypassPreference?: boolean;
 }
 
@@ -54,24 +59,29 @@ export class MonthlySummaryMailService {
   ) {}
 
   /**
-   * Builds per-group balance summaries and emails members who opted into
-   * `emailMonthlySummary` and have a verified email (password credential or Google email identity).
+   * One consolidated email per member across all active groups (Excel attachment when 2+ groups).
    */
   async sendMonthlySettlementSummaries(): Promise<MonthlySummaryJobResult> {
     const activeGroups = await this.groups.find({ where: { state: 'active' } });
+    const summariesByUser = await this.collectSummariesByUser(activeGroups);
+
     let emailsSent = 0;
     let emailsFailed = 0;
     let skipped = 0;
 
-    for (const group of activeGroups) {
-      const outcome = await this.sendSummariesForGroup(group);
-      emailsSent += outcome.emailsSent;
-      emailsFailed += outcome.emailsFailed;
-      skipped += outcome.skipped;
+    for (const [userId, slices] of summariesByUser) {
+      const outcome = await this.sendConsolidatedSummary(userId, slices);
+      if (outcome === 'sent') {
+        emailsSent += 1;
+      } else if (outcome === 'failed') {
+        emailsFailed += 1;
+      } else {
+        skipped += 1;
+      }
     }
 
     this.logger.log(
-      `Monthly settlement summaries: groups=${activeGroups.length} sent=${emailsSent} failed=${emailsFailed} skipped=${skipped}`
+      `Monthly settlement summaries: groups=${activeGroups.length} users=${summariesByUser.size} sent=${emailsSent} failed=${emailsFailed} skipped=${skipped}`
     );
 
     return {
@@ -82,10 +92,7 @@ export class MonthlySummaryMailService {
     };
   }
 
-  /**
-   * Smoke test: send real monthly summaries for one verified email across their active groups.
-   * Ignores the monthly-summary opt-out so operators can verify delivery.
-   */
+  /** Smoke test: one consolidated email for a single address. */
   async sendForUserEmail(email: string): Promise<MonthlySummaryJobResult> {
     const normalized = email.trim().toLowerCase();
     const userId = await this.resolveUserIdByEmail(normalized);
@@ -93,155 +100,151 @@ export class MonthlySummaryMailService {
       throw new NotFoundException(`No account with verified email: ${normalized}`);
     }
 
-    const to = await this.resolveEmail(userId);
-    if (!to) {
-      throw new NotFoundException(`Could not resolve deliverable email for user ${userId}`);
-    }
-
-    const memberships = await this.memberships.find({
-      where: { userId, status: In(['active', 'locked_for_exit']) }
-    });
     const activeGroups = await this.groups.find({ where: { state: 'active' } });
-    const activeGroupById = new Map(activeGroups.map((group) => [group.id, group]));
+    const summariesByUser = await this.collectSummariesByUser(activeGroups, userId);
+    const slices = summariesByUser.get(userId) ?? [];
 
-    let emailsSent = 0;
-    let emailsFailed = 0;
-    let skipped = 0;
-    let groupsProcessed = 0;
-    const emailedGroupIds = new Set<string>();
-
-    for (const membership of memberships) {
-      const group = activeGroupById.get(membership.groupId);
-      if (!group) {
-        skipped += 1;
-        continue;
-      }
-      if (emailedGroupIds.has(group.id)) {
-        skipped += 1;
-        continue;
-      }
-
-      groupsProcessed += 1;
-      const outcome = await this.sendSummaryForMembership(group, membership, to, {
-        bypassPreference: true
-      });
-      if (outcome === 'sent') {
-        emailedGroupIds.add(group.id);
-        emailsSent += 1;
-      } else if (outcome === 'failed') {
-        emailsFailed += 1;
-      } else {
-        skipped += 1;
-      }
+    if (slices.length === 0) {
+      return {
+        groupsProcessed: 0,
+        emailsSent: 0,
+        emailsFailed: 0,
+        skipped: 0,
+        testEmail: normalized
+      };
     }
 
-    this.logger.log(
-      `Monthly settlement test for ${normalized}: groups=${groupsProcessed} sent=${emailsSent} failed=${emailsFailed} skipped=${skipped}`
-    );
+    const outcome = await this.sendConsolidatedSummary(userId, slices, { bypassPreference: true });
 
     return {
-      groupsProcessed,
-      emailsSent,
-      emailsFailed,
-      skipped,
+      groupsProcessed: slices.length,
+      emailsSent: outcome === 'sent' ? 1 : 0,
+      emailsFailed: outcome === 'failed' ? 1 : 0,
+      skipped: outcome === 'skipped' ? 1 : 0,
       testEmail: normalized
     };
   }
 
-  private async sendSummariesForGroup(group: GroupEntity): Promise<{
-    emailsSent: number;
-    emailsFailed: number;
-    skipped: number;
-  }> {
-    const memberships = await this.memberships.find({
-      where: { groupId: group.id, status: In(['active', 'locked_for_exit']) }
-    });
-    const participants = await this.participants.find({ where: { groupId: group.id } });
-    const emailedUserIds = new Set<string>();
+  private async collectSummariesByUser(
+    activeGroups: GroupEntity[],
+    onlyUserId?: string
+  ): Promise<Map<string, GroupSummarySlice[]>> {
+    const byUser = new Map<string, Map<string, GroupSummarySlice>>();
 
-    let emailsSent = 0;
-    let emailsFailed = 0;
-    let skipped = 0;
-
-    for (const membership of memberships) {
-      if (!membership.userId) {
-        skipped += 1;
+    for (const group of activeGroups) {
+      const memberships = await this.memberships.find({
+        where: {
+          groupId: group.id,
+          status: In(['active', 'locked_for_exit']),
+          ...(onlyUserId ? { userId: onlyUserId } : {})
+        }
+      });
+      if (memberships.length === 0) {
         continue;
       }
 
-      if (emailedUserIds.has(membership.userId)) {
-        skipped += 1;
-        continue;
-      }
+      const participants = await this.participants.find({ where: { groupId: group.id } });
+      const nameByParticipantId = new Map(participants.map((row) => [row.id, row.displayName]));
+      const balanceRows = this.balances.listGroupBalances(group.id, { includeZero: true });
+      const settlements = this.settlementOptimizer.suggest(
+        balanceRows.map((row) => ({
+          participantId: row.participantId,
+          amountMinor: row.amountMinor,
+          currencyCode: row.currencyCode
+        }))
+      );
 
-      const to = await this.resolveEmail(membership.userId);
-      if (!to) {
-        skipped += 1;
-        continue;
-      }
+      const seenUserIds = new Set<string>();
+      for (const membership of memberships) {
+        if (!membership.userId || seenUserIds.has(membership.userId)) {
+          continue;
+        }
+        seenUserIds.add(membership.userId);
 
-      const outcome = await this.sendSummaryForMembership(group, membership, to);
-      if (outcome === 'sent') {
-        emailedUserIds.add(membership.userId);
-        emailsSent += 1;
-      } else if (outcome === 'failed') {
-        emailsFailed += 1;
-      } else {
-        skipped += 1;
+        const slice: GroupSummarySlice = {
+          group: { id: group.id, name: group.name, baseCurrencyCode: group.baseCurrencyCode },
+          balanceRows,
+          settlements,
+          nameByParticipantId,
+          recipient: this.resolveRecipientContext(membership, participants)
+        };
+
+        if (!byUser.has(membership.userId)) {
+          byUser.set(membership.userId, new Map());
+        }
+        byUser.get(membership.userId)!.set(group.id, slice);
       }
     }
 
-    return { emailsSent, emailsFailed, skipped };
+    const result = new Map<string, GroupSummarySlice[]>();
+    for (const [userId, groupMap] of byUser) {
+      result.set(
+        userId,
+        [...groupMap.values()].sort((left, right) => left.group.name.localeCompare(right.group.name))
+      );
+    }
+    return result;
   }
 
-  private async sendSummaryForMembership(
-    group: GroupEntity,
-    membership: GroupMembershipEntity,
-    to: string,
-    options: SendMembershipOptions = {}
+  private async sendConsolidatedSummary(
+    userId: string,
+    slices: GroupSummarySlice[],
+    options: SendUserSummaryOptions = {}
   ): Promise<'sent' | 'failed' | 'skipped'> {
-    if (!membership.userId) {
+    if (slices.length === 0) {
       return 'skipped';
     }
 
     if (!options.bypassPreference) {
-      const prefs = await this.preferences.findOne({ where: { userId: membership.userId } });
+      const prefs = await this.preferences.findOne({ where: { userId } });
       if (prefs && prefs.emailMonthlySummary === false) {
         return 'skipped';
       }
     }
 
-    const participants = await this.participants.find({ where: { groupId: group.id } });
-    const nameByParticipantId = new Map(participants.map((row) => [row.id, row.displayName]));
-    const balanceRows = this.balances.listGroupBalances(group.id, { includeZero: true });
-    const settlements = this.settlementOptimizer.suggest(
-      balanceRows.map((row) => ({
-        participantId: row.participantId,
-        amountMinor: row.amountMinor,
-        currencyCode: row.currencyCode
-      }))
-    );
-    const recipient = this.resolveRecipientContext(membership, participants);
-    const summaryText = formatMonthlySummaryTextInbox(group, balanceRows, recipient);
-    const summaryHtml = formatMonthlySummaryHtml(
-      group,
-      balanceRows,
-      nameByParticipantId,
-      settlements,
-      recipient
-    );
+    const to = await this.resolveEmail(userId);
+    if (!to) {
+      return 'skipped';
+    }
+
+    const subject =
+      slices.length === 1
+        ? monthlySummarySubject(slices[0]!.group.name)
+        : consolidatedMonthlySummarySubject(slices.length);
+    const text =
+      slices.length === 1
+        ? formatMonthlySummaryTextInbox(slices[0]!.group, slices[0]!.balanceRows, slices[0]!.recipient)
+        : formatConsolidatedMonthlySummaryTextInbox(slices);
+    const html =
+      slices.length === 1
+        ? formatMonthlySummaryHtml(
+            slices[0]!.group,
+            slices[0]!.balanceRows,
+            slices[0]!.nameByParticipantId,
+            slices[0]!.settlements,
+            slices[0]!.recipient
+          )
+        : formatConsolidatedMonthlySummaryHtml(slices);
+    const attachments =
+      slices.length > 1
+        ? [buildMonthlySummaryExcel(slices)]
+        : undefined;
 
     try {
-      await this.emailProvider.send({
+      const delivery = await this.emailProvider.send({
         to,
-        subject: monthlySummarySubject(group.name),
-        text: summaryText,
-        html: summaryHtml
+        subject,
+        text,
+        html,
+        attachments
       });
+      this.logger.log(
+        `Monthly summary sent via ${delivery.deliveryMode} to=${to} groups=${slices.length} user=${userId}`
+      );
       return 'sent';
     } catch (error) {
       this.logger.error(
-        `Monthly summary failed for user=${membership.userId} group=${group.id} to=${to}: ${
+        `Monthly summary failed for user=${userId} to=${to}: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

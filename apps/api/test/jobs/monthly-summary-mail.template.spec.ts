@@ -56,7 +56,7 @@ describe('monthly-summary-mail.template', () => {
     expect(text).toContain('Your balance:');
   });
 
-  it('renders branded HTML with balance and settlement tables', () => {
+  it('renders consolidated HTML with balance and settlement tables', () => {
     const html = formatMonthlySummaryHtml(
       sampleGroup,
       sampleBalances,

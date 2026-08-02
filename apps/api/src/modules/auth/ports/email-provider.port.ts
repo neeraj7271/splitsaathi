@@ -10,11 +10,18 @@ export interface SendEmailOtpResult {
   devCode?: string;
 }
 
+export interface EmailAttachmentInput {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 export interface SendEmailInput {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  attachments?: EmailAttachmentInput[];
 }
 
 export interface SendEmailResult {
