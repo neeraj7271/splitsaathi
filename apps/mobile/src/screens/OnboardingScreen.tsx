@@ -400,7 +400,13 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     };
     Linking.getInitialURL().then(applyUrl).catch(() => undefined);
     const subscription = Linking.addEventListener("url", (event) => applyUrl(event.url));
-    return () => subscription.remove();
+    return () => {
+      try {
+        subscription?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
+    };
   }, []);
 
   function sendOtp() {

@@ -200,26 +200,48 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
     let receivedSub: { remove: () => void } | undefined;
     let responseSub: { remove: () => void } | undefined;
-    void import("expo-notifications").then(async (Notifications) => {
-      const { invalidateQueriesForPush } = await import("./src/notifications/invalidateOnPush");
-      receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-        invalidateQueriesForPush(
-          queryClient,
-          notification.request.content.data as Record<string, unknown> | undefined
-        );
-      });
-      responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-        invalidateQueriesForPush(
-          queryClient,
-          response.notification.request.content.data as Record<string, unknown> | undefined
-        );
-      });
-    });
+    void import("expo-notifications")
+      .then(async (Notifications) => {
+        try {
+          const { invalidateQueriesForPush } = await import("./src/notifications/invalidateOnPush");
+          if (typeof Notifications.addNotificationReceivedListener === "function") {
+            receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+              invalidateQueriesForPush(
+                queryClient,
+                notification.request.content.data as Record<string, unknown> | undefined
+              );
+            });
+          }
+          if (typeof Notifications.addNotificationResponseReceivedListener === "function") {
+            responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+              invalidateQueriesForPush(
+                queryClient,
+                response.notification.request.content.data as Record<string, unknown> | undefined
+              );
+            });
+          }
+        } catch (err) {
+          console.warn("[SplitSaathi] Notification listener error ignored:", err);
+        }
+      })
+      .catch(() => undefined);
 
     return () => {
-      appStateSub.remove();
-      receivedSub?.remove();
-      responseSub?.remove();
+      try {
+        appStateSub?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
+      try {
+        receivedSub?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
+      try {
+        responseSub?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
     };
   }, [authenticated, queryClient]);
 
@@ -341,7 +363,6 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     void queryClient.prefetchQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() }).catch(() => undefined);
     void queryClient.prefetchQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() }).catch(() => undefined);
     void queryClient.prefetchQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() }).catch(() => undefined);
-    void queryClient.prefetchQuery({ queryKey: ["activityFeed"], queryFn: () => apiClient.getActivityFeed() }).catch(() => undefined);
     void queryClient.prefetchQuery({ queryKey: ["preferences"], queryFn: () => apiClient.getPreferences() }).catch(() => undefined);
   }, [authenticated]);
 

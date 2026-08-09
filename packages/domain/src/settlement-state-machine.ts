@@ -37,6 +37,7 @@ const transitions: Record<SettlementState, Partial<Record<SettlementEventName, S
     expire: 'expired'
   },
   payer_opened_upi_app: {
+    open_upi_app: 'payer_opened_upi_app',
     generate_intent: 'intent_generated',
     submit_proof: 'proof_submitted',
     request_confirmation: 'awaiting_receiver_confirmation',

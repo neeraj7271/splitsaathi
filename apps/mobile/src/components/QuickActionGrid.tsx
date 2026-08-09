@@ -13,6 +13,7 @@ export interface QuickAction {
   onPress: () => void;
   /** Accent used for the soft icon well. */
   tint?: string;
+  badge?: string;
 }
 
 export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
@@ -42,6 +43,11 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
               ]}
             >
               <Icon size={22} color={tint} weight="duotone" />
+              {action.badge ? (
+                <View style={styles.badgePill}>
+                  <ThemedText style={styles.badgeText}>{action.badge}</ThemedText>
+                </View>
+              ) : null}
             </View>
             <ThemedText variant="caption" align="center" numberOfLines={2}>
               {action.label}
@@ -68,6 +74,24 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    position: "relative"
+  },
+  badgePill: {
+    position: "absolute",
+    top: -4,
+    right: -6,
+    backgroundColor: "#F59E0B",
+    paddingHorizontal: 4,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#FFFFFF"
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "700",
+    lineHeight: 10
   }
 });

@@ -92,7 +92,7 @@ export function BiometricGate({ children, enabled }: Props) {
     }
   }, []);
 
-  // Local cache first so cold start locks immediately (no home flash).
+  // Local cache check: if biometrics are enabled in cache, lock immediately; otherwise default to unlocked.
   useEffect(() => {
     if (!enabled) {
       setPhase("unlocked");
@@ -112,17 +112,44 @@ export function BiometricGate({ children, enabled }: Props) {
         void unlock();
         return;
       }
-      // No cache yet — stay on checking surface until server prefs resolve.
-      setPhase("checking");
+      // Biometrics not explicitly enabled in cache — unlock by default to avoid sticking
+      setBiometricOn(false);
+      unlockedRef.current = true;
+      setPhase("unlocked");
     })();
     return () => {
       cancelled = true;
     };
   }, [enabled, unlock]);
 
-  // Reconcile with server preferences once they arrive.
+  // Safety fallback timer: if phase remains "checking" for >1.5s, force unlock
   useEffect(() => {
-    if (!enabled || preferencesQuery.isLoading || !preferencesQuery.data) {
+    if (!enabled || phase !== "checking") {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!biometricOn) {
+        unlockedRef.current = true;
+        setPhase("unlocked");
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [enabled, phase, biometricOn]);
+
+  // Reconcile with server preferences once they arrive or fail.
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    if (preferencesQuery.isError) {
+      // On network/server error, if biometrics were not enabled, stay unlocked
+      if (!biometricOn && !unlockedRef.current) {
+        unlockedRef.current = true;
+        setPhase("unlocked");
+      }
+      return;
+    }
+    if (preferencesQuery.isLoading || !preferencesQuery.data) {
       return;
     }
     const on = Boolean(preferencesQuery.data.biometricAuthEnabled);
@@ -147,7 +174,7 @@ export function BiometricGate({ children, enabled }: Props) {
     }
     setPhase("locked");
     void unlock();
-  }, [enabled, preferencesQuery.isLoading, preferencesQuery.data, unlock]);
+  }, [enabled, preferencesQuery.isLoading, preferencesQuery.isError, preferencesQuery.data, biometricOn, unlock]);
 
   useEffect(() => {
     if (!enabled || !biometricOn) {
@@ -178,7 +205,13 @@ export function BiometricGate({ children, enabled }: Props) {
         void unlock();
       }
     });
-    return () => sub.remove();
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
+    };
   }, [enabled, biometricOn, timeoutSeconds, unlock]);
 
   if (!enabled || phase === "unlocked") {

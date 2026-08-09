@@ -19,6 +19,7 @@ import { BalanceHeroCard } from "../components/BalanceHeroCard";
 import { BrandLogo } from "../components/BrandLogo";
 import { EmptyState } from "../components/EmptyState";
 import { GroupSummaryCard } from "../components/GroupSummaryCard";
+import { ImportComingSoonModal } from "../components/ImportComingSoonModal";
 import { InlineNotice } from "../components/InlineNotice";
 import { QRScannerModal } from "../components/QRScannerModal";
 import { QuickActionGrid } from "../components/QuickActionGrid";
@@ -40,6 +41,7 @@ const HOME_GROUPS_PREVIEW = 5;
 export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
   const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() });
@@ -190,8 +192,13 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
           { label: "Settle", icon: Scales, tint: "#0D9488", onPress: () => navigation.go("settlement") },
           { label: "Recurring", icon: CalendarBlank, tint: "#3B82F6", onPress: () => navigation.go("recurring") },
           { label: "Sync", icon: CloudArrowUp, tint: "#A855F7", onPress: () => navigation.go("offline") },
-          { label: "Import", icon: FileArrowDown, tint: "#F59E0B", onPress: () => navigation.go("importExport") }
+          { label: "Import", icon: FileArrowDown, tint: "#F59E0B", badge: "SOON", onPress: () => setShowImportModal(true) }
         ]}
+      />
+
+      <ImportComingSoonModal
+        visible={showImportModal}
+        onClose={() => setShowImportModal(false)}
       />
 
       <QRScannerModal

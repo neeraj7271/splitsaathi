@@ -20,6 +20,8 @@ export function sortGroupsByOutstandingBalance(groups: GroupSummary[]): GroupSum
       return balB - balA;
     }
 
-    return new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime();
+    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return timeB - timeA;
   });
 }

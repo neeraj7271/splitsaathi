@@ -55,31 +55,86 @@ export type DetectedUpiApps = {
   notInstalled: UpiAppOption[];
 };
 
+/**
+ * Normalizes a UPI URI into standard NPCI compliant format:
+ * - Decodes VPA (pa) so '@' is literal (e.g. hemant@ybl instead of hemant%40ybl)
+ * - Encodes payee name (pn) and note (tn) with %20 for spaces
+ * - Ensures currency (cu) is INR
+ */
+export function normalizeUpiUri(upiUri: string): string {
+  if (!upiUri) return "";
+  try {
+    const rawQuery = upiUri.includes("?") ? upiUri.slice(upiUri.indexOf("?") + 1) : upiUri;
+    const params = new URLSearchParams(rawQuery);
+
+    const pa = decodeURIComponent(params.get("pa") || "").trim();
+    const pn = decodeURIComponent(params.get("pn") || "").trim();
+    const am = params.get("am") || "";
+    const cu = params.get("cu") || "INR";
+    const tn = decodeURIComponent(params.get("tn") || "").trim();
+    const tr = params.get("tr") || "";
+
+    if (!pa) return upiUri;
+
+    const parts: string[] = [`pa=${pa}`];
+    if (pn) parts.push(`pn=${encodeURIComponent(pn)}`);
+    if (am) parts.push(`am=${encodeURIComponent(am)}`);
+    parts.push(`cu=${encodeURIComponent(cu)}`);
+    if (tn) parts.push(`tn=${encodeURIComponent(tn)}`);
+    if (tr) parts.push(`tr=${encodeURIComponent(tr)}`);
+
+    return `upi://pay?${parts.join("&")}`;
+  } catch {
+    return upiUri.replace(/\+/g, "%20");
+  }
+}
+
 function upiQuery(upiUri?: string): string {
   const safeUri = typeof upiUri === "string" ? upiUri : "";
   const match = safeUri.match(/^upi:\/\/pay\?(.*)$/i);
   return match?.[1] ?? safeUri.replace(/^[^?]+\?/, "");
 }
 
+const ANDROID_UPI_PACKAGES: Record<UpiAppId, string | undefined> = {
+  gpay: "com.google.android.apps.nbu.paisa.user",
+  phonepe: "com.phonepe.app",
+  paytm: "net.one97.paytm",
+  bhim: "in.org.npci.upiapp",
+  amazonpay: "in.amazon.mShop.android.shopping",
+  whatsapp: "com.whatsapp",
+  other: undefined
+};
+
+/** Build an Android-specific Intent URI targeting the app package directly with upi:// intent data. */
+export function buildAndroidIntentUri(appId: UpiAppId, upiUri: string): string | null {
+  const pkg = ANDROID_UPI_PACKAGES[appId];
+  if (!pkg) {
+    return null;
+  }
+  const cleanUri = normalizeUpiUri(upiUri);
+  const query = upiQuery(cleanUri);
+  return `intent://pay?${query}#Intent;scheme=upi;package=${pkg};end`;
+}
+
 /** Build an app-specific pay URI from the canonical upi://pay?... link. */
 export function buildAppPayUri(appId: UpiAppId, upiUri: string): string {
-  const query = upiQuery(upiUri);
+  const cleanUri = normalizeUpiUri(upiUri);
+  const query = upiQuery(cleanUri);
   switch (appId) {
     case "gpay":
       return `tez://upi/pay?${query}`;
     case "phonepe":
-      return `phonepe://pay?${query}`;
+      return `phonepe://upi/pay?${query}`;
     case "paytm":
-      return `paytmmp://pay?${query}`;
+      return `paytmmp://upi/pay?${query}`;
     case "bhim":
       return `bhim://upi/pay?${query}`;
     case "amazonpay":
       return `amazonpay://upi/pay?${query}`;
     case "whatsapp":
-      return upiUri;
     case "other":
     default:
-      return upiUri;
+      return cleanUri;
   }
 }
 
@@ -124,25 +179,36 @@ export async function detectInstalledUpiApps(): Promise<DetectedUpiApps> {
 }
 
 export async function openUpiWithApp(appId: UpiAppId, upiUri: string): Promise<void> {
-  const candidates = [buildAppPayUri(appId, upiUri), upiUri].filter(
-    (uri, index, list) => list.indexOf(uri) === index
-  );
+  const normalized = normalizeUpiUri(upiUri);
+  console.log(`[UPI] Opening app '${appId}' with normalized canonical URI: ${normalized}`);
 
-  let lastError: unknown;
-  for (const uri of candidates) {
+  // Canonical upi://pay URI is the ONLY format that NPCI & UPI apps (PhonePe, GPay, Paytm, BHIM)
+  // parse to pre-fill payee VPA, payee name, amount, and transaction note.
+  // Custom schemes like phonepe:// open the app home tab without pre-filling details.
+  try {
+    console.log(`[UPI] Attempting canonical upi://pay launch...`);
+    await Linking.openURL(normalized);
+    console.log(`[UPI] Successfully launched canonical upi://pay link.`);
+    return;
+  } catch (error) {
+    console.warn(`[UPI] Primary canonical upi://pay launch failed:`, error);
+  }
+
+  // Fallback to app-specific scheme if canonical upi:// failed
+  const appPayUri = buildAppPayUri(appId, normalized);
+  if (appPayUri !== normalized) {
     try {
-      const canOpen = await Linking.canOpenURL(uri);
-      if (!canOpen && uri !== upiUri) {
-        continue;
+      console.log(`[UPI] Fallback: Attempting app-specific scheme: ${appPayUri}`);
+      const canOpen = await Linking.canOpenURL(appPayUri);
+      if (canOpen) {
+        await Linking.openURL(appPayUri);
+        console.log(`[UPI] Successfully launched app-specific scheme.`);
+        return;
       }
-      await Linking.openURL(uri);
-      return;
-    } catch (error) {
-      lastError = error;
+    } catch (fallbackError) {
+      console.warn(`[UPI] Fallback app-specific scheme failed:`, fallbackError);
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Could not open a UPI app. Try scanning the QR code instead.");
+  throw new Error("Could not open a UPI app. Try scanning the QR code instead.");
 }

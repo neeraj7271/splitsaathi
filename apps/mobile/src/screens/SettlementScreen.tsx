@@ -17,10 +17,11 @@ try {
 } catch {
   MediaLibraryModule = null;
 }
-import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
+import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, Copy, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { apiClient } from "../api/client";
+import { copyText } from "../utils/clipboard";
 import { useOptionalAppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
@@ -153,6 +154,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
+  const [vpaCopied, setVpaCopied] = useState(false);
   const [proofPreviewUri, setProofPreviewUri] = useState<string>();
   const [proofLoading, setProofLoading] = useState(false);
   const settlementDetail = useSettlementDetailModal();
@@ -402,6 +404,18 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       }
       const payeeName =
         mode === "custom" && lookups ? resolveParticipantDisplayName(payeeParticipantId, lookups) : undefined;
+      if (paymentMethod === "upi") {
+        const enteredVpa = payeeVpa.trim().toLowerCase();
+        if (!enteredVpa) {
+          throw new Error("Receiver UPI ID is required for UPI payments. Please enter their UPI ID (e.g. 9057297286@ybl).");
+        }
+        const myVpa = profileQuery.data?.upiVpa?.trim().toLowerCase();
+        const myPhone = profileQuery.data?.phoneE164?.replace(/\D/g, "");
+        if ((myVpa && enteredVpa === myVpa) || (myPhone && myPhone.length >= 10 && enteredVpa.includes(myPhone))) {
+          throw new Error("You entered your own UPI ID. PhonePe & GPay block paying your own account via deep links. Please enter the receiver's UPI ID (e.g. 9057297286@ybl).");
+        }
+      }
+
       const payload =
         mode === "suggested" && selectedSuggestion
           ? {
@@ -556,15 +570,29 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
   const openUpi = async (appId: UpiAppId) => {
     if (!intent?.upiUri) {
+      console.warn("[Settlement] No upiUri found on settlement intent.");
       return;
     }
+    console.log(`[Settlement] openUpi triggered for app '${appId}'. upiUri:`, intent.upiUri);
+    setHandoffError(undefined);
+
     try {
-      setHandoffError(undefined);
       await openUpiWithApp(appId, intent.upiUri);
-      const updated = await apiClient.markUpiOpened(intent.id, appId === "other" ? "other" : appId);
-      setIntent(updated);
     } catch (error) {
+      console.error(`[Settlement] openUpiWithApp failed for '${appId}':`, error);
       setHandoffError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    // Fire-and-forget server tracking event: do not let server response errors block the user
+    if (intent.state !== "payer_opened_upi_app") {
+      try {
+        console.log(`[Settlement] openUpiWithApp succeeded. Marking UPI opened for intent:`, intent.id);
+        const updated = await apiClient.markUpiOpened(intent.id, appId === "other" ? "other" : appId);
+        setIntent(updated);
+      } catch (error) {
+        console.warn("[Settlement] Non-fatal: could not mark UPI opened on server:", error);
+      }
     }
   };
 
@@ -646,7 +674,13 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         void historyQuery.refetch();
       }
     });
-    return () => sub.remove();
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {
+        // Ignore unbind edge case
+      }
+    };
   }, [selectedGroupId, intent?.state]);
 
   async function openProof(row: SettlementIntent) {
@@ -803,10 +837,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                       key={suggestion.id}
                       onPress={() => {
                         setSelectedSuggestion(suggestion);
-                        const defaultVpa = resolvePayeeDefaultVpa(suggestion.payeeParticipantId);
-                        if (defaultVpa) {
-                          setPayeeVpa(defaultVpa);
-                        }
+                        setPayeeVpa(resolvePayeeDefaultVpa(suggestion.payeeParticipantId));
                       }}
                       style={[
                         styles.suggestion,
@@ -901,10 +932,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                         key={participant.id}
                         onPress={() => {
                           setPayeeParticipantId(participant.id);
-                          const defaultVpa = participant.upiVpa?.trim() ?? "";
-                          if (defaultVpa) {
-                            setPayeeVpa(defaultVpa);
-                          }
+                          setPayeeVpa(participant.upiVpa?.trim() ?? "");
                         }}
                         style={[
                           styles.suggestion,
@@ -933,11 +961,24 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                         autoCapitalize="none"
                         placeholder="name@okaxis"
                       />
-                      <ThemedText variant="caption" tone="muted">
-                        {selectedPayeeHasDefaultVpa
-                          ? "Filled from their profile. Change only if needed."
-                          : "Enter their UPI ID, or ask them to save one in Profile."}
-                      </ThemedText>
+                      {Boolean(
+                        payeeVpa.trim() &&
+                          ((profileQuery.data?.upiVpa?.trim().toLowerCase() &&
+                            payeeVpa.trim().toLowerCase() === profileQuery.data?.upiVpa?.trim().toLowerCase()) ||
+                            (profileQuery.data?.phoneE164?.replace(/\D/g, "") &&
+                              profileQuery.data.phoneE164.replace(/\D/g, "").length >= 10 &&
+                              payeeVpa.trim().toLowerCase().includes(profileQuery.data.phoneE164.replace(/\D/g, ""))))
+                      ) ? (
+                        <ThemedText variant="caption" tone="owe" style={{ fontWeight: "600" }}>
+                          ⚠️ This is your own UPI ID. PhonePe &amp; GPay block self-payments via deep link. Enter the receiver&apos;s UPI ID.
+                        </ThemedText>
+                      ) : (
+                        <ThemedText variant="caption" tone="muted">
+                          {selectedPayeeHasDefaultVpa
+                            ? "Filled from their profile. Change only if needed."
+                            : "Enter their UPI ID, or ask them to save one in Profile."}
+                        </ThemedText>
+                      )}
                     </>
                   ) : null}
                   <NumericKeypad
@@ -1064,6 +1105,37 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                       </View>
                     </View>
                   ) : null}
+
+                  <View style={[styles.copyVpaBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <ThemedText variant="caption" tone="muted">Receiver UPI ID</ThemedText>
+                      <ThemedText variant="bodyMedium" style={{ fontWeight: "700" }}>
+                        {payeeVpa || vpaFromUpiUri(intent.upiUri) || "Not set"}
+                      </ThemedText>
+                    </View>
+                    <Pressable
+                      onPress={async () => {
+                        const targetVpa = payeeVpa || vpaFromUpiUri(intent.upiUri);
+                        if (targetVpa) {
+                          await copyText(targetVpa);
+                          setVpaCopied(true);
+                          setTimeout(() => setVpaCopied(false), 2500);
+                        }
+                      }}
+                      style={[styles.copyBtn, { backgroundColor: theme.colors.confirmed, borderRadius: 10 }]}
+                    >
+                      <Copy size={15} color="#fff" weight="bold" />
+                      <ThemedText variant="caption" style={{ color: "#fff", fontWeight: "700" }}>
+                        {vpaCopied ? "Copied!" : "Copy VPA"}
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+
+                  <InlineNotice
+                    title="PhonePe / GPay Limit Tip"
+                    body="If PhonePe or GPay shows a gallery QR or limit warning, tap 'Copy VPA', open PhonePe -> 'To Mobile / UPI ID', and paste the UPI ID to pay directly."
+                    tone="pending"
+                  />
 
                   {intent.qrPayload ? (
                     <View style={styles.qrSection}>
@@ -1729,5 +1801,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 6,
     flexShrink: 0
+  },
+  copyVpaBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    marginTop: 8
+  },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8
   }
 });

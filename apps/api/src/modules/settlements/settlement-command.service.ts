@@ -134,6 +134,9 @@ export class SettlementCommandService {
 
   async markUpiOpened(command: MarkUpiOpenedCommand): Promise<{ intent: SettlementIntentRow; events: DomainEvent[] }> {
     const intent = this.requireIntent(command.settlementIntentId);
+    if (intent.state === 'payer_opened_upi_app') {
+      return { intent, events: [] };
+    }
     this.assertTransitionsAllowed(intent, ['open_upi_app']);
     const events = await this.ledger.appendAndProject({
       aggregateType: 'settlement_intent',

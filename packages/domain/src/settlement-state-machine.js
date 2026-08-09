@@ -10,7 +10,7 @@ const transitions = {
         cancel: 'cancelled',
         expire: 'expired'
     },
-    payer_opened_upi_app: { submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
+    payer_opened_upi_app: { open_upi_app: 'payer_opened_upi_app', submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
     awaiting_payment_evidence: { submit_proof: 'proof_submitted', cancel: 'cancelled', expire: 'expired' },
     proof_submitted: {
         auto_match: 'auto_matched',
