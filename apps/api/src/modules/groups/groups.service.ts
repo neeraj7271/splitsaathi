@@ -286,10 +286,12 @@ export class GroupsService {
     await this.assertPermission(userId, groupId, 'group.invite.create');
     await this.findGroupOrThrow(groupId);
 
+    const code = this.generateInviteCode();
     const invite = await this.invites.save(
       this.invites.create({
         groupId,
         token: randomBytes(24).toString('base64url'),
+        code,
         createdByUserId: userId,
         expiresAt: this.addDays(new Date(), dto.expiresInDays),
         maxUses: dto.maxUses ?? null,
@@ -299,6 +301,47 @@ export class GroupsService {
     );
 
     return InviteResponseDto.fromEntity(invite, this.joinUrl(invite.token));
+  }
+
+  private generateInviteCode(): string {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  async previewInviteByCode(code: string): Promise<InviteResponseDto> {
+    const invite = await this.findUsableInviteByCodeOrThrow(code, false);
+    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite.token));
+  }
+
+  async claimInviteByCode(userId: string, code: string, dto: ClaimInviteDto): Promise<GroupResponseDto> {
+    const invite = await this.findUsableInviteByCodeOrThrow(code, true);
+    return this.claimInvite(userId, invite.token, dto);
+  }
+
+  private async findUsableInviteByCodeOrThrow(rawCode: string, consume: boolean): Promise<GroupInviteEntity> {
+    const cleanCode = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!cleanCode) {
+      throw new NotFoundException('Group join code is invalid.');
+    }
+    const invite = await this.invites.findOne({ where: { code: cleanCode, status: 'active' } });
+    if (!invite) {
+      throw new NotFoundException('No active group found for this join code.');
+    }
+    if (invite.expiresAt < new Date()) {
+      invite.status = 'expired';
+      await this.invites.save(invite);
+      throw new BadRequestException('This group join code has expired.');
+    }
+    if (consume && invite.maxUses !== null && invite.uses >= invite.maxUses) {
+      invite.status = 'expired';
+      await this.invites.save(invite);
+      throw new BadRequestException('This group join code has reached its maximum uses.');
+    }
+    return invite;
   }
 
   async previewInvite(token: string): Promise<InviteResponseDto> {

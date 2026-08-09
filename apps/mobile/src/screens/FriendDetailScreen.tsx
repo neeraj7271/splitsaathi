@@ -232,7 +232,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                 >
                   <Handshake size={16} color="#059669" weight="duotone" />
                   <ThemedText variant="bodySm" style={{ color: "#059669", fontWeight: "600" }}>
-                    Settle up
+                    Settle
                   </ThemedText>
                 </Pressable>
               </View>
@@ -453,7 +453,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
             actions={[
               {
                 key: "settle",
-                label: "Settle up",
+                label: "Settle",
                 subtitle: "Open settlement for a shared group",
                 icon: <Handshake size={20} color={theme.colors.confirmed} weight="duotone" />,
                 tone: "confirmed",

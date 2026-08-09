@@ -713,23 +713,45 @@ export class SplitSaathiApiClient {
   }
 
   async createInvite(groupId: string) {
-    const invite = await this.request<{ id: string; joinUrl: string; token: string }>(`/v1/groups/${groupId}/invites`, {
+    const invite = await this.request<{ id: string; joinUrl: string; token: string; code?: string }>(`/v1/groups/${groupId}/invites`, {
       method: "POST",
       body: {}
     });
-    return { ...invite, inviteId: invite.id, inviteUrl: invite.joinUrl };
+    return { ...invite, inviteId: invite.id, inviteUrl: invite.joinUrl, code: invite.code };
   }
 
   async previewInvite(tokenOrUrl: string) {
     const token = extractInviteToken(tokenOrUrl);
-    return this.request<{ id: string; groupId: string; joinUrl: string; token: string }>(`/v1/groups/invites/${encodeURIComponent(token)}`, {
+    // If it's a short 6-8 char code, use code endpoint
+    if (/^[A-Za-z0-9]{5,8}$/.test(token)) {
+      return this.previewInviteByCode(token);
+    }
+    return this.request<{ id: string; groupId: string; joinUrl: string; token: string; code?: string }>(`/v1/groups/invites/${encodeURIComponent(token)}`, {
+      skipAuth: true
+    });
+  }
+
+  async previewInviteByCode(code: string) {
+    const cleanCode = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return this.request<{ id: string; groupId: string; joinUrl: string; token: string; code?: string }>(`/v1/groups/invites/by-code/${encodeURIComponent(cleanCode)}`, {
       skipAuth: true
     });
   }
 
   async claimInvite(tokenOrUrl: string, displayName?: string) {
     const token = extractInviteToken(tokenOrUrl);
+    if (/^[A-Za-z0-9]{5,8}$/.test(token)) {
+      return this.claimInviteByCode(token, displayName);
+    }
     return this.request<GroupDetail>(`/v1/groups/invites/${encodeURIComponent(token)}/claim`, {
+      method: "POST",
+      body: { displayName }
+    });
+  }
+
+  async claimInviteByCode(code: string, displayName?: string) {
+    const cleanCode = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return this.request<GroupDetail>(`/v1/groups/invites/by-code/${encodeURIComponent(cleanCode)}/claim`, {
       method: "POST",
       body: { displayName }
     });
@@ -1023,6 +1045,15 @@ export class SplitSaathiApiClient {
     return mapSettlementIntent(response.intent);
   }
 
+  async cancelSettlementIntent(intentId: string, reason = "Cancelled by user") {
+    const response = await this.request<SettlementCommandResponse>(`/v1/settlement-intents/${intentId}/cancel`, {
+      method: "POST",
+      body: { reason },
+      idempotencyKey: createIdempotencyKey("settlement.cancel")
+    });
+    return mapSettlementIntent(response.intent);
+  }
+
   async disputeSettlement(intentId: string, reason: string) {
     const response = await this.request<SettlementCommandResponse>(`/v1/settlement-intents/${intentId}/dispute`, {
       method: "POST",
@@ -1282,7 +1313,7 @@ export function extractInviteToken(tokenOrUrl?: string) {
     // If decoding fails, use original
   }
   const match = decoded.match(
-    /(?:splitsaathi:\/\/join\/|https?:\/\/[^/]+\/join\/|\/join\/)([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{12,})$/i
+    /(?:splitsaathi:\/\/join\/|https?:\/\/[^/]+\/join\/|\/join\/)([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{5,})$/i
   );
   const token = match?.[1] ?? match?.[2] ?? match?.[3];
   if (!token) {

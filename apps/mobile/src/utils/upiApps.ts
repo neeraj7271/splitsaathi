@@ -72,7 +72,9 @@ export function normalizeUpiUri(upiUri: string): string {
     const am = params.get("am") || "";
     const cu = params.get("cu") || "INR";
     const tn = decodeURIComponent(params.get("tn") || "").trim();
-    const tr = params.get("tr") || "";
+
+    // Generate a strictly unique, clean NPCI-compliant transaction reference per attempt
+    const tr = `SS${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
     if (!pa) return upiUri;
 
@@ -81,7 +83,7 @@ export function normalizeUpiUri(upiUri: string): string {
     if (am) parts.push(`am=${encodeURIComponent(am)}`);
     parts.push(`cu=${encodeURIComponent(cu)}`);
     if (tn) parts.push(`tn=${encodeURIComponent(tn)}`);
-    if (tr) parts.push(`tr=${encodeURIComponent(tr)}`);
+    parts.push(`tr=${encodeURIComponent(tr)}`);
 
     return `upi://pay?${parts.join("&")}`;
   } catch {
@@ -182,31 +184,41 @@ export async function openUpiWithApp(appId: UpiAppId, upiUri: string): Promise<v
   const normalized = normalizeUpiUri(upiUri);
   console.log(`[UPI] Opening app '${appId}' with normalized canonical URI: ${normalized}`);
 
-  // Canonical upi://pay URI is the ONLY format that NPCI & UPI apps (PhonePe, GPay, Paytm, BHIM)
-  // parse to pre-fill payee VPA, payee name, amount, and transaction note.
-  // Custom schemes like phonepe:// open the app home tab without pre-filling details.
+  // On Android, attempt direct package-targeted intent first
+  if (Platform.OS === "android" && appId !== "other") {
+    const androidIntentUri = buildAndroidIntentUri(appId, upiUri);
+    if (androidIntentUri) {
+      try {
+        console.log(`[UPI] Attempting Android intent URI for '${appId}': ${androidIntentUri}`);
+        await Linking.openURL(androidIntentUri);
+        console.log(`[UPI] Successfully launched Android package intent.`);
+        return;
+      } catch (err) {
+        console.warn(`[UPI] Package intent failed for '${appId}', trying canonical upi://`, err);
+      }
+    }
+  }
+
+  // Canonical upi://pay URI launch
   try {
     console.log(`[UPI] Attempting canonical upi://pay launch...`);
     await Linking.openURL(normalized);
     console.log(`[UPI] Successfully launched canonical upi://pay link.`);
     return;
   } catch (error) {
-    console.warn(`[UPI] Primary canonical upi://pay launch failed:`, error);
+    console.warn(`[UPI] Canonical upi://pay launch failed:`, error);
   }
 
-  // Fallback to app-specific scheme if canonical upi:// failed
-  const appPayUri = buildAppPayUri(appId, normalized);
-  if (appPayUri !== normalized) {
+  // Play Store fallback if target app is missing
+  const pkg = ANDROID_UPI_PACKAGES[appId];
+  if (Platform.OS === "android" && pkg) {
     try {
-      console.log(`[UPI] Fallback: Attempting app-specific scheme: ${appPayUri}`);
-      const canOpen = await Linking.canOpenURL(appPayUri);
-      if (canOpen) {
-        await Linking.openURL(appPayUri);
-        console.log(`[UPI] Successfully launched app-specific scheme.`);
-        return;
-      }
-    } catch (fallbackError) {
-      console.warn(`[UPI] Fallback app-specific scheme failed:`, fallbackError);
+      console.log(`[UPI] App '${appId}' missing or failed to launch. Redirecting to Play Store...`);
+      await Linking.openURL(`market://details?id=${pkg}`);
+      return;
+    } catch {
+      await Linking.openURL(`https://play.google.com/store/apps/details?id=${pkg}`);
+      return;
     }
   }
 

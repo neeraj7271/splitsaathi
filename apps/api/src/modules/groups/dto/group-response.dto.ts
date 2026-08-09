@@ -225,6 +225,9 @@ export class InviteResponseDto {
   @ApiProperty()
   token!: string;
 
+  @ApiProperty({ nullable: true })
+  code!: string | null;
+
   @ApiProperty()
   joinUrl!: string;
 
@@ -239,6 +242,7 @@ export class InviteResponseDto {
       id: entity.id,
       groupId: entity.groupId,
       token: entity.token,
+      code: entity.code ?? null,
       joinUrl,
       expiresAt: entity.expiresAt.toISOString(),
       maxUses: entity.maxUses

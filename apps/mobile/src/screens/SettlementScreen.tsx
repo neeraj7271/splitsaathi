@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { AppState, Image, Modal, Pressable, StyleSheet, View, Alert, TextInput, Share, Platform } from "react-native";
+import { ActivityIndicator, AppState, Image, Modal, Pressable, StyleSheet, Text, View, Alert, TextInput, Share, Platform } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,8 @@ try {
 }
 import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, Copy, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
+import Svg, { Defs, G, Path, Rect, Text as SvgText, TSpan, Line, Circle, LinearGradient, Stop, Image as SvgImage } from "react-native-svg";
+const QRCodeLib = require("qrcode");
 
 import { apiClient } from "../api/client";
 import { copyText } from "../utils/clipboard";
@@ -57,6 +59,34 @@ import {
 } from "../utils/upiApps";
 
 import { AmazonPayIcon, BankFinanceLoanIcon, BhimAppIcon, FourSquaresLineIcon, GooglePayIcon, PaytmIcon, PhonepeIcon, WaWhatsappIcon } from "../components/UpiIcons";
+
+function generateQrSvgPath(qrPayload: string, sizePx: number, offsetX: number, offsetY: number): string {
+  if (!qrPayload) return "";
+  try {
+    const qr = QRCodeLib.create(qrPayload, { errorCorrectionLevel: "M" });
+    const moduleCount = qr.modules.size;
+    const cellSize = sizePx / moduleCount;
+    const data = qr.modules.data;
+
+    let pathD = "";
+    for (let r = 0; r < moduleCount; r++) {
+      for (let c = 0; c < moduleCount; c++) {
+        if (data[r * moduleCount + c]) {
+          const x = (offsetX + c * cellSize).toFixed(2);
+          const y = (offsetY + r * cellSize).toFixed(2);
+          const w = cellSize.toFixed(2);
+          pathD += `M ${x} ${y} h ${w} v ${w} h -${w} Z `;
+        }
+      }
+    }
+    return pathD;
+  } catch (err) {
+    console.warn("Failed to generate QR SVG path:", err);
+    return "";
+  }
+}
+
+const logoMarkAsset = Image.resolveAssetSource(require("../../assets/brand/logo-mark.png"));
 
 type SettlementMode = "suggested" | "custom";
 type PaymentMethod = "cash" | "upi";
@@ -150,12 +180,52 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   const [showAllHistory, setShowAllHistory] = useState(false);
   
   const qrRef = useRef<any>(null);
-
+  const posterSvgRef = useRef<any>(null);
 
   const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
   const [vpaCopied, setVpaCopied] = useState(false);
+  const [savingQr, setSavingQr] = useState(false);
+  const [qrSavedToGallery, setQrSavedToGallery] = useState(false);
   const [proofPreviewUri, setProofPreviewUri] = useState<string>();
+
+  const saveQrToGallery = async () => {
+    if (!MediaLibraryModule) return;
+    try {
+      setSavingQr(true);
+      const perm = await MediaLibraryModule.requestPermissionsAsync();
+      if (!perm.granted) {
+        setHandoffError("Permission to save images to gallery was denied.");
+        return;
+      }
+
+      const captureRef = posterSvgRef.current || qrRef.current;
+      if (!captureRef?.toDataURL) {
+        throw new Error("SVG poster ref unavailable for export.");
+      }
+
+      captureRef.toDataURL(async (data: string) => {
+        try {
+          const filename = `${FileSystem.cacheDirectory}splitsaathi_qr_${Date.now()}.png`;
+          const base64Data = data.replace(/^data:image\/\w+;base64,/, "");
+          await FileSystem.writeAsStringAsync(filename, base64Data, {
+            encoding: FileSystem.EncodingType.Base64
+          });
+          await MediaLibraryModule.createAssetAsync(filename);
+          setQrSavedToGallery(true);
+          setTimeout(() => setQrSavedToGallery(false), 3000);
+        } catch (e) {
+          console.error("Save QR failed:", e);
+          setHandoffError("Failed to save QR poster to gallery.");
+        } finally {
+          setSavingQr(false);
+        }
+      });
+    } catch (e) {
+      console.error("Save QR permission error:", e);
+      setSavingQr(false);
+    }
+  };
   const [proofLoading, setProofLoading] = useState(false);
   const settlementDetail = useSettlementDetailModal();
 
@@ -504,6 +574,34 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     }
   });
 
+  const cancelIntent = useMutation({
+    mutationFn: () => {
+      if (!intent) {
+        throw new Error("No active settlement intent to cancel.");
+      }
+      return apiClient.cancelSettlementIntent(intent.id);
+    },
+    onSuccess: () => {
+      setIntent(undefined);
+      if (selectedGroupId) {
+        void queryClient.invalidateQueries({ queryKey: ["settlementHistory", selectedGroupId] });
+        void queryClient.invalidateQueries({ queryKey: ["settlementSuggestions", selectedGroupId] });
+      }
+      dialog?.showDialog({
+        title: "Settlement cancelled",
+        message: "This intent has been cancelled.",
+        tone: "info"
+      });
+    },
+    onError: (error: Error) => {
+      dialog?.showDialog({
+        title: "Could not cancel settlement",
+        message: error.message,
+        tone: "error"
+      });
+    }
+  });
+
   const submitProof = useMutation({
     mutationFn: () => {
       if (!intent) {
@@ -648,10 +746,41 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
     (paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa);
   const canCreateUpi =
     paymentMethod === "cash" || Boolean(payeeVpa.trim()) || selectedPayeeHasDefaultVpa;
+  const matchingSuggestion = useMemo(() => {
+    if (!intent) return undefined;
+    return payableSuggestions.find(
+      (s) => s.payerParticipantId === intent.payerParticipantId && s.payeeParticipantId === intent.payeeParticipantId
+    );
+  }, [intent, payableSuggestions]);
+
+  const isDraftIntent = Boolean(
+    intent &&
+      ["intent_created", "intent_generated", "payer_opened_upi_app", "awaiting_payment_evidence"].includes(intent.state)
+  );
+
   const activeAmount =
-    intent && !isTerminalState(intent.state)
-      ? intent.amountMinor
-      : selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
+    isDraftIntent && matchingSuggestion
+      ? matchingSuggestion.amountMinor
+      : intent && !isTerminalState(intent.state)
+        ? intent.amountMinor
+        : selectedSuggestion?.amountMinor ?? parseAmountToMinor(customAmount);
+
+  const activeQrPayload = useMemo(() => {
+    if (!intent) return "";
+    const rawQr = intent.qrPayload || intent.upiUri || "";
+    if (!rawQr) return "";
+    if (isDraftIntent && matchingSuggestion && matchingSuggestion.amountMinor !== intent.amountMinor) {
+      try {
+        const urlStr = rawQr.startsWith("upi://") ? rawQr : `upi://${rawQr}`;
+        const url = new URL(urlStr);
+        url.searchParams.set("am", (matchingSuggestion.amountMinor / 100).toFixed(2));
+        return url.toString();
+      } catch {
+        return rawQr;
+      }
+    }
+    return rawQr;
+  }, [intent, isDraftIntent, matchingSuggestion]);
   const refreshing =
     groupQuery.isRefetching || suggestionsQuery.isRefetching || historyQuery.isRefetching;
 
@@ -718,7 +847,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
         {intent ? (
           <>
             <ThemedText variant="title" numberOfLines={1}>
-              {canConfirmAsAdmin ? "Confirm payment" : "Settle up"}
+              {canConfirmAsAdmin ? "Confirm payment" : "Settle"}
             </ThemedText>
             <View style={styles.secureLine}>
               <ThemedText variant="bodySm" tone="muted">
@@ -769,7 +898,29 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
       ) : null}
       {!selectedGroupId ? <EmptyState title="No group selected" body="Select a group with balances before creating UPI settlement intents." /> : null}
 
-      {(intent || canPayAnyone) ? (
+      {canPayAnyone ? (
+        <View style={{ marginTop: 8 }}>
+          <SegmentedControl
+            value={mode}
+            options={[
+              { label: "Suggested balance", value: "suggested" },
+              { label: "Custom / Partial amount", value: "custom" }
+            ]}
+            onChange={(newMode) => {
+              setMode(newMode);
+              if (newMode === "custom") {
+                setIntent(undefined);
+                if (!payeeParticipantId && payableSuggestions[0]) {
+                  setPayeeParticipantId(payableSuggestions[0].payeeParticipantId);
+                  setPayeeVpa(resolvePayeeDefaultVpa(payableSuggestions[0].payeeParticipantId));
+                }
+              }
+            }}
+          />
+        </View>
+      ) : null}
+
+      {(intent || canPayAnyone) && mode === "suggested" ? (
       <DataSurface>
         <View style={styles.formBlock}>
           <SettlementStepper state={intent?.state} />
@@ -780,16 +931,40 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
             <ThemedText variant="balanceHero" align="center">
               {formatMoney(activeAmount)}
             </ThemedText>
+            {isDraftIntent ? (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 6 }}>
+                <Pressable
+                  onPress={() => {
+                    setIntent(undefined);
+                    setMode("custom");
+                  }}
+                >
+                  <ThemedText variant="caption" tone="info" style={{ fontWeight: "700" }}>
+                    Pay partial amount
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => cancelIntent.mutate()}
+                  disabled={cancelIntent.isPending}
+                >
+                  <ThemedText variant="caption" tone="owe" style={{ fontWeight: "700" }}>
+                    {cancelIntent.isPending ? "Cancelling..." : "Cancel payment"}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         </View>
       </DataSurface>
       ) : null}
 
-      {!intent ? (
+      {!intent || mode === "custom" ? (
         <View style={styles.section}>
           {canPayAnyone ? (
             <>
-          <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4 }}>How do you want to settle?</ThemedText>
+
+              <ThemedText variant="bodyMedium" style={{ paddingHorizontal: 4, marginTop: 12 }}>How do you want to settle?</ThemedText>
           <View style={styles.methodRow}>
             <Pressable
               onPress={() => setPaymentMethod("upi")}
@@ -1074,37 +1249,176 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               <DataSurface>
                 <View style={styles.upiHandoffHeader}>
                   <View style={[styles.upiHandoffIcon, { backgroundColor: "transparent" }]}>
-                    <DeviceMobileCamera size={24} color={theme.colors.info} weight="duotone" />
+                    <QrCode size={24} color={theme.colors.info} weight="duotone" />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <ThemedText variant="bodyMedium">Pay using UPI</ThemedText>
-                    <ThemedText variant="bodySm" tone="muted">Scan any app or pay from your installed UPI apps</ThemedText>
+                    <ThemedText variant="bodyMedium">Pay using UPI QR Code</ThemedText>
+                    <ThemedText variant="bodySm" tone="muted">Scan QR code or save to gallery to pay with any UPI app</ThemedText>
                   </View>
                 </View>
                 <View style={styles.formBlock}>
+                  {/* Payment app icons redirect flow commented out per user request
                   <View style={styles.appRow}>
                     {upiApps.installed.map((app) => renderUpiAppButton(app))}
-                    <Pressable
-                      onPress={() => setShowOtherUpiApps((value) => !value)}
-                      style={[styles.upiApp, { borderColor: theme.colors.hairline, borderRadius: 14 }]}
-                    >
-                      <View style={[styles.upiBadge, { backgroundColor: theme.colors.inkMuted }]}>
-                        <DotsThree size={20} color="#fff" weight="bold" />
-                      </View>
-                      <ThemedText variant="caption">More</ThemedText>
-                    </Pressable>
                   </View>
-                  {showOtherUpiApps ? (
-                    <View style={styles.otherAppsBlock}>
-                      <ThemedText variant="caption" tone="muted">
-                        Not detected on this phone — tap to try opening anyway.
-                      </ThemedText>
-                      <View style={styles.appRow}>
-                        {upiApps.notInstalled.map((app) => renderUpiAppButton(app))}
-                        {renderUpiAppButton({ id: "other", label: "Any UPI app", brandColor: theme.colors.inkMuted })}
+                  */}
+
+                  {intent.qrPayload ? (
+                    <>
+                      {/* Offscreen Pixel-Perfect Merchant Poster SVG for Export */}
+                      <View style={{ position: "absolute", left: -9999, top: -9999 }}>
+                        <Svg
+                          ref={posterSvgRef}
+                          width={600}
+                          height={840}
+                          viewBox="0 0 600 840"
+                        >
+                          <Defs>
+                            <LinearGradient id="posterHeaderGrad" x1="0" y1="0" x2="1" y2="1">
+                              <Stop offset="0" stopColor="#046A60" />
+                              <Stop offset="1" stopColor="#0D9488" />
+                            </LinearGradient>
+                          </Defs>
+
+                          {/* Outer White Card with Border */}
+                          <Rect width="600" height="840" rx="36" fill="#FFFFFF" />
+                          <Rect width="600" height="840" rx="36" fill="none" stroke="#E2E8F0" strokeWidth="2" />
+
+                          {/* Top Dark Teal Header with Smooth Wave Curve */}
+                          <Path
+                            d="M 0 0 L 600 0 L 600 135 C 440 175 280 120 0 155 Z"
+                            fill="url(#posterHeaderGrad)"
+                          />
+
+                          {/* SplitSaathi Logo Image */}
+                          {logoMarkAsset?.uri ? (
+                            <SvgImage
+                              href={logoMarkAsset.uri}
+                              x="115"
+                              y="30"
+                              width="58"
+                              height="58"
+                            />
+                          ) : (
+                            <G x="125" y="32">
+                              <Circle cx="28" cy="28" r="26" fill="#0D9488" />
+                              <SvgText x="28" y="37" fill="#FFFFFF" fontSize="24" fontWeight="bold" textAnchor="middle">₹</SvgText>
+                            </G>
+                          )}
+
+                          {/* Header Brand Text */}
+                          <SvgText x="188" y="65" fill="#FFFFFF" fontSize="36" fontWeight="800">
+                            Split<TSpan fill="#C084FC">Saathi</TSpan>
+                          </SvgText>
+                          <SvgText x="188" y="94" fill="#99F6E4" fontSize="11" fontWeight="700" letterSpacing="1.8">
+                            SMART. SIMPLE. SETTLED.
+                          </SvgText>
+
+                          {/* Sub-Header Title */}
+                          <SvgText x="300" y="195" fill="#0F172A" fontSize="28" fontWeight="bold" textAnchor="middle">
+                            Scan &amp; Pay
+                          </SvgText>
+                          <SvgText x="300" y="222" fill="#64748B" fontSize="15" fontWeight="500" textAnchor="middle">
+                            Pay using any UPI app
+                          </SvgText>
+
+                          {/* Decorative Dot Patterns */}
+                          <G fill="#CBD5E1">
+                            <Circle cx="45" cy="185" r="2.5" /><Circle cx="60" cy="185" r="2.5" /><Circle cx="75" cy="185" r="2.5" />
+                            <Circle cx="45" cy="200" r="2.5" /><Circle cx="60" cy="200" r="2.5" /><Circle cx="75" cy="200" r="2.5" />
+                            <Circle cx="45" cy="215" r="2.5" /><Circle cx="60" cy="215" r="2.5" /><Circle cx="75" cy="215" r="2.5" />
+
+                            <Circle cx="525" cy="185" r="2.5" /><Circle cx="540" cy="185" r="2.5" /><Circle cx="555" cy="185" r="2.5" />
+                            <Circle cx="525" cy="200" r="2.5" /><Circle cx="540" cy="200" r="2.5" /><Circle cx="555" cy="200" r="2.5" />
+                            <Circle cx="525" cy="215" r="2.5" /><Circle cx="540" cy="215" r="2.5" /><Circle cx="555" cy="215" r="2.5" />
+                          </G>
+
+                          {/* Center QR Code Container Box */}
+                          <Rect x="110" y="245" width="380" height="380" rx="32" fill="#FFFFFF" stroke="#0D9488" strokeWidth="3.5" />
+
+                          {/* High-Contrast Vector QR Matrix Path */}
+                          <Path
+                            d={generateQrSvgPath(activeQrPayload || intent.qrPayload, 300, 150, 285)}
+                            fill="#000000"
+                          />
+
+                          {/* Central SplitSaathi Logo Badge */}
+                          <Rect x="255" y="390" width="90" height="90" rx="20" fill="#FFFFFF" stroke="#0D9488" strokeWidth="2.5" />
+                          {logoMarkAsset?.uri ? (
+                            <SvgImage
+                              href={logoMarkAsset.uri}
+                              x="263"
+                              y="398"
+                              width="74"
+                              height="74"
+                            />
+                          ) : (
+                            <G x="270" y="405">
+                              <Circle cx="30" cy="30" r="24" fill="#0D9488" />
+                              <SvgText x="30" y="38" fill="#FFFFFF" fontSize="22" fontWeight="bold" textAnchor="middle">₹</SvgText>
+                            </G>
+                          )}
+
+                          {/* UPI ID & Amount Section */}
+                          <Line x1="60" y1="660" x2="540" y2="660" stroke="#E2E8F0" strokeWidth="1.5" />
+                          <Rect x="255" y="649" width="90" height="22" rx="4" fill="#FFFFFF" />
+                          <SvgText x="300" y="665" fill="#64748B" fontSize="12" fontWeight="bold" textAnchor="middle">
+                            UPI ID
+                          </SvgText>
+
+                          {/* Payee VPA */}
+                          <SvgText x="300" y="705" fill="#0F172A" fontSize="28" fontWeight="800" textAnchor="middle">
+                            {payeeVpa || vpaFromUpiUri(intent.upiUri) || "Payee UPI ID"}
+                          </SvgText>
+
+                          {/* Mint Green Amount Pill */}
+                          <Rect x="195" y="722" width="210" height="48" rx="24" fill="#E6F7F5" />
+                          <SvgText x="300" y="755" fill="#00796B" fontSize="24" fontWeight="800" textAnchor="middle">
+                            {formatMoney(activeAmount, intent.currencyCode)}
+                          </SvgText>
+
+                          {/* Bottom Footer Bar */}
+                          <Rect x="0" y="785" width="600" height="55" fill="#F0FDF4" />
+                          <Line x1="0" y1="785" x2="600" y2="785" stroke="#E2E8F0" strokeWidth="1" />
+                          <Line x1="200" y1="795" x2="200" y2="830" stroke="#CBD5E1" strokeWidth="1" />
+                          <Line x1="400" y1="795" x2="400" y2="830" stroke="#CBD5E1" strokeWidth="1" />
+
+                          <SvgText x="100" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">✓ Secure Payments</SvgText>
+                          <SvgText x="300" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">⚡ Instant Settlement</SvgText>
+                          <SvgText x="500" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">👥 Trusted by SplitSaathi</SvgText>
+                        </Svg>
+                      </View>
+
+                      <View style={styles.qrSection}>
+                      <View style={styles.qrRow}>
+                        <View style={[styles.qrBox, { backgroundColor: "#FFFFFF", borderColor: theme.colors.hairline }]}>
+                          <QRCode getRef={(c) => (qrRef.current = c)} value={activeQrPayload || intent.qrPayload} size={140} backgroundColor="#FFFFFF" color="#000000" />
+                          <View style={[styles.qrLogoOverlay, { backgroundColor: "#FFFFFF" }]}>
+                            <Image source={require("../../assets/brand/logo-mark.png")} style={{ width: 24, height: 24, resizeMode: "contain" }} />
+                          </View>
+                        </View>
+                        <View style={[styles.qrActions, { gap: 8 }]}>
+                          <ThemedText variant="bodyMedium" style={{ fontWeight: "700" }}>
+                            Scan QR to Pay
+                          </ThemedText>
+                          <ThemedText variant="caption" tone="muted">
+                            Scan with PhonePe, GPay, Paytm, or BHIM camera scanner.
+                          </ThemedText>
+                          {MediaLibraryModule ? (
+                            <Button
+                              label={qrSavedToGallery ? "Saved!" : "Save"}
+                              variant="secondary"
+                              Icon={ImageSquare}
+                              onPress={saveQrToGallery}
+                              loading={savingQr}
+                              disabled={savingQr}
+                            />
+                          ) : null}
+                        </View>
                       </View>
                     </View>
-                  ) : null}
+                  </>
+                ) : null}
 
                   <View style={[styles.copyVpaBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
                     <View style={{ flex: 1, gap: 2 }}>
@@ -1122,43 +1436,15 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                           setTimeout(() => setVpaCopied(false), 2500);
                         }
                       }}
-                      style={[styles.copyBtn, { backgroundColor: theme.colors.confirmed, borderRadius: 10 }]}
+                      style={[{ backgroundColor: vpaCopied ? theme.colors.confirmed : theme.colors.neutralChipBg, borderRadius: 10, padding: 8 }]}
                     >
-                      <Copy size={15} color="#fff" weight="bold" />
-                      <ThemedText variant="caption" style={{ color: "#fff", fontWeight: "700" }}>
-                        {vpaCopied ? "Copied!" : "Copy VPA"}
-                      </ThemedText>
+                      {vpaCopied ? (
+                        <CheckCircle size={18} color="#fff" weight="bold" />
+                      ) : (
+                        <Copy size={18} color={theme.colors.ink} weight="bold" />
+                      )}
                     </Pressable>
                   </View>
-
-                  <InlineNotice
-                    title="PhonePe / GPay Limit Tip"
-                    body="If PhonePe or GPay shows a gallery QR or limit warning, tap 'Copy VPA', open PhonePe -> 'To Mobile / UPI ID', and paste the UPI ID to pay directly."
-                    tone="pending"
-                  />
-
-                  {intent.qrPayload ? (
-                    <View style={styles.qrSection}>
-                      <View style={styles.dividerRow}>
-                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
-                        <ThemedText variant="caption" tone="muted">OR</ThemedText>
-                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.hairline }]} />
-                      </View>
-                      <View style={styles.qrRow}>
-                        <View style={[styles.qrBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}>
-                          <QRCode getRef={(c) => (qrRef.current = c)} value={intent.qrPayload} size={130} backgroundColor="transparent" color={theme.mode === "dark" ? theme.colors.ink : "#000"} />
-                          <View style={[styles.qrLogoOverlay, { backgroundColor: theme.colors.surface }]}>
-                            <Image source={require("../../assets/brand/logo-mark.png")} style={{ width: 24, height: 24, resizeMode: "contain" }} />
-                          </View>
-                        </View>
-                        <View style={styles.qrActions}>
-                          <ThemedText variant="bodyMedium">
-                            Scan this QR to pay <ThemedText tone="muted">with any UPI app</ThemedText>
-                          </ThemedText>
-                        </View>
-                      </View>
-                    </View>
-                  ) : null}
                 </View>
               </DataSurface>
 
@@ -1195,26 +1481,30 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                       </View>
                       <View style={{ flex: 1, gap: 2 }}>
                         <ThemedText variant="bodyMedium">Payment proof</ThemedText>
-                        <ThemedText variant="bodySm" tone="muted">Add UTR or screenshot after payment</ThemedText>
+                        <ThemedText variant="caption" tone="muted" numberOfLines={1}>
+                          {proofAttachment ? proofAttachment.name : "Attach screenshot or PDF (JPG, PNG, PDF)"}
+                        </ThemedText>
                       </View>
-                      <Pressable style={styles.addNowButton}>
-                        <ThemedText variant="bodySm" tone="info">Add now</ThemedText>
-                        <CaretDown size={14} color={theme.colors.info} weight="bold" />
+                      <Pressable
+                        onPress={() => uploadProof.mutate()}
+                        disabled={uploadProof.isPending}
+                        style={({ pressed }) => [{
+                          backgroundColor: proofAttachment ? theme.colors.confirmed : theme.colors.neutralChipBg,
+                          borderRadius: 10,
+                          padding: 8,
+                          opacity: pressed || uploadProof.isPending ? 0.7 : 1
+                        }]}
+                      >
+                        {uploadProof.isPending ? (
+                          <ActivityIndicator size="small" color={proofAttachment ? "#fff" : theme.colors.ink} />
+                        ) : proofAttachment ? (
+                          <CheckCircle size={18} color="#fff" weight="bold" />
+                        ) : (
+                          <Paperclip size={18} color={theme.colors.ink} weight="bold" />
+                        )}
                       </Pressable>
                     </View>
                     <View style={[styles.formBlock, { borderTopWidth: 0, paddingTop: 12 }]}>
-                      <View style={styles.proofInputRow}>
-                        <Pressable
-                          onPress={() => uploadProof.mutate()}
-                          style={[styles.proofInputCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.hairline }]}
-                        >
-                          <Paperclip size={18} color={theme.colors.inkMuted} weight="duotone" />
-                          <View style={{ flex: 1, gap: 2 }}>
-                            <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>{proofAttachment ? proofAttachment.name : "Upload screenshot / PDF"}</ThemedText>
-                            <ThemedText variant="caption" tone="muted" numberOfLines={1}>JPG, PNG or PDF (max 5 MB)</ThemedText>
-                          </View>
-                        </Pressable>
-                      </View>
                       <InputField label="UTR or UPI reference" value={utrText} onChangeText={setUtrText} autoCapitalize="characters" Icon={Receipt} />
                       <Button
                         label="Submit proof"
@@ -1426,7 +1716,11 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                           ? [
                               {
                                 label: "Continue settlement",
-                                onPress: (settlement) => setIntent(settlement)
+                                onPress: (settlement) => {
+                                  setIntent(settlement);
+                                  setMode("suggested");
+                                  settlementDetail.close();
+                                }
                               }
                             ]
                           : undefined
@@ -1818,5 +2112,106 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8
+  },
+  posterCardContainer: {
+    width: 340,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    gap: 16
+  },
+  posterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  posterBrandTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.5
+  },
+  posterBrandSubtitle: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748B",
+    letterSpacing: 1
+  },
+  posterPayeeBlock: {
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F8FAFC",
+    width: "100%",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  posterPayeeName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A"
+  },
+  posterVpaText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569"
+  },
+  posterAmountPill: {
+    backgroundColor: "#059669",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 6
+  },
+  posterAmountText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#FFFFFF"
+  },
+  posterQrBox: {
+    position: "relative",
+    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  posterQrLogoOverlay: {
+    position: "absolute",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#E2E8F0"
+  },
+  posterUpiAppsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginTop: 4
+  },
+  posterScanHint: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+    textAlign: "center"
+  },
+  posterFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4
+  },
+  posterFooterText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669"
   }
 });

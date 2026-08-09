@@ -109,7 +109,7 @@ export class SettlementCommandService {
             amountMinor: command.amountMinor,
             currencyCode,
             note,
-            ledgerReference: `SS-${settlementIntentId.replaceAll('-', '').slice(0, 24).toUpperCase()}`
+            ledgerReference: `SS${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`
           })
         },
         metadata: { command: 'generate_upi_intent' }
@@ -213,7 +213,7 @@ export class SettlementCommandService {
               amountMinor: intent.amountMinor,
               currencyCode: intent.currencyCode,
               note: intent.note,
-              ledgerReference: `SS-${command.settlementIntentId.replaceAll('-', '').slice(0, 24).toUpperCase()}`
+              ledgerReference: `SS${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`
             })
           },
           metadata: { command: 'regenerate_upi_intent' }

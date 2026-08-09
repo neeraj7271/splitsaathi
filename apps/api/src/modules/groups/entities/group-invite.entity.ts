@@ -14,6 +14,10 @@ export class GroupInviteEntity {
   @Column({ type: 'varchar', length: 96 })
   token!: string;
 
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  code!: string | null;
+
   @Column({ name: 'created_by_user_id', type: 'uuid' })
   createdByUserId!: string;
 

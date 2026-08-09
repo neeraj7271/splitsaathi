@@ -96,6 +96,13 @@ export class GroupsController {
     return this.groupsService.previewInvite(token);
   }
 
+  @Public()
+  @Get('invites/by-code/:code')
+  @ApiOkResponse({ type: InviteResponseDto })
+  previewInviteByCode(@Param('code') code: string): Promise<InviteResponseDto> {
+    return this.groupsService.previewInviteByCode(code);
+  }
+
   @Post('invites/:token/claim')
   @ApiOkResponse({ type: GroupResponseDto })
   claimInvite(
@@ -104,6 +111,16 @@ export class GroupsController {
     @Body() dto: ClaimInviteDto
   ): Promise<GroupResponseDto> {
     return this.groupsService.claimInvite(currentUser.userId, token, dto);
+  }
+
+  @Post('invites/by-code/:code/claim')
+  @ApiOkResponse({ type: GroupResponseDto })
+  claimInviteByCode(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('code') code: string,
+    @Body() dto: ClaimInviteDto
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.claimInviteByCode(currentUser.userId, code, dto);
   }
 
   @Post(':groupId/participants')

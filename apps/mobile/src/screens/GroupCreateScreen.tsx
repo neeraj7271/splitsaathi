@@ -55,8 +55,8 @@ const tabOptions: Array<{
   value: GroupsTab;
   Icon: React.ComponentType<{ size?: number; color?: string; weight?: "duotone" | "bold" | "fill" | "regular" }>;
 }> = [
-  { label: "Create group", value: "create", Icon: UserPlus },
-  { label: "Group list", value: "list", Icon: ListBullets }
+  { label: "Group list", value: "list", Icon: ListBullets },
+  { label: "Create group", value: "create", Icon: UserPlus }
 ];
 
 const balanceFilters: Array<{
@@ -730,3 +730,125 @@ const styles = StyleSheet.create({
     marginTop: 4
   }
 });
+
+function JoinGroupTab({
+  navigation,
+  onOpenScanner
+}: {
+  navigation: AppNavigation;
+  onOpenScanner: () => void;
+}) {
+  const theme = useTheme();
+  const { showDialog } = useAppDialog();
+  const queryClient = useQueryClient();
+  const [code, setCode] = useState("");
+  const [preview, setPreview] = useState<{ id: string; groupId: string; joinUrl: string; token: string; code?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const previewMutation = useMutation({
+    mutationFn: (cleanCode: string) => apiClient.previewInviteByCode(cleanCode),
+    onSuccess: (data) => {
+      setPreview(data);
+      setError(null);
+    },
+    onError: (err: Error) => {
+      setPreview(null);
+      setError(err.message || "Invalid or expired group code.");
+    }
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: () => {
+      if (preview?.code) {
+        return apiClient.claimInviteByCode(preview.code);
+      }
+      if (preview?.token) {
+        return apiClient.claimInvite(preview.token);
+      }
+      throw new Error("No valid invite to claim.");
+    },
+    onSuccess: (joinedGroup) => {
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      navigation.setSelectedGroupId(joinedGroup.id);
+      navigation.go("groupDetail");
+      showDialog({
+        title: "Joined group!",
+        message: `You are now a member of ${joinedGroup.name}.`,
+        tone: "success"
+      });
+    },
+    onError: (err: Error) => {
+      showDialog({
+        title: "Could not join group",
+        message: err.message,
+        tone: "error"
+      });
+    }
+  });
+
+  return (
+    <View style={{ gap: 16 }}>
+      <DataSurface>
+        <View style={{ gap: 12 }}>
+          <ThemedText variant="bodyMedium" style={{ fontWeight: "700" }}>
+            Join with Group Code
+          </ThemedText>
+          <ThemedText variant="bodySm" tone="muted">
+            Ask the group creator for their 6-character group code (e.g. X7K9P2) or scan their QR code.
+          </ThemedText>
+
+          <InputField
+            label="Group Code"
+            value={code}
+            onChangeText={(val) => {
+              const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+              setCode(clean);
+              if (clean.length >= 5) {
+                previewMutation.mutate(clean);
+              } else {
+                setPreview(null);
+                setError(null);
+              }
+            }}
+            placeholder="e.g. X7K9P2"
+            autoCapitalize="characters"
+          />
+
+          {previewMutation.isPending ? (
+            <ActivityIndicator color={theme.colors.confirmed} style={{ marginVertical: 8 }} />
+          ) : null}
+
+          {error ? (
+            <InlineNotice title="Invalid Code" body={error} tone="owe" />
+          ) : null}
+
+          {preview ? (
+            <View style={{ backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.08), padding: 12, borderRadius: theme.radius.md, gap: 8 }}>
+              <ThemedText variant="bodyMedium" style={{ fontWeight: "700", color: theme.colors.confirmed }}>
+                Group Code Valid
+              </ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                Group Invite Code: {preview.code ?? code}
+              </ThemedText>
+              <Button
+                label="Join Group Now"
+                onPress={() => claimMutation.mutate()}
+                loading={claimMutation.isPending}
+              />
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
+            <Button
+              label="Scan Group QR"
+              variant="secondary"
+              Icon={QrCode}
+              onPress={onOpenScanner}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+      </DataSurface>
+    </View>
+  );
+}

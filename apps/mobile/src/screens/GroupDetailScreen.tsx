@@ -89,6 +89,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
   const [tab, setTab] = useState<GroupTab>("activity");
   const [explainingExpenseId, setExplainingExpenseId] = useState<string>();
   const [inviteUrl, setInviteUrl] = useState<string>();
+  const [inviteCode, setInviteCode] = useState<string>();
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
   const [availableContacts, setAvailableContacts] = useState<SyncedContact[]>([]);
@@ -190,7 +191,10 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
 
   const createInvite = useMutation({
     mutationFn: () => apiClient.createInvite(selectedGroupId as string),
-    onSuccess: (response) => setInviteUrl(response.inviteUrl)
+    onSuccess: (response) => {
+      setInviteUrl(response.inviteUrl);
+      if (response.code) setInviteCode(response.code);
+    }
   });
   const archiveGroup = useMutation({
     mutationFn: () => apiClient.archiveGroup(selectedGroupId as string),
@@ -722,7 +726,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               </View>
             </View>
             <View style={[styles.primaryRow, { borderTopColor: theme.colors.hairline }]}>
-              <Button label="Settle up" Icon={Handshake} onPress={() => navigation.go("settlement")} style={styles.inlineButton} />
+              <Button label="Settle" Icon={Handshake} onPress={() => navigation.go("settlement")} style={styles.inlineButton} />
               <Button
                 label="Add expense"
                 variant="secondary"
@@ -1024,6 +1028,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
               canEditGroup={canEditGroup}
               isOwner={Boolean(isOwner)}
               inviteUrl={inviteUrl}
+              inviteCode={inviteCode}
               createInvite={() => createInvite.mutate()}
               createInvitePending={createInvite.isPending}
               archiveGroup={confirmDeleteGroup}
@@ -1359,6 +1364,7 @@ function PeopleManagement({
   canEditGroup,
   isOwner,
   inviteUrl,
+  inviteCode,
   createInvite,
   createInvitePending,
   archiveGroup,
@@ -1380,6 +1386,7 @@ function PeopleManagement({
   canEditGroup: boolean;
   isOwner: boolean;
   inviteUrl?: string;
+  inviteCode?: string;
   createInvite: () => void;
   createInvitePending: boolean;
   archiveGroup: () => void;
@@ -1497,6 +1504,20 @@ function PeopleManagement({
             </View>
             {inviteUrl ? (
               <View style={styles.inviteBlock}>
+                {inviteCode ? (
+                  <View style={{ backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.12), padding: 12, borderRadius: theme.radius.md, alignItems: "center", gap: 4, marginBottom: 8 }}>
+                    <ThemedText variant="caption" tone="muted">
+                      GROUP CODE
+                    </ThemedText>
+                    <ThemedText variant="title" style={{ letterSpacing: 3, fontSize: 22, fontWeight: "800", color: theme.colors.confirmed }} selectable>
+                      {inviteCode}
+                    </ThemedText>
+                    <ThemedText variant="caption" tone="muted">
+                      Friends can enter this 6-character code in Join Group
+                    </ThemedText>
+                  </View>
+                ) : null}
+
                 <ThemedText variant="caption" tone="muted">
                   Invite link
                 </ThemedText>
