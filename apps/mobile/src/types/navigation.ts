@@ -19,6 +19,7 @@ export type AppRoute =
   | "appearanceSettings"
   | "contactsSettings";
 
+
 export interface AppNavigation {
   route: AppRoute;
   selectedGroupId?: string;

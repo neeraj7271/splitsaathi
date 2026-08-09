@@ -1,5 +1,6 @@
-import { BadRequestException, Controller, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Inject, Param, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request';
@@ -87,3 +88,4 @@ export class ReportsController {
     return { from: range.from, to: range.to };
   }
 }
+

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { CaretRight } from "phosphor-react-native";
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -26,9 +27,38 @@ function ensureGoogleSignInConfigured(webClientId: string) {
   GoogleSignin.configure({
     webClientId,
     offlineAccess: false,
-    forceCodeForRefreshToken: false
+    forceCodeForRefreshToken: false,
+    scopes: ["email", "profile"]
   });
   googleSignInConfigured = true;
+}
+
+/**
+ * Signs out from Google to clear the cached account.
+ * Call this on app logout so the next sign-in shows the account chooser.
+ */
+export async function signOutFromGoogle(): Promise<void> {
+  try {
+    if (googleSignInConfigured) {
+      await GoogleSignin.signOut();
+    }
+  } catch {
+    // Ignore errors - Google sign-out is best effort
+  }
+}
+
+/**
+ * Fully revokes Google access (disconnects the app from the user's Google account).
+ * Use if you need to completely disconnect, not just sign out.
+ */
+export async function revokeGoogleAccess(): Promise<void> {
+  try {
+    if (googleSignInConfigured) {
+      await GoogleSignin.revokeAccess();
+    }
+  } catch {
+    // Ignore errors
+  }
 }
 
 export function isGoogleSignInConfigured() {
@@ -44,6 +74,7 @@ type Props = {
   disabled?: boolean;
   beforeSignIn?: () => string | undefined;
   style?: StyleProp<ViewStyle>;
+  showChevron?: boolean;
 };
 
 export function GoogleSignInButton({
@@ -54,7 +85,8 @@ export function GoogleSignInButton({
   label = "Continue with Google",
   disabled: disabledProp,
   beforeSignIn,
-  style
+  style,
+  showChevron = true
 }: Props) {
   const theme = useTheme();
   const webClientId = resolveWebClientId();
@@ -151,14 +183,17 @@ export function GoogleSignInButton({
           styles.googleBtn,
           style,
           {
-            borderColor: isLight ? "rgba(15,23,42,0.08)" : "transparent",
+            borderColor: isLight ? "#E2E8F0" : "transparent",
             borderWidth: isLight ? 1 : 0,
             opacity: disabled ? 0.55 : pressed ? 0.92 : 1
           }
         ]}
       >
-        {pending ? <ActivityIndicator color={WELCOME_BRAND.GOOGLE_TEXT} /> : <GoogleMark size={22} />}
+        <View style={styles.leftBox}>
+          {pending ? <ActivityIndicator color={WELCOME_BRAND.GOOGLE_TEXT} /> : <GoogleMark size={24} />}
+        </View>
         <Text style={styles.googleLabel}>{label}</Text>
+        {showChevron ? <CaretRight size={18} color="#0D9488" weight="bold" /> : null}
       </Pressable>
       {shownError ? <InlineNotice title="Google sign-in failed" body={shownError} tone="owe" /> : null}
     </>
@@ -168,24 +203,29 @@ export function GoogleSignInButton({
 const styles = StyleSheet.create({
   googleBtn: {
     height: 56,
-    borderRadius: 28,
-    paddingHorizontal: 24,
+    borderRadius: 20,
+    paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
+    justifyContent: "space-between",
     backgroundColor: "#FFFFFF",
     width: "100%",
     shadowColor: "#000000",
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3
+  },
+  leftBox: {
+    width: 32,
+    alignItems: "center",
+    justifyContent: "center"
   },
   googleLabel: {
+    flex: 1,
     fontFamily: "Inter_700Bold",
     fontSize: 16,
-    lineHeight: 22,
-    color: WELCOME_BRAND.GOOGLE_TEXT
+    color: "#0F172A",
+    marginLeft: 8
   }
 });

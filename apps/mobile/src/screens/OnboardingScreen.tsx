@@ -1,17 +1,39 @@
 import React, { useEffect, useState } from "react";
 import {
+  Dimensions,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
+  TextInput,
   View
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as WebBrowser from "expo-web-browser";
-import { Bell, Check, EnvelopeSimple, Key, LinkSimple, Phone, ShieldCheck, UsersThree } from "phosphor-react-native";
+import { Svg, Path, Circle } from "react-native-svg";
+import {
+  Bell,
+  Check,
+  CaretLeft,
+  CaretRight,
+  EnvelopeSimple,
+  Key,
+  LinkSimple,
+  Phone,
+  ShieldCheck,
+  UsersThree,
+  Lightbulb,
+  QrCode,
+  LockSimple,
+  ShareNetwork,
+  Sparkle,
+  X
+} from "phosphor-react-native";
 import { useMutation } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -30,6 +52,66 @@ import { syncDeviceContacts } from "../utils/contactDiscovery";
 import { useTheme } from "../theme";
 
 WebBrowser.maybeCompleteAuthSession();
+
+// Helper: Subtle curved arc for header decoration
+function SvgArc({ color = "rgba(255,255,255,0.12)" }: { color?: string }) {
+  return (
+    <Svg width="100%" height={80} viewBox="0 0 400 80" preserveAspectRatio="none" style={{ position: "absolute", bottom: -40, left: 0 }}>
+      <Path
+        d="M0,80 Q200,0 400,80"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+// SafeSecureIllustration: Clean modern 2D vector illustration (3 users + security shield checkmark)
+export function SafeSecureIllustration({ width = 72, height = 72 }: { width?: number; height?: number }) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 72 72" fill="none">
+      {/* Background Soft Aura */}
+      <Circle cx={36} cy={36} r={32} fill="#F0FDF4" />
+      <Circle cx={36} cy={36} r={28} fill="#CCFBF1" opacity={0.4} />
+
+      {/* Decorative Accent Dots */}
+      <Circle cx={14} cy={18} r={2} fill="#0D9488" opacity={0.4} />
+      <Circle cx={58} cy={16} r={1.5} fill="#6366F1" opacity={0.5} />
+      <Circle cx={60} cy={46} r={2} fill="#0D9488" opacity={0.3} />
+
+      {/* User Group */}
+      {/* Center-Top User (Indigo/Purple) */}
+      <Circle cx={36} cy={19} r={6.5} fill="#4F46E5" />
+      <Path d="M26 33 C26 27.5 30.5 26 36 26 C41.5 26 46 27.5 46 33 Z" fill="#6366F1" />
+
+      {/* Left User (Teal) */}
+      <Circle cx={22} cy={25} r={5.5} fill="#0D9488" />
+      <Path d="M13.5 38 C13.5 33 17.5 31.5 22 31.5 C26.5 31.5 30.5 33 30.5 38 Z" fill="#2DD4BF" />
+
+      {/* Right User (Teal) */}
+      <Circle cx={50} cy={25} r={5.5} fill="#0D9488" />
+      <Path d="M41.5 38 C41.5 33 45.5 31.5 50 31.5 C54.5 31.5 58.5 33 58.5 38 Z" fill="#2DD4BF" />
+
+      {/* Shield Base Shadow */}
+      <Path d="M36 35 L48.5 39 C48.5 50 36 57.5 36 57.5 C36 57.5 23.5 50 23.5 39 Z" fill="#065F46" opacity={0.12} />
+
+      {/* Shield Main Body (Teal) */}
+      <Path d="M36 34 L47.5 38 C47.5 48.5 36 55.5 36 55.5 C36 55.5 24.5 48.5 24.5 38 Z" fill="#0D9488" />
+
+      {/* Shield Inner Layer */}
+      <Path d="M36 36.5 L45 39.8 C45 47.8 36 53.2 36 53.2 C36 53.2 27 47.8 27 39.8 Z" fill="#14B8A6" />
+
+      {/* Shield Checkmark */}
+      <Path d="M31 45.5 L34.5 49 L41.5 42" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  );
+}
+
+// Helper alias for backward compatibility
+function SafeIllustration() {
+  return <SafeSecureIllustration width={64} height={64} />;
+}
 
 type OnboardingStep =
   | "welcome"
@@ -305,7 +387,14 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   useEffect(() => {
     const applyUrl = (url?: string | null) => {
       if (url && /splitsaathi:\/\/join\/|\/join\/|groups\/invites\//i.test(url)) {
-        setInviteLink(url);
+        // Sanitize deep link URL
+        let sanitized = url.trim();
+        try {
+          sanitized = decodeURIComponent(sanitized);
+        } catch {
+          // Use original if decoding fails
+        }
+        setInviteLink(sanitized);
         setStep("join");
       }
     };
@@ -345,6 +434,178 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         googleError={loginWithGoogle.error?.message}
         onJoinInvite={() => setStep("join")}
       />
+    );
+  }
+
+  if (step === "join") {
+    return (
+      <View style={styles.joinRoot}>
+        <StatusBar barStyle="light-content" />
+        {/* Gradient Header */}
+        <LinearGradient
+          colors={[theme.gradients.current.start, theme.gradients.current.end]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.joinHeaderGradient, { paddingTop: Math.max(insets.top, 16) + 16 }]}
+        >
+          <Sparkle size={14} color="rgba(255,255,255,0.5)" weight="fill" style={{ position: "absolute", top: "22%", left: "12%" }} />
+          <Sparkle size={10} color="rgba(255,255,255,0.35)" weight="fill" style={{ position: "absolute", top: "38%", left: "7%" }} />
+          <Sparkle size={14} color="rgba(255,255,255,0.5)" weight="fill" style={{ position: "absolute", top: "22%", right: "10%" }} />
+          <View style={styles.joinHeaderContent}>
+            <View style={styles.joinIconBadge}>
+              <LinkSimple size={32} color={theme.gradients.current.end} weight="duotone" />
+            </View>
+            <ThemedText variant="title" align="center" style={styles.joinTitle}>
+              Join with invite
+            </ThemedText>
+            <ThemedText variant="bodySm" tone="muted" align="center" style={styles.joinSubtext}>
+              Paste a link or scan a QR code,{"\n"}then continue to sign in with Google.
+            </ThemedText>
+          </View>
+        </LinearGradient>
+
+        {/* White Card Body */}
+        <View style={[styles.joinCard, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+          {/* Invite link or token */}
+          <View style={styles.joinSection}>
+            <View style={styles.joinLabelRow}>
+              <View style={styles.joinLabelBadge}>
+                <LinkSimple size={14} color={theme.gradients.current.end} weight="duotone" />
+              </View>
+              <ThemedText variant="bodyMedium" style={styles.joinLabelText}>Invite link or token</ThemedText>
+            </View>
+            <View style={[styles.joinInputBox, { borderColor: theme.colors.hairline }]}>
+              <View style={styles.joinInputIcon}>
+                <LinkSimple size={14} color={theme.gradients.current.end} weight="duotone" />
+              </View>
+              <TextInput
+                value={inviteLink}
+                onChangeText={setInviteLink}
+                autoCapitalize="none"
+                placeholder="https://.../join/... or token"
+                style={[styles.joinInput, { color: theme.colors.ink }]}
+                placeholderTextColor={theme.colors.inkFaint}
+              />
+            </View>
+          </View>
+
+          {/* OR divider */}
+          <View style={styles.joinOrRow}>
+            <View style={[styles.joinOrLine, { backgroundColor: theme.colors.hairline }]} />
+            <View style={styles.joinOrBadge}>
+              <ThemedText variant="caption" style={styles.joinOrText}>OR</ThemedText>
+            </View>
+            <View style={[styles.joinOrLine, { backgroundColor: theme.colors.hairline }]} />
+          </View>
+
+          {/* QR Scan */}
+          <Pressable
+            style={styles.joinQrCard}
+            onPress={async () => {
+              if (!cameraPermission?.granted) {
+                const requested = await requestCameraPermission();
+                if (!requested.granted) return;
+              }
+              setScanningInvite(true);
+            }}
+          >
+            <View style={styles.joinQrIcon}>
+              <QrCode size={22} color={theme.gradients.current.end} weight="duotone" />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <ThemedText variant="bodyMedium" style={{ fontWeight: "600", color: "#1E293B", fontSize: 14 }}>Scan invite QR code</ThemedText>
+              <ThemedText variant="caption" tone="muted" style={{ fontSize: 12 }}>Use your camera to scan</ThemedText>
+            </View>
+            <CaretRight size={18} color={theme.colors.inkMuted} weight="bold" />
+          </Pressable>
+
+          {/* Safe & Secure */}
+          <View style={styles.joinInfoCard}>
+            <View style={styles.joinInfoBadge}>
+              <ShieldCheck size={18} color={theme.gradients.current.end} weight="duotone" />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <ThemedText variant="bodyMedium" style={{ fontWeight: "600", color: "#1E293B", fontSize: 13 }}>Safe & secure</ThemedText>
+              <ThemedText variant="caption" tone="muted" style={{ fontSize: 11, lineHeight: 16 }}>We only join you to the group.{"\n"}No spam. No sharing.</ThemedText>
+            </View>
+            <SafeIllustration />
+          </View>
+
+          {/* Continue */}
+          <Button
+            label="Continue"
+            Icon={CaretRight}
+            onPress={() => {
+              setScanningInvite(false);
+              setStep("welcome");
+            }}
+            disabled={!inviteLink.trim()}
+            style={styles.joinContinueBtn}
+          />
+
+          {/* Back */}
+          <Pressable
+            style={styles.joinBackRow}
+            onPress={() => { setScanningInvite(false); setStep("welcome"); }}
+          >
+            <CaretLeft size={15} color={theme.colors.inkMuted} weight="bold" />
+            <ThemedText variant="bodySm" tone="muted" style={{ fontWeight: "500" }}>Back to welcome</ThemedText>
+          </Pressable>
+
+          {/* Help */}
+          <View style={styles.joinHelpCard}>
+            <View style={styles.joinHelpBadge}>
+              <Lightbulb size={16} color="#7C3AED" weight="duotone" />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <ThemedText variant="bodyMedium" style={{ fontWeight: "600", color: "#1E293B", fontSize: 13 }}>Need help?</ThemedText>
+              <ThemedText variant="caption" tone="muted" style={{ fontSize: 11, lineHeight: 16 }}>Ask the group admin for a valid invite link or QR code.</ThemedText>
+            </View>
+          </View>
+        </View>
+
+        {/* QR Scanner Modal */}
+        <Modal visible={scanningInvite} animationType="slide" transparent={false}>
+          <View style={styles.qrModalRoot}>
+            <StatusBar barStyle="light-content" />
+            <CameraView
+              style={StyleSheet.absoluteFill}
+              barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+              onBarcodeScanned={(result: BarcodeScanningResult) => {
+                let sanitized = result.data?.trim() ?? "";
+                try { sanitized = decodeURIComponent(sanitized); } catch {}
+                setInviteLink(sanitized);
+                setScanningInvite(false);
+              }}
+            />
+            {/* Dark overlay with square cutout */}
+            <View style={styles.qrOverlay}>
+              <View style={styles.qrOverlayTop} />
+              <View style={styles.qrOverlayMiddle}>
+                <View style={styles.qrOverlaySide} />
+                <View style={styles.qrViewfinder}>
+                  {/* Corner brackets */}
+                  <View style={[styles.qrCorner, styles.qrCornerTL]} />
+                  <View style={[styles.qrCorner, styles.qrCornerTR]} />
+                  <View style={[styles.qrCorner, styles.qrCornerBL]} />
+                  <View style={[styles.qrCorner, styles.qrCornerBR]} />
+                </View>
+                <View style={styles.qrOverlaySide} />
+              </View>
+              <View style={styles.qrOverlayBottom}>
+                <ThemedText variant="bodyMedium" style={styles.qrScanLabel}>Point camera at QR code</ThemedText>
+              </View>
+            </View>
+            {/* Close button */}
+            <Pressable
+              style={[styles.qrCloseBtn, { top: Math.max(insets.top, 16) + 8 }]}
+              onPress={() => setScanningInvite(false)}
+            >
+              <X size={22} color="#FFFFFF" weight="bold" />
+            </Pressable>
+          </View>
+        </Modal>
+      </View>
     );
   }
 
@@ -561,90 +822,7 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           </AuthPanel>
         ) : null}
 
-        {step === "join" ? (
-          <View style={styles.joinShell}>
-            <View style={styles.joinHero}>
-              <View style={[styles.joinIconHalo, { backgroundColor: theme.colors.surface }]}>
-                <LinkSimple size={28} color={theme.colors.confirmed} weight="duotone" />
-              </View>
-              <ThemedText variant="title" align="center">
-                Join with invite
-              </ThemedText>
-              <ThemedText variant="bodySm" tone="muted" align="center">
-                Paste a link or scan a QR code, then continue to sign in with Google on the next screen.
-              </ThemedText>
-            </View>
 
-            <View
-              style={[
-                styles.joinCard,
-                {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.hairline,
-                  borderRadius: theme.radius.lg
-                }
-              ]}
-            >
-              <InputField
-                label="Invite link or token"
-                value={inviteLink}
-                onChangeText={setInviteLink}
-                autoCapitalize="none"
-                placeholder="https://…/join/… or token"
-              />
-
-              {scanningInvite && !isWeb ? (
-                <View style={[styles.cameraBox, { borderColor: theme.colors.hairline, borderRadius: theme.radius.md }]}>
-                  <CameraView
-                    style={styles.camera}
-                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                    onBarcodeScanned={(result: BarcodeScanningResult) => {
-                      setInviteLink(result.data);
-                      setScanningInvite(false);
-                    }}
-                  />
-                </View>
-              ) : null}
-
-              {!isWeb ? (
-                <Button
-                  label={scanningInvite ? "Close scanner" : "Scan invite QR"}
-                  variant="secondary"
-                  onPress={async () => {
-                    if (!cameraPermission?.granted) {
-                      const requested = await requestCameraPermission();
-                      if (!requested.granted) return;
-                    }
-                    setScanningInvite((value) => !value);
-                  }}
-                />
-              ) : (
-                <InlineNotice
-                  title="QR on phone only"
-                  body="Paste the invite link here when previewing on desktop."
-                  tone="info"
-                />
-              )}
-
-              <Button
-                label="Continue"
-                onPress={() => {
-                  setScanningInvite(false);
-                  setStep("welcome");
-                }}
-                disabled={!inviteLink.trim()}
-              />
-              <Button
-                label="Back to welcome"
-                variant="ghost"
-                onPress={() => {
-                  setScanningInvite(false);
-                  setStep("welcome");
-                }}
-              />
-            </View>
-          </View>
-        ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -838,28 +1016,283 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 160
   },
-  joinShell: {
-    width: "100%",
-    maxWidth: 440,
-    alignSelf: "center",
-    gap: 20
+
+  // ===== JOIN WITH INVITE (full-screen) =====
+  joinRoot: {
+    flex: 1,
+    backgroundColor: "#FFFFFF"
   },
-  joinHero: {
+  joinHeaderGradient: {
+    paddingBottom: 48,
+    paddingHorizontal: 24,
+    alignItems: "center"
+  },
+  joinHeaderContent: {
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 8
+    gap: 10
   },
-  joinIconHalo: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  joinIconBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4
+    marginBottom: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6
+  },
+  joinTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FFFFFF"
+  },
+  joinSubtext: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center"
   },
   joinCard: {
+    flex: 1,
+    marginTop: -24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 22,
     gap: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4
+  },
+  joinSection: {
+    gap: 8
+  },
+  joinLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  joinLabelBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(13,148,136,0.1)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  joinLabelText: {
+    fontWeight: "600",
+    fontSize: 14,
+    color: "#1E293B"
+  },
+  joinInputBox: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
-    padding: 18
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC"
+  },
+  joinInputIcon: {
+    marginLeft: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(13,148,136,0.1)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  joinInput: {
+    flex: 1,
+    paddingLeft: 10,
+    paddingRight: 14,
+    paddingVertical: 12,
+    fontSize: 13
+  },
+  joinOrRow: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  joinOrLine: {
+    flex: 1,
+    height: 1
+  },
+  joinOrBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginHorizontal: 8
+  },
+  joinOrText: {
+    fontWeight: "600",
+    fontSize: 10,
+    color: "#94A3B8"
+  },
+  joinQrCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DCFCE7"
+  },
+  joinQrIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1
+  },
+  joinInfoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  joinInfoBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#D1FAE5",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  joinContinueBtn: {
+    borderRadius: 24,
+    paddingVertical: 12
+  },
+  joinBackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 4
+  },
+  joinHelpCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    backgroundColor: "#FAFAFA",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0"
+  },
+  joinHelpBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3E8FF",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+
+  // ===== QR Scanner Modal =====
+  qrModalRoot: {
+    flex: 1,
+    backgroundColor: "#000"
+  },
+  qrOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  qrOverlayTop: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.6)"
+  },
+  qrOverlayMiddle: {
+    flexDirection: "row",
+    width: "100%"
+  },
+  qrOverlaySide: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)"
+  },
+  qrViewfinder: {
+    width: Dimensions.get("window").width * 0.65,
+    height: Dimensions.get("window").width * 0.65,
+    borderRadius: 16,
+    position: "relative"
+  },
+  qrCorner: {
+    position: "absolute",
+    width: 28,
+    height: 28,
+    borderColor: "#FFFFFF"
+  },
+  qrCornerTL: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: 12
+  },
+  qrCornerTR: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: 12
+  },
+  qrCornerBL: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: 12
+  },
+  qrCornerBR: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderBottomRightRadius: 12
+  },
+  qrOverlayBottom: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    paddingTop: 28
+  },
+  qrScanLabel: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 15,
+    fontWeight: "500"
+  },
+  qrCloseBtn: {
+    position: "absolute",
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center"
   }
 });

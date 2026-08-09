@@ -60,15 +60,17 @@ export function BalanceHeroCard({
           <ThemedText variant="caption" style={{ color: "rgba(255,255,255,0.88)" }}>
             {label}
           </ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={visible ? "Hide balance" : "Show balance"}
-            onPress={() => setVisible((current) => !current)}
-            style={styles.eye}
-            hitSlop={8}
-          >
-            {visible ? <Eye size={18} color={onGradient} weight="regular" /> : <EyeSlash size={18} color={onGradient} weight="regular" />}
-          </Pressable>
+          <View style={styles.headerRightControls}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={visible ? "Hide balance" : "Show balance"}
+              onPress={() => setVisible((current) => !current)}
+              style={styles.eye}
+              hitSlop={8}
+            >
+              {visible ? <Eye size={18} color={onGradient} weight="regular" /> : <EyeSlash size={18} color={onGradient} weight="regular" />}
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.amountBlock}>
@@ -131,6 +133,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center"
   },
+  headerRightControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
   eye: {
     width: 30,
     height: 30,
@@ -179,3 +186,4 @@ const styles = StyleSheet.create({
     opacity: 0.86
   }
 });
+

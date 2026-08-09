@@ -1,123 +1,74 @@
-import React, { useMemo } from "react";
+import React from "react";
 import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import {
+  ArrowsClockwise,
+  CaretRight,
   ChartPie,
   EnvelopeSimple,
   FileText,
-  Shield,
-  UsersThree,
-  Wallet
+  LockKey,
+  ShieldCheck,
+  UsersThree
 } from "phosphor-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Path, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 import { GoogleSignInButton } from "../auth/GoogleSignInButton";
 import { useTheme } from "../theme";
 import { BrandLogo } from "./BrandLogo";
 import { InlineNotice } from "./InlineNotice";
-import { WELCOME_BRAND } from "./welcomeTokens";
-
-export { WELCOME_BRAND } from "./welcomeTokens";
 
 const TERMS_URL = "https://thesplitsaathi.com/terms";
 const PRIVACY_URL = "https://thesplitsaathi.com/privacy";
 
-const C = WELCOME_BRAND;
-const BASE_ORBIT_R = 122;
+// Phone security illustration on the right side of the banner
+function PhoneSecurityIllustration() {
+  return (
+    <View style={styles.phoneIllustrationWrap}>
+      <Svg width={44} height={44} viewBox="0 0 44 44" fill="none">
+        {/* Top-right sparkle */}
+        <Path d="M38 10 L39 12 L41 13 L39 14 L38 16 L37 14 L35 13 L37 12 Z" fill="#34D399" />
+        {/* Bottom-left sparkle */}
+        <Path d="M6 32 L7 33.5 L8.5 34 L7 34.5 L6 36 L5.5 34.5 L4 34 L5.5 33.5 Z" fill="#34D399" />
 
-const ORBIT_ICONS: {
-  id: string;
-  Icon?: typeof Wallet;
-  angle: number;
-  size: number;
-  radius?: number;
-  rupee?: boolean;
-}[] = [
-  { id: "pie", Icon: ChartPie, angle: 162, size: 22, radius: 114 },
-  { id: "users", Icon: UsersThree, angle: -158, size: 24, radius: 128 },
-  { id: "wallet", Icon: Wallet, angle: -58, size: 24, radius: 122 },
-  { id: "inr", angle: -18, size: 28, radius: 126, rupee: true },
-  { id: "file", Icon: FileText, angle: 48, size: 24, radius: 112 }
-];
+        {/* Smartphone outline */}
+        <Rect x="12" y="6" width="20" height="32" rx="5" fill="#D1FAE5" stroke="#10B981" strokeWidth="1.5" />
+        {/* Screen */}
+        <Rect x="14" y="9" width="16" height="26" rx="3" fill="#FFFFFF" />
+        {/* User avatar head */}
+        <Circle cx="22" cy="17" r="3.5" fill="#10B981" />
+        {/* User avatar body */}
+        <Path d="M17 26 C17 22.5 19 21.5 22 21.5 C25 21.5 27 22.5 27 26 Z" fill="#10B981" />
+      </Svg>
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+      {/* Purple Lock Badge */}
+      <View style={styles.lockBadge}>
+        <LockKey size={10} color="#FFFFFF" weight="bold" />
+      </View>
+    </View>
+  );
 }
 
-function useWelcomeLayout() {
-  const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-
-  return useMemo(() => {
-    const compact = height < 740;
-    const veryCompact = height < 660;
-    const widthScale = clamp(width / 390, 0.82, 1.08);
-    const heightScale = clamp(height / 844, 0.78, 1.05);
-    const scale = Math.min(widthScale, heightScale);
-
-    const heroHeight = clamp(
-      height * (veryCompact ? 0.34 : compact ? 0.37 : 0.4),
-      veryCompact ? 200 : 230,
-      height * 0.44
-    );
-    const logoMarkSize = Math.round(clamp(width * 0.24, 72, 110) * (veryCompact ? 0.9 : 1));
-    const logoWrapSize = Math.round(logoMarkSize * 1.42);
-    const logoRadius = Math.round(logoWrapSize * 0.22);
-    const orbitRadius = Math.round(clamp(logoWrapSize * 0.78, 84, BASE_ORBIT_R));
-    const orbitScale = orbitRadius / BASE_ORBIT_R;
-    const heroWidth = width * 1.18;
-    const curveRadius = Math.round(clamp(width * 0.18, 48, 72));
-    const titleSize = Math.round(clamp(34 * scale, 28, 34));
-    const titleLineHeight = Math.round(titleSize * 1.12);
-    const titleStraddle = Math.round(Math.max(titleLineHeight * 0.78, 28));
-    const buttonHeight = Math.round(clamp(56 * scale, 48, 56));
-    const horizontalPadding = Math.round(clamp(width * 0.06, 20, 28));
-    const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 28 : 16);
-
-    const spacing = {
-      xs: Math.round(8 * scale),
-      sm: Math.round(12 * scale),
-      md: veryCompact ? 12 : Math.round(16 * scale),
-      lg: veryCompact ? 18 : Math.round(22 * scale),
-      xl: veryCompact ? 20 : Math.round(28 * scale)
-    };
-
-    return {
-      width,
-      height,
-      compact,
-      veryCompact,
-      scale,
-      heroHeight,
-      logoMarkSize,
-      logoWrapSize,
-      logoRadius,
-      orbitRadius,
-      orbitScale,
-      heroWidth,
-      curveRadius,
-      titleSize,
-      titleLineHeight,
-      titleStraddle,
-      titleOverlap: titleStraddle,
-      buttonHeight,
-      horizontalPadding,
-      bottomInset,
-      topInset: insets.top,
-      spacing
-    };
-  }, [width, height, insets.bottom, insets.top]);
+// Background Dot Grid Pattern
+function DotGridPattern({ style }: { style: any }) {
+  return (
+    <Svg width={72} height={72} viewBox="0 0 72 72" style={style}>
+      {[0, 16, 32, 48, 64].map((x) =>
+        [0, 16, 32, 48, 64].map((y) => (
+          <Circle key={`${x}-${y}`} cx={x + 4} cy={y + 4} r={1.5} fill="rgba(255,255,255,0.18)" />
+        ))
+      )}
+    </Svg>
+  );
 }
 
 type Props = {
@@ -129,66 +80,6 @@ type Props = {
   onJoinInvite: () => void;
 };
 
-function polar(cx: number, cy: number, r: number, deg: number) {
-  const rad = (deg * Math.PI) / 180;
-  return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r };
-}
-
-function OrbitDecorations({ float, radius, scale }: { float: string; radius: number; scale: number }) {
-  const cx = radius + 4;
-  const cy = radius + 4;
-  const start = polar(cx, cy, 114 * scale, 162);
-  const mid = polar(cx, cy, 128 * scale, -55);
-  const end = polar(cx, cy, 112 * scale, 48);
-  const arcPath = `M ${start.x} ${start.y} Q ${mid.x} ${mid.y - 22 * scale} ${end.x} ${end.y}`;
-
-  return (
-    <View style={styles.orbitStage} pointerEvents="none">
-      <Svg width={radius * 2 + 8} height={radius * 2 + 8} style={styles.orbitRing}>
-        <Path
-          d={arcPath}
-          stroke="rgba(255,255,255,0.18)"
-          strokeWidth={1}
-          strokeDasharray="3,8"
-          fill="none"
-        />
-      </Svg>
-
-      {ORBIT_ICONS.map((item) => {
-        const r = (item.radius ?? BASE_ORBIT_R) * scale;
-        const rad = (item.angle * Math.PI) / 180;
-        const x = Math.cos(rad) * r;
-        const y = Math.sin(rad) * r;
-        const rupeeBox = 40 * scale;
-        const box = item.rupee ? rupeeBox : item.size * scale;
-        return (
-          <View
-            key={item.id}
-            style={[
-              styles.orbitSlot,
-              {
-                marginLeft: x - box / 2,
-                marginTop: y - box / 2
-              }
-            ]}
-          >
-            {item.rupee ? (
-              <Svg width={rupeeBox} height={rupeeBox} viewBox="0 0 40 40">
-                <Circle cx="20" cy="20" r="18" fill="none" stroke={float} strokeWidth="1.5" />
-                <SvgText x="20" y="27" fontSize={16 * scale} fill={float} textAnchor="middle">
-                  ₹
-                </SvgText>
-              </Svg>
-            ) : item.Icon ? (
-              <item.Icon size={Math.round(item.size * scale)} color={float} weight="regular" />
-            ) : null}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 export function WelcomeLoginScreen({
   returningUser,
   googleConfigured,
@@ -198,183 +89,148 @@ export function WelcomeLoginScreen({
   onJoinInvite
 }: Props) {
   const theme = useTheme();
-  const layout = useWelcomeLayout();
-  const isLight = theme.mode === "light";
-
-  const bg = isLight ? "#F6F7FB" : C.bgDark;
-  const secondary = isLight ? "#5B6273" : C.textSecondary;
-  const border = isLight ? "#E4E7EF" : C.border;
-  const inviteText = isLight ? "#171922" : C.white;
-  const float = isLight ? "rgba(255,255,255,0.4)" : C.float;
-  const heroColors = (isLight ? ["#6366F1", "#0D9488"] : [C.gradientStart, C.gradientEnd]) as [string, string];
-  const logoStageSize = layout.orbitRadius * 2 + Math.round(48 * layout.scale);
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { backgroundColor: bg }]}>
-      <StatusBar barStyle={isLight ? "dark-content" : "light-content"} />
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
 
-      <View
-        style={[
-          styles.heroClip,
-          {
-            height: layout.heroHeight,
-            paddingTop: layout.topInset
-          }
-        ]}
-      >
+      {/* Top Header Section with Gradient & Orbit Graphic */}
+      <View style={[styles.headerSection, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
         <LinearGradient
-          colors={heroColors}
+          colors={["#581C87", "#0D9488"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[
-            styles.heroGradient,
-            {
-              width: layout.heroWidth,
-              left: (layout.width - layout.heroWidth) / 2,
-              borderBottomLeftRadius: layout.curveRadius,
-              borderBottomRightRadius: layout.curveRadius
-            }
-          ]}
+          style={StyleSheet.absoluteFillObject}
         />
-        <View
-          style={[
-            styles.heroForeground,
-            { paddingBottom: layout.veryCompact ? 4 : 8 }
-          ]}
-          pointerEvents="box-none"
-        >
-          <View style={{ width: logoStageSize, height: logoStageSize, alignItems: "center", justifyContent: "center" }}>
-            <OrbitDecorations float={float} radius={layout.orbitRadius} scale={layout.orbitScale} />
-            <View
-              style={[
-                styles.logoWrap,
-                {
-                  width: layout.logoWrapSize,
-                  height: layout.logoWrapSize,
-                  borderRadius: layout.logoRadius
-                }
-              ]}
-            >
-              <BrandLogo variant="mark" size={layout.logoMarkSize} />
-            </View>
+
+        {/* Decorative Dot Grids */}
+        <DotGridPattern style={styles.dotGridLeft} />
+        <DotGridPattern style={styles.dotGridRight} />
+
+        {/* Hero Orbit Stage */}
+        <View style={styles.orbitContainer}>
+          {/* Orbital Translucent Dotted Ring */}
+          <Svg width={240} height={240} viewBox="0 0 240 240" style={styles.orbitRingSvg}>
+            <Circle
+              cx="120"
+              cy="120"
+              r="105"
+              stroke="rgba(255,255,255,0.22)"
+              strokeWidth="1.5"
+              strokeDasharray="4 8"
+              fill="none"
+            />
+          </Svg>
+
+          {/* Orbit Feature Badge 1: Top-Left (Purple) - Groups */}
+          <View style={[styles.orbitBadge, styles.badgeTopLeft, { backgroundColor: "#8B5CF6" }]}>
+            <UsersThree size={18} color="#FFFFFF" weight="bold" />
+          </View>
+
+          {/* Orbit Feature Badge 2: Top-Right (Gold) - Receipts */}
+          <View style={[styles.orbitBadge, styles.badgeTopRight, { backgroundColor: "#F59E0B" }]}>
+            <FileText size={18} color="#FFFFFF" weight="bold" />
+          </View>
+
+          {/* Orbit Feature Badge 3: Mid-Left (Teal) - Split Pie */}
+          <View style={[styles.orbitBadge, styles.badgeMidLeft, { backgroundColor: "#14B8A6" }]}>
+            <ChartPie size={18} color="#FFFFFF" weight="bold" />
+          </View>
+
+          {/* Orbit Feature Badge 4: Mid-Right (Blue) - Settlements */}
+          <View style={[styles.orbitBadge, styles.badgeMidRight, { backgroundColor: "#3B82F6" }]}>
+            <ArrowsClockwise size={18} color="#FFFFFF" weight="bold" />
+          </View>
+
+          {/* Central Logo Badge */}
+          <View style={styles.centralLogoCard}>
+            <BrandLogo variant="mark" size={54} />
           </View>
         </View>
+
+        {/* Wordmark Title below Central Logo */}
+        <Text style={styles.brandTitle}>
+          <Text style={{ color: "#10B981" }}>Split</Text>
+          <Text style={{ color: "#8B5CF6" }}>Saathi</Text>
+        </Text>
       </View>
 
-      <View style={[styles.contentShell, { marginTop: -layout.titleStraddle }]}>
-        <Text
-          style={[
-            styles.title,
-            {
-              fontSize: layout.titleSize,
-              lineHeight: layout.titleLineHeight
-            }
-          ]}
-        >
-          <Text style={{ color: C.brandGreen }}>Split</Text>
-          <Text style={{ color: C.brandPurple }}>Saathi</Text>
+      {/* White Sheet / Card Body */}
+      <View style={[styles.sheetCard, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+        {/* Top Handle Pill */}
+        <View style={styles.handleBar} />
+
+        {/* Subtitle Message */}
+        <Text style={styles.subtitleText}>
+          {returningUser
+            ? "Welcome back! Continue with Google\nto open your groups."
+            : "Welcome! Continue with Google\nto open your groups."}
         </Text>
 
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={[
-            styles.contentScrollInner,
-            {
-              paddingHorizontal: layout.horizontalPadding,
-              paddingTop: layout.spacing.sm,
-              paddingBottom: layout.spacing.sm
-            }
-          ]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          bounces={false}
-        >
-          <Text
-            style={[
-              styles.subtitle,
-              {
-                color: secondary,
-                marginTop: layout.spacing.md,
-                fontSize: layout.veryCompact ? 14 : 15,
-                lineHeight: layout.veryCompact ? 20 : 22
-              }
-            ]}
-          >
-            {returningUser
-              ? "Welcome back. Continue with Google to\nopen your groups."
-              : "Welcome. Continue with Google to\nopen your groups."}
-          </Text>
+        {/* Primary Google Sign-in Button */}
+        {googleConfigured ? (
+          <GoogleSignInButton
+            variant="button"
+            onIdToken={onGoogleIdToken}
+            pending={googlePending}
+            errorMessage={googleError}
+            showChevron={true}
+          />
+        ) : (
+          <InlineNotice
+            title="Google sign-in not configured"
+            body="Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to enable signup."
+            tone="pending"
+          />
+        )}
 
-          {googleConfigured ? (
-            <View style={[styles.googleWrap, { marginTop: layout.spacing.xl }]}>
-              <GoogleSignInButton
-                variant="button"
-                onIdToken={onGoogleIdToken}
-                pending={googlePending}
-                errorMessage={googleError}
-                style={{
-                  height: layout.buttonHeight,
-                  borderRadius: layout.buttonHeight / 2
-                }}
-              />
-            </View>
-          ) : (
-            <View style={[styles.googleWrap, { marginTop: layout.spacing.xl }]}>
-              <InlineNotice
-                title="Google sign-in not configured"
-                body="Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to enable signup."
-                tone="pending"
-              />
-            </View>
-          )}
-
-          <View style={[styles.noticeRow, { marginTop: layout.spacing.md }]}>
-            <Shield size={16} color={C.brandGreen} weight="regular" style={{ marginTop: 2 }} />
-            <Text style={[styles.noticeText, { color: secondary, fontSize: layout.veryCompact ? 12 : 13 }]}>
-              After Google sign-in we&apos;ll ask for your phone number once to help friends find you.
-            </Text>
+        {/* Phone Info Security Banner */}
+        <View style={styles.phoneBanner}>
+          <View style={styles.phoneBannerShield}>
+            <ShieldCheck size={20} color="#FFFFFF" weight="fill" />
           </View>
 
-          <View style={[styles.dividerRow, { marginTop: layout.spacing.lg }]}>
-            <View style={[styles.dividerLine, { backgroundColor: border }]} />
-            <Text style={[styles.dividerText, { color: secondary }]}>OR</Text>
-            <View style={[styles.dividerLine, { backgroundColor: border }]} />
+          <View style={styles.phoneBannerTextWrap}>
+            <Text style={styles.phoneBannerTitle}>We&apos;ll ask for your phone number</Text>
+            <Text style={styles.phoneBannerSub}>once to help friends find you.</Text>
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Join with invite"
-            onPress={onJoinInvite}
-            style={({ pressed }) => [
-              styles.inviteButton,
-              {
-                borderColor: border,
-                height: layout.buttonHeight,
-                borderRadius: layout.buttonHeight / 2,
-                marginTop: layout.spacing.lg,
-                marginBottom: layout.spacing.xs,
-                opacity: pressed ? 0.85 : 1
-              }
-            ]}
-          >
-            <EnvelopeSimple size={18} color={C.brandGreen} weight="regular" />
-            <Text style={[styles.inviteButtonText, { color: inviteText, fontSize: layout.veryCompact ? 15 : 16 }]}>
-              Join with invite
-            </Text>
-          </Pressable>
-        </ScrollView>
+          <PhoneSecurityIllustration />
+        </View>
 
-        <View
-          style={[
-            styles.legalFooter,
-            {
-              paddingHorizontal: layout.horizontalPadding,
-              paddingBottom: layout.bottomInset,
-              paddingTop: layout.spacing.sm
-            }
+        {/* OR Divider */}
+        <View style={styles.orDividerRow}>
+          <View style={styles.orLine} />
+          <View style={styles.orBadge}>
+            <Text style={styles.orText}>OR</Text>
+          </View>
+          <View style={styles.orLine} />
+        </View>
+
+        {/* Join with Invite Button */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Join with invite"
+          onPress={onJoinInvite}
+          style={({ pressed }) => [
+            styles.inviteCard,
+            { opacity: pressed ? 0.88 : 1 }
           ]}
         >
-          <Text style={[styles.legalText, { color: secondary }]}>
+          <View style={styles.inviteIconBadge}>
+            <EnvelopeSimple size={18} color="#0D9488" weight="duotone" />
+          </View>
+          <Text style={styles.inviteText}>Join with invite</Text>
+          <CaretRight size={18} color="#0D9488" weight="bold" />
+        </Pressable>
+
+        {/* Footer Legal Privacy & Terms Notice */}
+        <View style={styles.legalFooterRow}>
+          <View style={styles.legalShieldBadge}>
+            <ShieldCheck size={18} color="#6366F1" weight="duotone" />
+          </View>
+          <Text style={styles.legalText}>
             By continuing, you agree to our{"\n"}
             <Text style={styles.legalLink} onPress={() => void Linking.openURL(TERMS_URL)}>
               Terms of Service
@@ -393,124 +249,254 @@ export function WelcomeLoginScreen({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: C.bgDark
+    backgroundColor: "#FFFFFF"
   },
-  heroClip: {
-    width: "100%",
-    overflow: "hidden",
-    zIndex: 2
-  },
-  heroGradient: {
-    position: "absolute",
-    top: 0,
-    bottom: 0
-  },
-  heroForeground: {
-    ...StyleSheet.absoluteFillObject,
+  headerSection: {
+    flex: 45,
+    position: "relative",
     alignItems: "center",
-    justifyContent: "flex-end"
+    justifyContent: "center",
+    overflow: "hidden",
+    paddingBottom: 24
   },
-  orbitStage: {
-    ...StyleSheet.absoluteFillObject,
+  dotGridLeft: {
+    position: "absolute",
+    top: 20,
+    left: 12,
+    opacity: 0.7
+  },
+  dotGridRight: {
+    position: "absolute",
+    bottom: 40,
+    right: 12,
+    opacity: 0.7
+  },
+  orbitContainer: {
+    width: 220,
+    height: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative"
+  },
+  orbitRingSvg: {
+    position: "absolute"
+  },
+  orbitBadge: {
+    position: "absolute",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  badgeTopLeft: {
+    top: 14,
+    left: 18
+  },
+  badgeTopRight: {
+    top: 24,
+    right: 16
+  },
+  badgeMidLeft: {
+    bottom: 38,
+    left: 6
+  },
+  badgeMidRight: {
+    bottom: 48,
+    right: 6
+  },
+  centralLogoCard: {
+    width: 94,
+    height: 94,
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8
+  },
+  brandTitle: {
+    fontFamily: "SpaceGrotesk_700Bold",
+    fontSize: 28,
+    letterSpacing: -0.5,
+    marginTop: 10,
+    textAlign: "center"
+  },
+  sheetCard: {
+    flex: 55,
+    marginTop: -24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6
+  },
+  handleBar: {
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#2DD4BF",
+    alignSelf: "center",
+    marginBottom: 10
+  },
+  subtitleText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14.5,
+    lineHeight: 21,
+    color: "#334155",
+    textAlign: "center",
+    marginBottom: 4
+  },
+  phoneBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 10
+  },
+  phoneBannerShield: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#10B981",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  phoneBannerTextWrap: {
+    flex: 1,
+    gap: 1
+  },
+  phoneBannerTitle: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13.5,
+    color: "#0F172A"
+  },
+  phoneBannerSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#64748B"
+  },
+  phoneIllustrationWrap: {
+    width: 44,
+    height: 44,
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  lockBadge: {
+    position: "absolute",
+    bottom: 1,
+    right: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#7C3AED",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF"
+  },
+  orDividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 2
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E2E8F0"
+  },
+  orBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 10
+  },
+  orText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+    color: "#64748B"
+  },
+  inviteCard: {
+    height: 56,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#CCFBF1",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    gap: 12,
+    shadowColor: "#000000",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3
+  },
+  inviteIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#E6F4F1",
     alignItems: "center",
     justifyContent: "center"
   },
-  orbitRing: {
-    position: "absolute"
-  },
-  orbitSlot: {
-    position: "absolute",
-    top: "50%",
-    left: "50%"
-  },
-  logoWrap: {
-    backgroundColor: C.white,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 5,
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.4,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 16
-  },
-  contentShell: {
+  inviteText: {
     flex: 1,
-    zIndex: 3,
-    overflow: "visible"
+    fontFamily: "Inter_700Bold",
+    fontSize: 16,
+    color: "#0F172A"
   },
-  contentScroll: {
-    flex: 1
-  },
-  contentScrollInner: {
-    flexGrow: 1,
-    alignItems: "center"
-  },
-  title: {
-    fontFamily: "SpaceGrotesk_700Bold",
-    letterSpacing: -0.3,
-    zIndex: 10,
-    alignSelf: "center",
-    textAlign: "center"
-  },
-  subtitle: {
-    fontFamily: "Inter_400Regular",
-    textAlign: "center"
-  },
-  googleWrap: {
-    width: "100%"
-  },
-  noticeRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: 6,
-    gap: 8,
-    width: "100%"
-  },
-  noticeText: {
-    flex: 1,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 19
-  },
-  dividerRow: {
+  legalFooterRow: {
     flexDirection: "row",
     alignItems: "center",
-    width: "100%"
-  },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth
-  },
-  dividerText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    marginHorizontal: 14,
-    letterSpacing: 1
-  },
-  inviteButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    borderWidth: 1,
     gap: 10,
-    backgroundColor: "transparent"
+    paddingTop: 4
   },
-  inviteButtonText: {
-    fontFamily: "Inter_700Bold"
-  },
-  legalFooter: {
-    width: "100%"
+  legalShieldBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
   },
   legalText: {
+    flex: 1,
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    textAlign: "center",
-    lineHeight: 18
+    lineHeight: 17,
+    color: "#64748B"
   },
   legalLink: {
-    color: C.link,
-    textDecorationLine: "underline",
-    fontFamily: "Inter_500Medium"
+    fontFamily: "Inter_600SemiBold",
+    color: "#0D9488",
+    textDecorationLine: "underline"
   }
 });

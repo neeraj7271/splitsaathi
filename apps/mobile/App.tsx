@@ -16,10 +16,12 @@ import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
 import { clearCachedBiometricPrefs } from "./src/auth/biometricPrefsCache";
 import { restoreSession } from "./src/auth/session";
+import { signOutFromGoogle } from "./src/auth/GoogleSignInButton";
 import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
 import { configurePushNotifications } from "./src/notifications/configurePush";
 import { AllExpensesScreen } from "./src/screens/AllExpensesScreen";
+
 import { AuditScreen } from "./src/screens/AuditScreen";
 import { BalancesScreen } from "./src/screens/BalancesScreen";
 import { ExpenseEntryScreen } from "./src/screens/ExpenseEntryScreen";
@@ -70,6 +72,7 @@ const SETTINGS_ROUTES: AppRoute[] = [
   "appearanceSettings",
   "contactsSettings",
   "groupDetail",
+
   "friendDetail"
 ];
 
@@ -314,6 +317,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
           .logout()
           .catch(() => undefined)
           .finally(() => {
+            void signOutFromGoogle();
             void clearCachedBiometricPrefs();
             claimedInviteTokensRef.current.clear();
             handledInitialInviteUrlRef.current = false;
@@ -329,10 +333,22 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     [back, go, history.length, route, selectedExpenseId, selectedFriendUserId, selectedGroupId]
   );
 
-  if (!fontsLoaded || !booted || !splashMinElapsed) {
-    return (
-      <AnimatedBrandLoader />
-    );
+  // Background prefetch all primary app resources while splash screen is displaying
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+    void queryClient.prefetchQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() }).catch(() => undefined);
+    void queryClient.prefetchQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() }).catch(() => undefined);
+    void queryClient.prefetchQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() }).catch(() => undefined);
+    void queryClient.prefetchQuery({ queryKey: ["activityFeed"], queryFn: () => apiClient.getActivityFeed() }).catch(() => undefined);
+    void queryClient.prefetchQuery({ queryKey: ["preferences"], queryFn: () => apiClient.getPreferences() }).catch(() => undefined);
+  }, [authenticated]);
+
+  const showSplash = !fontsLoaded || !booted || !splashMinElapsed;
+
+  if (showSplash) {
+    return <AnimatedBrandLoader />;
   }
 
   if (!authenticated) {
@@ -341,50 +357,57 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   return (
     <BiometricGate enabled>
-    <View style={styles.root}>
-      {route === "home" ? <HomeScreen navigation={navigation} /> : null}
-      {route === "groups" ? <GroupCreateScreen navigation={navigation} /> : null}
-      {route === "groupDetail" ? <GroupDetailScreen navigation={navigation} /> : null}
-      {route === "friends" ? <FriendsScreen navigation={navigation} /> : null}
-      {route === "friendDetail" ? <FriendDetailScreen navigation={navigation} /> : null}
-      {route === "expense" ? <ExpenseEntryScreen navigation={navigation} /> : null}
-      {route === "balances" ? <BalancesScreen navigation={navigation} /> : null}
-      {route === "settlement" ? <SettlementScreen navigation={navigation} /> : null}
-      {route === "audit" ? <AuditScreen navigation={navigation} /> : null}
-      {route === "allExpenses" ? <AllExpensesScreen navigation={navigation} /> : null}
-      {route === "recurring" ? <RecurringScreen navigation={navigation} /> : null}
-      {route === "importExport" ? <ImportExportScreen navigation={navigation} /> : null}
-      {route === "offline" ? <OfflineSyncScreen navigation={navigation} /> : null}
-      {route === "profile" ? <ProfileScreen navigation={navigation} /> : null}
-      {route === "settings" ? <SettingsScreen navigation={navigation} /> : null}
-      {route === "securitySettings" ? <SecuritySettingsScreen navigation={navigation} /> : null}
-      {route === "notificationSettings" ? <NotificationSettingsScreen navigation={navigation} /> : null}
-      {route === "appearanceSettings" ? <AppearanceSettingsScreen navigation={navigation} /> : null}
-      {route === "contactsSettings" ? <ContactsSettingsScreen navigation={navigation} /> : null}
+      <View style={styles.root}>
+        {route === "home" ? <HomeScreen navigation={navigation} /> : null}
+        {route === "groups" ? <GroupCreateScreen navigation={navigation} /> : null}
+        {route === "groupDetail" ? <GroupDetailScreen navigation={navigation} /> : null}
+        {route === "friends" ? <FriendsScreen navigation={navigation} /> : null}
+        {route === "friendDetail" ? <FriendDetailScreen navigation={navigation} /> : null}
+        {route === "expense" ? <ExpenseEntryScreen navigation={navigation} /> : null}
+        {route === "balances" ? <BalancesScreen navigation={navigation} /> : null}
+        {route === "settlement" ? <SettlementScreen navigation={navigation} /> : null}
+        {route === "audit" ? <AuditScreen navigation={navigation} /> : null}
+        {route === "allExpenses" ? <AllExpensesScreen navigation={navigation} /> : null}
+        {route === "recurring" ? <RecurringScreen navigation={navigation} /> : null}
+        {route === "importExport" ? <ImportExportScreen navigation={navigation} /> : null}
+        {route === "offline" ? <OfflineSyncScreen navigation={navigation} /> : null}
+        {route === "profile" ? <ProfileScreen navigation={navigation} /> : null}
+        {route === "settings" ? <SettingsScreen navigation={navigation} /> : null}
+        {route === "securitySettings" ? <SecuritySettingsScreen navigation={navigation} /> : null}
+        {route === "notificationSettings" ? <NotificationSettingsScreen navigation={navigation} /> : null}
+        {route === "appearanceSettings" ? <AppearanceSettingsScreen navigation={navigation} /> : null}
+        {route === "contactsSettings" ? <ContactsSettingsScreen navigation={navigation} /> : null}
 
-      <BottomTabs
-        value={
-          route === "groupDetail"
-            ? "groups"
-            : route === "friendDetail"
-              ? "friends"
-              : SETTINGS_ROUTES.includes(route)
-                ? "home"
-                : route
-        }
-        onChange={goTab}
-        onFab={() => {
-          setSelectedExpenseId(undefined);
-          go("expense");
-        }}
-        tabs={[
-          { label: "Home", value: "home", icon: House },
-          { label: "Groups", value: "groups", icon: UsersThree },
-          { label: "Friends", value: "friends", icon: UserCircle },
-          { label: "Settle", value: "settlement", icon: Scales }
-        ]}
-      />
-    </View>
+
+        <BottomTabs
+          value={
+            route === "groupDetail"
+              ? "groups"
+              : route === "friendDetail"
+                ? "friends"
+                : SETTINGS_ROUTES.includes(route)
+                  ? "home"
+                  : route
+          }
+          onChange={goTab}
+          onFab={() => {
+            setSelectedExpenseId(undefined);
+            go("expense");
+          }}
+          tabs={[
+            { label: "Home", value: "home", icon: House },
+            { label: "Groups", value: "groups", icon: UsersThree },
+            { label: "Friends", value: "friends", icon: UserCircle },
+            { label: "Settle", value: "settlement", icon: Scales }
+          ]}
+        />
+
+        {showSplash ? (
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="auto">
+            <AnimatedBrandLoader />
+          </View>
+        ) : null}
+      </View>
     </BiometricGate>
   );
 }

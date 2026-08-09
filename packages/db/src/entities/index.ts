@@ -1,3 +1,4 @@
+export * from './admin.entities';
 export * from './attachment-capture.entities';
 export * from './expense.entities';
 export * from './group.entities';
@@ -9,6 +10,18 @@ export * from './recurring-currency.entities';
 export * from './settlement.entities';
 export * from './types';
 
+import {
+  AdminAppConfigEntity,
+  AdminAuditLogEntity,
+  AdminEventEntity,
+  AdminFeatureFlagEntity,
+  AdminRefreshSessionEntity,
+  AdminSupportMessageEntity,
+  AdminSupportTicketEntity,
+  AdminUserEntity,
+  BillingPlanEntity,
+  SubscriptionEntity
+} from './admin.entities';
 import {
   AttachmentEntity,
   CaptureJobEntity,
@@ -142,5 +155,15 @@ export const dbEntities = [
   ImportItemEntity,
   ExternalEntityMapEntity,
   ExportJobEntity,
-  StatementSnapshotEntity
+  StatementSnapshotEntity,
+  AdminUserEntity,
+  AdminRefreshSessionEntity,
+  AdminAuditLogEntity,
+  AdminSupportTicketEntity,
+  AdminSupportMessageEntity,
+  AdminFeatureFlagEntity,
+  AdminAppConfigEntity,
+  AdminEventEntity,
+  BillingPlanEntity,
+  SubscriptionEntity
 ] as const;

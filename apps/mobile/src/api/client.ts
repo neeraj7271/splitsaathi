@@ -945,6 +945,7 @@ export class SplitSaathiApiClient {
     return this.request<{ amountMinor: number }>("/v1/reports/my-monthly-spend");
   }
 
+
   async createSettlementIntent(payload: {
     groupId: string;
     payerParticipantId: string;
@@ -1270,7 +1271,17 @@ function toQuery(values: Record<string, string>) {
 export function extractInviteToken(tokenOrUrl?: string) {
   const safeStr = typeof tokenOrUrl === "string" ? tokenOrUrl : "";
   const trimmed = safeStr.trim();
-  const match = trimmed.match(
+  if (!trimmed) {
+    throw new Error("Invite token could not be read from the link or QR payload.");
+  }
+  // Decode URL-encoded characters first (handles %20, %2F, etc. from QR codes/links)
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // If decoding fails, use original
+  }
+  const match = decoded.match(
     /(?:splitsaathi:\/\/join\/|https?:\/\/[^/]+\/join\/|\/join\/)([^/?#]+)|\/groups\/invites\/([^/?#]+)|^([A-Za-z0-9_-]{12,})$/i
   );
   const token = match?.[1] ?? match?.[2] ?? match?.[3];

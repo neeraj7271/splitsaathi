@@ -14,6 +14,8 @@ import { ApiConfigService } from './config/api-config.service';
 import { createTypeOrmOptions } from './config/typeorm.options';
 import { ObservabilityModule } from './observability/observability.module';
 
+import { AdminModule } from './modules/admin/admin.module';
+
 @Module({
   imports: [
     ApiConfigModule,
@@ -24,6 +26,7 @@ import { ObservabilityModule } from './observability/observability.module';
     }),
     UsersModule,
     AuthModule,
+    AdminModule,
     ConsentsModule,
     ContactsModule,
     GroupsModule,

@@ -1,8 +1,22 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { AppState, Image, Modal, Pressable, StyleSheet, View, Alert, TextInput } from "react-native";
+import { AppState, Image, Modal, Pressable, StyleSheet, View, Alert, TextInput, Share, Platform } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+let SharingModule: typeof import("expo-sharing") | null = null;
+try {
+  SharingModule = require("expo-sharing");
+} catch {
+  SharingModule = null;
+}
+
+let MediaLibraryModule: typeof import("expo-media-library") | null = null;
+try {
+  MediaLibraryModule = require("expo-media-library");
+} catch {
+  MediaLibraryModule = null;
+}
 import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 
@@ -136,13 +150,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
   
   const qrRef = useRef<any>(null);
 
-  const handleShareQR = () => {
-    Alert.alert("Rebuild Required", "Sharing the QR requires a native app rebuild. We will add this soon!");
-  };
 
-  const handleDownloadQR = () => {
-    Alert.alert("Rebuild Required", "Saving the QR to gallery requires a native app rebuild. We will add this soon!");
-  };
   const [upiApps, setUpiApps] = useState<DetectedUpiApps>({ installed: [], notInstalled: [] });
   const [showOtherUpiApps, setShowOtherUpiApps] = useState(false);
   const [proofPreviewUri, setProofPreviewUri] = useState<string>();
@@ -1072,13 +1080,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                           </View>
                         </View>
                         <View style={styles.qrActions}>
-                          <View style={{ marginBottom: 8 }}>
-                            <ThemedText variant="bodyMedium">
-                              Scan this QR to pay <ThemedText tone="muted">with any UPI app</ThemedText>
-                            </ThemedText>
-                          </View>
-                          <Button label="Share QR" variant="soft" size="compact" Icon={ShareNetwork} tone="confirmed" onPress={handleShareQR} />
-                          <Button label="Download" variant="secondary" size="compact" Icon={ArrowDown} tone="confirmed" onPress={handleDownloadQR} />
+                          <ThemedText variant="bodyMedium">
+                            Scan this QR to pay <ThemedText tone="muted">with any UPI app</ThemedText>
+                          </ThemedText>
                         </View>
                       </View>
                     </View>
@@ -1154,11 +1158,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
               {awaitingPayeeConfirm ? (
                 <InlineNotice
                   title="Waiting for receiver confirmation"
-                  body={
-                    intent.paymentMethod === "cash"
-                      ? "Cash payment recorded. Only the person receiving the money can confirm — then balances update."
-                      : "Proof submitted. Only the person receiving the money can confirm — then balances update."
-                  }
+                  body="Proof submitted. Only the person receiving the money can confirm — then balances update."
                   tone="pending"
                 />
               ) : null}

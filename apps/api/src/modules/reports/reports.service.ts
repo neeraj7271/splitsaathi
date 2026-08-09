@@ -2,6 +2,7 @@ import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/commo
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
+
 export type ReportDateRange = { from: string; to: string; fromExclusive: string; toExclusive: string };
 
 @Injectable()
@@ -182,3 +183,4 @@ export class ReportsService {
     return parsed;
   }
 }
+

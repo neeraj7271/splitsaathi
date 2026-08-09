@@ -1,5 +1,5 @@
 export function formatMoney(amountMinor: number | undefined, currencyCode = "INR") {
-  const safeAmount = amountMinor ?? 0;
+  const safeAmount = (typeof amountMinor === "number" && Number.isFinite(amountMinor)) ? amountMinor : 0;
 
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -10,7 +10,7 @@ export function formatMoney(amountMinor: number | undefined, currencyCode = "INR
 }
 
 export function formatSignedMoney(amountMinor: number | undefined, currencyCode = "INR") {
-  const safeAmount = amountMinor ?? 0;
+  const safeAmount = (typeof amountMinor === "number" && Number.isFinite(amountMinor)) ? amountMinor : 0;
   const sign = safeAmount > 0 ? "+" : safeAmount < 0 ? "-" : "";
 
   return `${sign}${formatMoney(Math.abs(safeAmount), currencyCode)}`;

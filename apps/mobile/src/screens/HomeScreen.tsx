@@ -162,6 +162,7 @@ export function HomeScreen({ navigation }: { navigation: AppNavigation }) {
         secondaryAction={{ label: "View Balances", onPress: () => navigation.go("balances") }}
       />
 
+
       <View style={styles.statsRow}>
         <StatCard
           icon={UsersThree}
