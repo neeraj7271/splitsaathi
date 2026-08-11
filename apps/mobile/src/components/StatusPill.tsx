@@ -7,12 +7,12 @@ import { getStatusPillPresentation, type StatusPillState } from "./statusPillPre
 
 export function StatusPill({ state }: { state: StatusPillState }) {
   const theme = useTheme();
-  const { color, label } = getStatusPillPresentation(state, theme.colors);
+  const { color, bg, label } = getStatusPillPresentation(state, theme.colors);
 
   return (
-    <View style={[styles.pill, { borderRadius: theme.radius.sm, backgroundColor: colorWithAlpha(color, 0.14) }]}>
+    <View style={[styles.pill, { borderRadius: 999, backgroundColor: bg }]}>
       <View style={[styles.dot, { backgroundColor: color }]} />
-      <ThemedText variant="caption" style={{ color }}>
+      <ThemedText variant="caption" numberOfLines={1} style={{ color, fontWeight: "600", fontSize: 12 }}>
         {label}
       </ThemedText>
     </View>

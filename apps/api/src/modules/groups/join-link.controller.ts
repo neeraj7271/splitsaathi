@@ -23,7 +23,7 @@ export class JoinLinkController {
   @Header('Cache-Control', 'no-store')
   async openInvite(@Param('token') token: string, @Res() response: Response): Promise<void> {
     const safeToken = token.trim();
-    if (!safeToken || safeToken.length < 8 || /[^A-Za-z0-9_-]/.test(safeToken)) {
+    if (!safeToken || safeToken.length < 4 || /[^A-Za-z0-9_-]/.test(safeToken)) {
       throw new NotFoundException('Invite link is invalid.');
     }
 

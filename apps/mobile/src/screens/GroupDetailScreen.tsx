@@ -7,7 +7,9 @@ import {
   CaretRight,
   ChartBar,
   ClockCountdown,
+  Copy,
   DotsThreeVertical,
+  DownloadSimple,
   Handshake,
   ImageSquare,
   LinkSimple,
@@ -17,7 +19,10 @@ import {
   PlusCircle,
   QrCode,
   Scales,
+  ShareNetwork,
+  ShieldCheck,
   Trash,
+  UploadSimple,
   UserMinus,
   UsersThree,
   Wallet
@@ -57,6 +62,8 @@ import { ensureContactsAccess, openSystemSettings, syncDeviceContacts, type Sync
 import { ensureMediaLibraryPermission } from "../utils/mediaPermissions";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 import { participantColor } from "../utils/participantColor";
+
+import { copyText } from "../utils/clipboard";
 
 type GroupTab = "activity" | "balances" | "expenses" | "charts" | "people";
 const ACTIVITY_PAGE_SIZE = 5;
@@ -1470,88 +1477,289 @@ function PeopleManagement({
       </DataSurface>
 
       {canEditGroup ? (
-        <DataSurface elevated>
-          <View style={styles.formBlock}>
-            <View style={styles.formHeader}>
-              <AddressBook size={20} color={theme.colors.confirmed} weight="duotone" />
-              <View style={styles.formHeaderText}>
-                <ThemedText variant="bodyMedium">Invite people</ThemedText>
-                <ThemedText variant="bodySm" tone="muted">
-                  Add contacts with a phone number, or share a link / QR for others to join.
-                </ThemedText>
+        <View style={{ gap: 14 }}>
+          {/* Card 1: Invite people main card */}
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: theme.colors.hairline,
+              padding: 16,
+              gap: 14
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#E6F7F5", alignItems: "center", justifyContent: "center" }}>
+                  <UsersThree size={22} color="#0D9488" weight="duotone" />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText variant="title" style={{ fontSize: 18, fontWeight: "700" }}>
+                    Invite people
+                  </ThemedText>
+                  <ThemedText variant="bodySm" tone="muted" style={{ fontSize: 12, lineHeight: 16 }}>
+                    Add contacts with a phone number, or share a link / QR for others to join.
+                  </ThemedText>
+                </View>
               </View>
             </View>
-            <Button label="Add from contacts" variant="soft" Icon={AddressBook} onPress={onAddFromContacts} />
-            <View style={styles.inviteActions}>
-              <Button
-                label={createInvitePending ? "Loading..." : inviteUrl ? "New Link" : "Create Link"}
-                variant="secondary"
-                tone="info"
-                Icon={LinkSimple}
+
+            {/* Add from contacts pill button */}
+            <Pressable
+              onPress={onAddFromContacts}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                borderRadius: 14,
+                backgroundColor: "#E6F7F5",
+                borderWidth: 1,
+                borderColor: "#CCFBF1"
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <AddressBook size={20} color="#0D9488" weight="duotone" />
+                <ThemedText variant="bodyMedium" style={{ color: "#0D9488", fontWeight: "700" }}>
+                  Add from contacts
+                </ThemedText>
+              </View>
+              <CaretRight size={18} color="#0D9488" />
+            </Pressable>
+
+            {/* Create new link + Share row */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
                 onPress={createInvite}
-                loading={createInvitePending}
-                style={styles.inlineButton}
-              />
+                disabled={createInvitePending}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  paddingVertical: 12,
+                  paddingHorizontal: 8,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: "#818CF8",
+                  backgroundColor: "#FFFFFF"
+                }}
+              >
+                <LinkSimple size={18} color="#4F46E5" weight="bold" />
+                <ThemedText variant="bodySm" style={{ color: "#4F46E5", fontWeight: "700" }}>
+                  {createInvitePending ? "Loading..." : "Create new link"}
+                </ThemedText>
+              </Pressable>
+
               {inviteUrl ? (
-                <Button
-                  label="Share"
-                  variant="secondary"
-                  Icon={LinkSimple}
+                <Pressable
                   onPress={() => Share.share({ message: `Join ${group.name} on SplitSaathi: ${inviteUrl}` })}
-                  style={styles.inlineButton}
-                />
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    paddingVertical: 12,
+                    paddingHorizontal: 8,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: theme.colors.hairline,
+                    backgroundColor: "#FFFFFF"
+                  }}
+                >
+                  <UploadSimple size={18} color={theme.colors.ink} weight="bold" />
+                  <ThemedText variant="bodySm" style={{ fontWeight: "700" }}>
+                    Share
+                  </ThemedText>
+                </Pressable>
               ) : null}
             </View>
-            {inviteUrl ? (
-              <View style={styles.inviteBlock}>
-                {inviteCode ? (
-                  <View style={{ backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.12), padding: 12, borderRadius: theme.radius.md, alignItems: "center", gap: 4, marginBottom: 8 }}>
-                    <ThemedText variant="caption" tone="muted">
-                      GROUP CODE
-                    </ThemedText>
-                    <ThemedText variant="title" style={{ letterSpacing: 3, fontSize: 22, fontWeight: "800", color: theme.colors.confirmed }} selectable>
-                      {inviteCode}
-                    </ThemedText>
-                    <ThemedText variant="caption" tone="muted">
-                      Friends can enter this 6-character code in Join Group
-                    </ThemedText>
-                  </View>
-                ) : null}
+          </View>
 
-                <ThemedText variant="caption" tone="muted">
-                  Invite link
-                </ThemedText>
-                <ThemedText variant="bodySm" tone="confirmed" selectable>
-                  {inviteUrl}
-                </ThemedText>
-                <View style={styles.qrHeader}>
-                  <QrCode size={16} color={theme.colors.confirmed} weight="duotone" />
-                  <ThemedText variant="bodyMedium">Scan to join</ThemedText>
-                </View>
-                <ThemedText variant="bodySm" tone="muted">
-                  Friends can scan this QR from Join with invite.
-                </ThemedText>
+          {/* Card 2: GROUP CODE Card (Sleek Compact Mint Container) */}
+          {inviteCode ? (
+            <View
+              style={{
+                backgroundColor: "#E6F7F5",
+                borderColor: "#99F6E4",
+                borderWidth: 1,
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
                 <View
-                  style={[
-                    styles.qrBox,
-                    {
-                      backgroundColor: "#FFFFFF",
-                      borderRadius: theme.radius.md,
-                      borderColor: theme.colors.hairline,
-                      borderWidth: 1
-                    }
-                  ]}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: "#FFFFFF",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderColor: "#CCFBF1"
+                  }}
                 >
-                  <QRCode value={inviteUrl} size={148} backgroundColor="#FFFFFF" color="#171922" />
+                  <ShieldCheck size={20} color="#0D9488" weight="duotone" />
+                </View>
+                <View style={{ gap: 1, flex: 1 }}>
+                  <ThemedText variant="caption" style={{ color: "#64748B", letterSpacing: 0.8, fontWeight: "700", fontSize: 10 }}>
+                    GROUP CODE
+                  </ThemedText>
+                  <ThemedText variant="title" style={{ fontSize: 20, fontWeight: "800", color: "#0D9488", letterSpacing: 2 }} selectable>
+                    {inviteCode}
+                  </ThemedText>
+                  <ThemedText variant="caption" style={{ color: "#64748B", fontSize: 11 }}>
+                    Friends can enter this 6-character code in Join Group
+                  </ThemedText>
                 </View>
               </View>
-            ) : (
-              <ThemedText variant="bodySm" tone="muted">
-                Create a link to show a scannable QR and share via WhatsApp or SMS.
-              </ThemedText>
-            )}
-          </View>
-        </DataSurface>
+
+              {/* Icon-only Copy Button */}
+              <Pressable
+                onPress={() => copyText(inviteCode)}
+                accessibilityLabel="Copy group code"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: "#FFFFFF",
+                  borderWidth: 1,
+                  borderColor: "#99F6E4",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                <Copy size={18} color="#0D9488" weight="duotone" />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {/* Card 3: Invite link Card */}
+          {inviteUrl ? (
+            <View
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderColor: theme.colors.hairline,
+                borderWidth: 1,
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                gap: 12
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: "#E6F7F5",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <LinkSimple size={18} color="#0D9488" weight="duotone" />
+                  </View>
+                  <View style={{ gap: 1, flex: 1 }}>
+                    <ThemedText variant="bodyMedium" style={{ fontWeight: "700", fontSize: 14 }}>
+                      Invite link
+                    </ThemedText>
+                    <ThemedText variant="bodySm" style={{ color: "#0D9488", fontWeight: "600" }} numberOfLines={1} selectable>
+                      {inviteUrl}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                {/* Icon-only Copy Button */}
+                <Pressable
+                  onPress={() => copyText(inviteUrl)}
+                  accessibilityLabel="Copy invite link"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: "#E6F7F5",
+                    borderWidth: 1,
+                    borderColor: "#99F6E4",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  <Copy size={18} color="#0D9488" weight="duotone" />
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Card 4: Scan to join QR Code Card */}
+          {inviteUrl ? (
+            <View
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderColor: theme.colors.hairline,
+                borderWidth: 1,
+                borderRadius: 20,
+                padding: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16
+              }}
+            >
+              <View style={{ flex: 1, gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: "#E6F7F5",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <QrCode size={20} color="#0D9488" weight="duotone" />
+                  </View>
+                  <ThemedText variant="bodyMedium" style={{ fontWeight: "700", fontSize: 16 }}>
+                    Scan to join
+                  </ThemedText>
+                </View>
+
+                <ThemedText variant="bodySm" tone="muted" style={{ fontSize: 12, lineHeight: 17 }}>
+                  Friends can scan this QR from Join with invite.
+                </ThemedText>
+              </View>
+
+              <View
+                style={{
+                  padding: 10,
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0"
+                }}
+              >
+                <QRCode
+                  value={inviteUrl}
+                  size={124}
+                  backgroundColor="#FFFFFF"
+                  color="#171922"
+                />
+              </View>
+            </View>
+          ) : null}
+        </View>
       ) : null}
 
       {contactError ? <InlineNotice title="Contacts unavailable" body={contactError} tone="owe" /> : null}
@@ -1780,6 +1988,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center"
+  },
+  cardHeaderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  addContactsPillButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14
   },
   formBlock: {
     gap: 12,

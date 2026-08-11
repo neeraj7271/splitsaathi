@@ -300,7 +300,7 @@ export class GroupsService {
       })
     );
 
-    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite.token));
+    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite));
   }
 
   private generateInviteCode(): string {
@@ -314,7 +314,7 @@ export class GroupsService {
 
   async previewInviteByCode(code: string): Promise<InviteResponseDto> {
     const invite = await this.findUsableInviteByCodeOrThrow(code, false);
-    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite.token));
+    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite));
   }
 
   async claimInviteByCode(userId: string, code: string, dto: ClaimInviteDto): Promise<GroupResponseDto> {
@@ -346,7 +346,7 @@ export class GroupsService {
 
   async previewInvite(token: string): Promise<InviteResponseDto> {
     const invite = await this.findUsableInviteOrThrow(token, false);
-    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite.token));
+    return InviteResponseDto.fromEntity(invite, this.joinUrl(invite));
   }
 
   async claimInvite(userId: string, token: string, dto: ClaimInviteDto): Promise<GroupResponseDto> {
@@ -866,8 +866,12 @@ export class GroupsService {
     }
   }
 
-  private async findUsableInviteOrThrow(token: string, enforceUsage: boolean): Promise<GroupInviteEntity> {
-    const invite = await this.invites.findOne({ where: { token } });
+  private async findUsableInviteOrThrow(tokenOrCode: string, enforceUsage: boolean): Promise<GroupInviteEntity> {
+    const clean = tokenOrCode.trim();
+    let invite = await this.invites.findOne({ where: { token: clean } });
+    if (!invite && /^[A-Za-z0-9]{4,12}$/.test(clean)) {
+      invite = await this.invites.findOne({ where: { code: clean.toUpperCase(), status: 'active' } });
+    }
     if (!invite || invite.status !== 'active') {
       throw new NotFoundException('Invite not found.');
     }
@@ -1197,8 +1201,9 @@ export class GroupsService {
     );
   }
 
-  private joinUrl(token: string): string {
-    return `${this.config.env.APP_PUBLIC_URL.replace(/\/$/, '')}/join/${token}`;
+  private joinUrl(invite: { token: string; code?: string | null }): string {
+    const identifier = invite.code ?? invite.token;
+    return `${this.config.env.APP_PUBLIC_URL.replace(/\/$/, '')}/join/${identifier}`;
   }
 
   private addDays(date: Date, days: number): Date {

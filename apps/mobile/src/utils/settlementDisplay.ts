@@ -52,7 +52,8 @@ export function formatSettlementHistoryMeta(row: SettlementIntent): string {
 
 export function formatSettlementDirection(
   settlement: Pick<SettlementIntent, "payerParticipantId" | "payeeParticipantId">,
-  lookups?: GroupDisplayLookups
+  lookups?: GroupDisplayLookups,
+  myParticipantId?: string
 ): string {
   const payer = lookups
     ? resolveParticipantDisplayName(settlement.payerParticipantId, lookups) ?? "Payer"
@@ -60,6 +61,10 @@ export function formatSettlementDirection(
   const payee = lookups
     ? resolveParticipantDisplayName(settlement.payeeParticipantId, lookups) ?? "Payee"
     : "Payee";
+
+  if (myParticipantId && settlement.payerParticipantId === myParticipantId) {
+    return payer;
+  }
   return `${payer} → ${payee}`;
 }
 

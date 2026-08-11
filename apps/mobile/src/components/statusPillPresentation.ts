@@ -34,20 +34,32 @@ export const statusPillLabels: Record<string, string> = {
   refunded: "Refunded"
 };
 
+import { colorWithAlpha } from "../theme";
+
 export function getStatusPillPresentation(state: StatusPillState, colors: ThemeColors) {
-  const color =
-    state === "confirmed" || state === "ledger_posted"
-      ? colors.confirmed
-      : state === "disputed" || state === "rejected"
-        ? colors.disputed
-        : state === "awaiting_receiver_confirmation"
-          ? colors.info
-          : state === "expired" || state === "cancelled"
-            ? colors.inkMuted
-            : colors.pending;
+  let color: string = colors.pending;
+  let bg: string = colorWithAlpha(colors.pending, 0.12);
+
+  if (state === "confirmed" || state === "ledger_posted") {
+    color = "#10B981";
+    bg = "#DCFCE7";
+  } else if (state === "awaiting_receiver_confirmation" || state === "proof_submitted") {
+    color = "#6366F1";
+    bg = "#EEF2FF";
+  } else if (state === "payer_opened_upi_app" || state === "intent_generated" || state === "intent_created") {
+    color = "#D97706";
+    bg = "#FEF3C7";
+  } else if (state === "expired" || state === "cancelled") {
+    color = "#64748B";
+    bg = "#F1F5F9";
+  } else if (state === "disputed" || state === "rejected") {
+    color = colors.disputed;
+    bg = colorWithAlpha(colors.disputed, 0.12);
+  }
 
   return {
     label: statusPillLabels[state] ?? String(state),
-    color
+    color,
+    bg
   };
 }

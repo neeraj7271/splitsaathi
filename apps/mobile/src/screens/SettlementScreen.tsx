@@ -17,7 +17,7 @@ try {
 } catch {
   MediaLibraryModule = null;
 }
-import { ArrowDown, Bank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, Copy, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, Wallet, X } from "phosphor-react-native";
+import { ArrowDown, Bank, CalendarBlank, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, Copy, CurrencyInr, DeviceMobile, DeviceMobileCamera, DotsThree, FileText, Funnel, ImageSquare, LockSimple, Paperclip, QrCode, Question, Receipt, ShareNetwork, ShieldCheck, SlidersHorizontal, Wallet, X } from "phosphor-react-native";
 import QRCode from "react-native-qrcode-svg";
 import Svg, { Defs, G, Path, Rect, Text as SvgText, TSpan, Line, Circle, LinearGradient, Stop, Image as SvgImage } from "react-native-svg";
 const QRCodeLib = require("qrcode");
@@ -46,7 +46,7 @@ import { SettlementIntent, SettlementState, SettlementSuggestion } from "../type
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, parseAmountToMinor } from "../utils/money";
 import { buildGroupDisplayLookups, enrichSettlementSuggestions, resolveParticipantDisplayName } from "../utils/displayNames";
-import { formatSettlementDirection, formatSettlementHistoryMeta, settlementHasViewableProof } from "../utils/settlementDisplay";
+import { formatSettlementDirection, formatSettlementHistoryMeta, formatSettlementTimestamp, settlementHasViewableProof } from "../utils/settlementDisplay";
 import { activeGroupParticipants } from "../utils/groupPeople";
 import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
 import { openAuthenticatedAttachment } from "../utils/authenticatedAttachment";
@@ -1695,16 +1695,32 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
 
       <View style={styles.section}>
         <View style={styles.historyHeader}>
-          <ThemedText variant="bodyMedium">Settlement history</ThemedText>
+          <ThemedText variant="title">Settlement history</ThemedText>
+          <Pressable
+            style={[styles.filterPill, { backgroundColor: colorWithAlpha(theme.colors.info, 0.12) }]}
+          >
+            <Funnel size={14} color={theme.colors.info} weight="duotone" />
+            <ThemedText variant="bodySm" style={{ color: theme.colors.info }}>
+              Filter
+            </ThemedText>
+          </Pressable>
         </View>
         {historyQuery.error ? <InlineNotice title="History could not load" body={historyQuery.error.message} tone="owe" /> : null}
         {settlementHistory.length ? (
           <View style={styles.historyList}>
             {visibleHistory.map((row) => {
-              const displayLabel = lookups ? formatSettlementDirection(row, lookups) : row.clientReference ?? "Settlement";
-              const metaLine = formatSettlementHistoryMeta(row);
+              const displayLabel = lookups ? formatSettlementDirection(row, lookups, myParticipantId) : row.clientReference ?? "Settlement";
               const initials = displayLabel.slice(0, 1).toUpperCase();
               const canResume = isOpenSettlementForMember(row, myParticipantId, isGroupAdmin);
+              const statusDotColor =
+                row.state === "confirmed" || row.state === "ledger_posted"
+                  ? "#10B981"
+                  : row.state === "cancelled" || row.state === "expired" || row.state === "rejected"
+                    ? "#94A3B8"
+                    : row.state === "intent_generated" || row.state === "payer_opened_upi_app"
+                      ? "#F59E0B"
+                      : "#6366F1";
+
               return (
                 <DataSurface key={row.id}>
                   <Pressable
@@ -1730,21 +1746,39 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                     accessibilityRole="button"
                     accessibilityLabel={`View settlement ${displayLabel}`}
                   >
-                    <View style={[styles.historyAvatar, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.15) }]}>
-                      <ThemedText variant="caption" tone="confirmed">{initials}</ThemedText>
+                    <View style={{ position: "relative", alignSelf: "flex-start", marginTop: 2 }}>
+                      <View style={[styles.historyAvatar, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.16) }]}>
+                        <ThemedText variant="bodyMedium" tone="confirmed">
+                          {initials}
+                        </ThemedText>
+                      </View>
+                      <View style={[styles.avatarStatusDot, { backgroundColor: statusDotColor }]} />
                     </View>
-                    <View style={styles.titleBlock}>
-                      <ThemedText variant="bodyMedium" numberOfLines={1}>{displayLabel}</ThemedText>
-                      <ThemedText variant="bodySm" tone="muted" numberOfLines={1}>
-                        {metaLine}
-                        {settlementHasViewableProof(row) ? " • Proof" : ""}
-                      </ThemedText>
+
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <ThemedText variant="bodyMedium" numberOfLines={1} style={{ flex: 1 }}>
+                          {displayLabel}
+                        </ThemedText>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <ThemedText variant="bodyMedium" style={{ fontWeight: "700" }}>
+                            {formatMoney(row.amountMinor, row.currencyCode)}
+                          </ThemedText>
+                          <CaretRight size={16} color={theme.colors.inkMuted} />
+                        </View>
+                      </View>
+
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
+                        <CalendarBlank size={14} color={theme.colors.inkMuted} weight="regular" />
+                        <ThemedText variant="caption" tone="muted">
+                          {formatSettlementTimestamp(row.createdAt)}
+                        </ThemedText>
+                      </View>
+
+                      <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
+                        <StatusPill state={row.state} />
+                      </View>
                     </View>
-                    <View style={styles.trailing}>
-                      <ThemedText variant="title" style={{ fontSize: 15 }}>{formatMoney(row.amountMinor, row.currencyCode)}</ThemedText>
-                      <StatusPill state={row.state} />
-                    </View>
-                    <CaretRight size={16} color={theme.colors.inkMuted} />
                   </Pressable>
                 </DataSurface>
               );
@@ -1755,24 +1789,20 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                 style={[
                   styles.seeAllButton,
                   {
-                    borderColor: theme.colors.hairline,
-                    backgroundColor: colorWithAlpha(theme.colors.info, theme.mode === "dark" ? 0.16 : 0.08)
+                    backgroundColor: colorWithAlpha(theme.colors.info, 0.12),
+                    borderColor: "transparent"
                   }
                 ]}
               >
-                <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "600" }}>
+                <SlidersHorizontal size={15} color={theme.colors.info} weight="bold" />
+                <ThemedText variant="bodySm" style={{ color: theme.colors.info, fontWeight: "700" }}>
                   {showAllHistory ? "Show less" : `See all (${settlementHistory.length})`}
                 </ThemedText>
-                <CaretDown
-                  size={14}
-                  color={theme.colors.info}
-                  style={{ transform: [{ rotate: showAllHistory ? "180deg" : "0deg" }] }}
-                />
               </Pressable>
             ) : null}
           </View>
         ) : (
-          <EmptyState title="No settlement history" body="UPI app opens, proofs, confirmations, and postings will appear here." />
+          <EmptyState title="No settlements recorded" body="Past cash and UPI settlement records for this group will appear here." />
         )}
       </View>
 
@@ -2038,7 +2068,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4
+    paddingHorizontal: 4,
+    marginBottom: 4
+  },
+  filterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999
+  },
+  avatarStatusDot: {
+    position: "absolute",
+    top: -1,
+    right: -1,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF"
   },
   seeAllButton: {
     flexDirection: "row",
@@ -2087,9 +2136,9 @@ const styles = StyleSheet.create({
   },
   historyRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
-    padding: 14
+    padding: 16
   },
   trailing: {
     alignItems: "flex-end",
