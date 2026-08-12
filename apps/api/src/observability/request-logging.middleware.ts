@@ -6,7 +6,7 @@ export class RequestLoggingMiddleware implements NestMiddleware {
   private readonly logger = new Logger('HTTP');
 
   use(request: Request, response: Response, next: NextFunction): void {
-    if (process.env.NODE_ENV === 'production' && process.env.API_REQUEST_LOGGING !== 'true') {
+    if (process.env.API_REQUEST_LOGGING === "false") {
       next();
       return;
     }
