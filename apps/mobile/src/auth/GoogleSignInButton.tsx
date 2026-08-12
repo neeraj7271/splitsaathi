@@ -39,7 +39,9 @@ function ensureGoogleSignInConfigured(webClientId: string) {
  */
 export async function signOutFromGoogle(): Promise<void> {
   try {
-    if (googleSignInConfigured) {
+    const webClientId = resolveWebClientId();
+    if (webClientId) {
+      ensureGoogleSignInConfigured(webClientId);
       await GoogleSignin.signOut();
     }
   } catch {
@@ -130,6 +132,8 @@ export function GoogleSignInButton({
       if (Platform.OS === "android") {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       }
+      // Force account chooser dialog by clearing previous cached session
+      await GoogleSignin.signOut().catch(() => {});
       const response = await GoogleSignin.signIn();
       if (!isSuccessResponse(response)) {
         return;

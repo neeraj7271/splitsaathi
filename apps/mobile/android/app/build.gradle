@@ -90,8 +90,11 @@ android {
         applicationId 'in.splitsaathi.mobile'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+
+        def versionJsonFile = file("../../version.json")
+        def parsedVersion = versionJsonFile.exists() ? new groovy.json.JsonSlurper().parseText(versionJsonFile.text) : null
+        versionCode parsedVersion ? (parsedVersion.versionCode as Integer) : 100
+        versionName parsedVersion ? (parsedVersion.versionName as String) : "0.1.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

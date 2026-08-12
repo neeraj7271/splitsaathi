@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "in.splitsaathi.mobile",
+      "versionCode": 100,
       "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
@@ -32,7 +33,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "api.thesplitsaathi.com",
+              "host": "api-dev.thesplitsaathi.com",
               "pathPrefix": "/join"
             }
           ],
@@ -42,7 +43,7 @@
     },
     "extra": {
       "router": {
-        "origin": "https://api.thesplitsaathi.com"
+        "origin": "https://api-dev.thesplitsaathi.com"
       }
     },
     "plugins": [

@@ -9,6 +9,7 @@ import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from "@expo-google-fon
 
 import { BottomTabs } from "./src/components/BottomTabs";
 import { AnimatedBrandLoader } from "./src/components/AnimatedBrandLoader";
+import { AppUpdateModal } from "./src/components/AppUpdateModal";
 import { AppDialogProvider, useAppDialog } from "./src/components/AppDialog";
 import { SettlementDetailModalProvider } from "./src/components/SettlementDetailModalProvider";
 import { BiometricGate } from "./src/components/BiometricGate";
@@ -108,6 +109,9 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { showDialog } = useAppDialog();
   const [booted, setBooted] = useState(false);
   const [splashMinElapsed, setSplashMinElapsed] = useState(false);
+  const [dataPreloaded, setDataPreloaded] = useState(false);
+  const [preloadTimedOut, setPreloadTimedOut] = useState(false);
+  const [preloadStatus, setPreloadStatus] = useState("Securing App & Syncing Data...");
   const [authenticated, setAuthenticated] = useState(false);
   const [history, setHistory] = useState<AppRoute[]>(["home"]);
   const route = history[history.length - 1] ?? "home";
@@ -120,7 +124,11 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   useEffect(() => {
     const timer = setTimeout(() => setSplashMinElapsed(true), MIN_SPLASH_MS);
-    return () => clearTimeout(timer);
+    const timeout = setTimeout(() => setPreloadTimedOut(true), 7500);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(timeout);
+    };
   }, []);
 
   const goTab = useCallback((next: AppRoute) => {
@@ -358,18 +366,49 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   // Background prefetch all primary app resources while splash screen is displaying
   useEffect(() => {
     if (!authenticated) {
+      setDataPreloaded(true);
       return;
     }
-    void queryClient.prefetchQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() }).catch(() => undefined);
-    void queryClient.prefetchQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() }).catch(() => undefined);
-    void queryClient.prefetchQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() }).catch(() => undefined);
-    void queryClient.prefetchQuery({ queryKey: ["preferences"], queryFn: () => apiClient.getPreferences() }).catch(() => undefined);
-  }, [authenticated]);
+    let isMounted = true;
+    setPreloadStatus("Securing financial data...");
 
-  const showSplash = !fontsLoaded || !booted || !splashMinElapsed;
+    async function warmUpAppData() {
+      try {
+        await Promise.allSettled([
+          queryClient.prefetchQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() }),
+          queryClient.prefetchQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() }),
+          queryClient.prefetchQuery({ queryKey: ["friends"], queryFn: () => apiClient.listFriends() }),
+          queryClient.prefetchQuery({ queryKey: ["myMonthlySpend"], queryFn: () => apiClient.getMyMonthlySpend() }),
+          queryClient.prefetchQuery({ queryKey: ["preferences"], queryFn: () => apiClient.getPreferences() })
+        ]);
+
+        const prefs = queryClient.getQueryData<{ appearance?: "dark" | "light" | "system" }>(["preferences"]);
+        if (prefs?.appearance && prefs.appearance !== theme.requestedMode) {
+          theme.setRequestedMode(prefs.appearance);
+        }
+
+        if (isMounted) {
+          setPreloadStatus("Ready!");
+          setDataPreloaded(true);
+        }
+      } catch {
+        if (isMounted) {
+          setDataPreloaded(true);
+        }
+      }
+    }
+
+    void warmUpAppData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authenticated, theme]);
+
+  const showSplash = !fontsLoaded || !booted || !splashMinElapsed || (authenticated && !dataPreloaded && !preloadTimedOut);
 
   if (showSplash) {
-    return <AnimatedBrandLoader />;
+    return <AnimatedBrandLoader message={preloadStatus} />;
   }
 
   if (!authenticated) {
@@ -428,6 +467,8 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
             <AnimatedBrandLoader />
           </View>
         ) : null}
+
+        <AppUpdateModal />
       </View>
     </BiometricGate>
   );

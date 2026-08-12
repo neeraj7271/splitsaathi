@@ -30,12 +30,13 @@ import {
 
 type Props = {
   onFinished?: () => void;
+  statusMessage?: string;
 };
 
 /**
  * One splash layout (light-mode design) for both themes — only palette colors change.
  */
-export function BrandSplashScreen({ onFinished }: Props) {
+export function BrandSplashScreen({ onFinished, statusMessage }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -168,6 +169,12 @@ export function BrandSplashScreen({ onFinished }: Props) {
         <View style={styles.dotsWrap}>
           <LoadingDots palette={palette} reduceMotion={reduceMotion} activeIndex={1} />
         </View>
+
+        {statusMessage ? (
+          <Animated.Text style={[styles.statusMessageText, { color: palette.textSecondary }, tagStyle]}>
+            {statusMessage}
+          </Animated.Text>
+        ) : null}
       </View>
 
       <BottomWave palette={palette} reduceMotion={reduceMotion} />
@@ -238,6 +245,14 @@ const styles = StyleSheet.create({
   },
   dotsWrap: {
     marginTop: splashSpacing.taglineToDots
+  },
+  statusMessageText: {
+    marginTop: 12,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    letterSpacing: 0.2,
+    textAlign: "center",
+    opacity: 0.85
   }
 });
 
