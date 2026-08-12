@@ -13,6 +13,7 @@ import { NotificationExpensePrefsDefaults1783641600008 } from './migrations/1783
 import { AuthIdentitiesEmailProvider1783641600009 } from './migrations/1783641600009-AuthIdentitiesEmailProvider';
 import { MemberExpenseEditDefault1783641600010 } from './migrations/1783641600010-MemberExpenseEditDefault';
 import { SuperAdminModule1783641600011 } from './migrations/1783641600011-SuperAdminModule';
+import { GroupInvitesCodeAndStatus1783641600012 } from './migrations/1783641600012-GroupInvitesCodeAndStatus';
 
 const url = process.env.NODE_ENV === 'test'
   ? process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
@@ -35,7 +36,8 @@ export function createDbDataSource(overrides: Partial<DataSourceOptions> = {}): 
       NotificationExpensePrefsDefaults1783641600008,
       AuthIdentitiesEmailProvider1783641600009,
       MemberExpenseEditDefault1783641600010,
-      SuperAdminModule1783641600011
+      SuperAdminModule1783641600011,
+      GroupInvitesCodeAndStatus1783641600012
     ],
     synchronize: false,
     migrationsRun: false,
