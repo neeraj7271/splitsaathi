@@ -37,6 +37,11 @@ export class DeviceInstallationsService {
     return rows.map((row) => row.pushToken).filter((token): token is string => Boolean(token));
   }
 
+  async listAllPushTokens(): Promise<string[]> {
+    const rows = await this.devices.find();
+    return Array.from(new Set(rows.map((row) => row.pushToken).filter((token): token is string => Boolean(token))));
+  }
+
   async deletePushTokens(tokens: string[]): Promise<void> {
     const validTokens = tokens.filter((t) => typeof t === 'string' && t.trim().length > 0);
     if (validTokens.length === 0) {

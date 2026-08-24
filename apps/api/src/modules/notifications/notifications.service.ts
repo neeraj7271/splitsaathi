@@ -62,6 +62,28 @@ export class NotificationsService {
     });
   }
 
+  async broadcastAppUpdate(versionName: string, releaseNotes?: string) {
+    const allTokens = await this.devices.listAllPushTokens();
+    if (allTokens.length === 0) {
+      return { status: 'skipped', message: 'No devices registered for push notifications.' };
+    }
+
+    return this.provider.deliver({
+      notificationId: 'app-update-broadcast',
+      userId: 'system',
+      type: 'APP_UPDATE',
+      title: 'New Update Available! 🎉',
+      body: `SplitSaathi v${versionName} is ready. Tap to download the latest features!`,
+      data: {
+        type: 'APP_UPDATE',
+        versionName,
+        releaseNotes: releaseNotes ?? '',
+        directApkUrl: 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk'
+      },
+      targetPushTokens: allTokens
+    });
+  }
+
   private async deliver(notification: NotificationEntity): Promise<void> {
     const prefs = await this.preferences.findOne({ where: { userId: notification.userId } });
     if (!preferenceAllowsPushType(prefs, notification.type)) {
