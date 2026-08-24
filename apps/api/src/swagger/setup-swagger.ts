@@ -6,7 +6,14 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('SplitSaathi API')
     .setDescription('India-first shared ledger API for auth, groups, permissions and notifications.')
     .setVersion('0.1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'User JWT Access Token' },
+      'bearer'
+    )
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Admin JWT Access Token' },
+      'admin-auth'
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
