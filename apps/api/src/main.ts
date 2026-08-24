@@ -26,13 +26,7 @@ async function bootstrap(): Promise<void> {
   );
   app.use(
     '/downloads',
-    express.static('/var/www/downloads', {
-      maxAge: '1h'
-    })
-  );
-  app.use(
-    '/downloads',
-    express.static(resolve(__dirname, '../../../deploy'), {
+    express.static('/var/www/html', {
       maxAge: '1h'
     })
   );
