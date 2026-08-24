@@ -34,8 +34,11 @@ export function AppUpdateModal() {
         const res = await fetch(`${apiUrl}/v1/app/version?versionCode=${currentCode}`);
         if (res.ok) {
           const data: AppVersionInfo = await res.json();
-          if (mounted && (data.updateAvailable || data.forceUpdate)) {
-            setVersionInfo(data);
+          if (mounted) {
+            // Show modal if server reports updateAvailable or forceUpdate
+            if (data.updateAvailable || data.forceUpdate) {
+              setVersionInfo(data);
+            }
           }
         }
       } catch {

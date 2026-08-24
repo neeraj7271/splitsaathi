@@ -1,10 +1,15 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminAppConfigEntity } from '@splitsaathi/db';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AppVersionController } from './app-version.controller';
 import { AppVersionService } from './app-version.service';
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([AdminAppConfigEntity]),
+    NotificationsModule
+  ],
   controllers: [AppVersionController],
   providers: [AppVersionService],
   exports: [AppVersionService]

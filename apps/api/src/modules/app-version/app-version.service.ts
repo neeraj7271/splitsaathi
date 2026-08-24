@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { AdminAppConfigEntity } from '@splitsaathi/db';
 import fs from 'node:fs';
 import path from 'node:path';
+import { BroadcastUpdateDto } from './dto/broadcast-update.dto';
 
 export interface AppVersionResponse {
   latestVersionName: string;
@@ -18,24 +22,77 @@ export interface AppVersionResponse {
 export class AppVersionService {
   private readonly logger = new Logger(AppVersionService.name);
 
-  getVersionInfo(clientVersionCode?: number): AppVersionResponse {
-    const versionData = this.loadVersionConfig();
+  constructor(
+    @InjectRepository(AdminAppConfigEntity)
+    private readonly configRepo: Repository<AdminAppConfigEntity>
+  ) {}
+
+  async getVersionInfo(clientVersionCode?: number): Promise<AppVersionResponse> {
+    const defaultData = this.loadVersionConfig();
     const clientCode = clientVersionCode ?? 0;
 
-    const updateAvailable = clientCode > 0 && clientCode < versionData.versionCode;
-    const forceUpdate = clientCode > 0 && clientCode < versionData.minSupportedVersionCode;
+    // Check DB for platform = android override
+    let dbConfig: AdminAppConfigEntity | null = null;
+    try {
+      dbConfig = await this.configRepo.findOne({ where: { platform: 'android' } });
+    } catch {
+      // Fallback gracefully to version.json file if DB lookup fails
+    }
+
+    const latestVersionName = dbConfig?.latestVersion || defaultData.versionName;
+    const latestVersionCode = dbConfig
+      ? parseVersionCode(dbConfig.latestVersion, defaultData.versionCode)
+      : defaultData.versionCode;
+    const minSupportedVersionCode = dbConfig
+      ? parseVersionCode(dbConfig.minSupportedVersion, defaultData.minSupportedVersionCode)
+      : defaultData.minSupportedVersionCode;
+
+    const forceUpdateEnabled = dbConfig?.forceUpdateEnabled ?? false;
+
+    const updateAvailable = clientCode > 0 && clientCode < latestVersionCode;
+    const forceUpdate =
+      forceUpdateEnabled || (clientCode > 0 && clientCode < minSupportedVersionCode);
 
     return {
-      latestVersionName: versionData.versionName,
-      latestVersionCode: versionData.versionCode,
-      minSupportedVersionCode: versionData.minSupportedVersionCode,
+      latestVersionName,
+      latestVersionCode,
+      minSupportedVersionCode,
       updateAvailable,
       forceUpdate,
-      directApkUrl: versionData.directApkUrl,
-      playStoreUrl: versionData.playStoreUrl,
-      releaseNotes: versionData.releaseNotes,
-      releasedAt: versionData.releasedAt
+      directApkUrl: defaultData.directApkUrl,
+      playStoreUrl: defaultData.playStoreUrl,
+      releaseNotes: dbConfig?.changelog || defaultData.releaseNotes,
+      releasedAt: defaultData.releasedAt
     };
+  }
+
+  async updateVersionConfig(dto: BroadcastUpdateDto): Promise<AdminAppConfigEntity> {
+    const versionName = dto.versionName ?? '1.0.1';
+    const minVersion = dto.forceUpdate ? versionName : '1.0.0';
+
+    let config = await this.configRepo.findOne({ where: { platform: 'android' } });
+    if (!config) {
+      config = this.configRepo.create({
+        platform: 'android',
+        latestVersion: versionName,
+        minSupportedVersion: minVersion,
+        forceUpdateEnabled: dto.forceUpdate ?? false,
+        changelog: dto.releaseNotes || 'New updates and bug fixes.'
+      });
+    } else {
+      config.latestVersion = versionName;
+      if (dto.forceUpdate) {
+        config.minSupportedVersion = versionName;
+        config.forceUpdateEnabled = true;
+      }
+      if (dto.releaseNotes) {
+        config.changelog = dto.releaseNotes;
+      }
+    }
+
+    const saved = await this.configRepo.save(config);
+    this.logger.log(`Updated Android App Config in DB: latestVersion=${saved.latestVersion}`);
+    return saved;
   }
 
   private loadVersionConfig() {
@@ -57,13 +114,24 @@ export class AppVersionService {
     }
 
     return {
-      versionName: '0.1.0',
+      versionName: '1.0.0',
       versionCode: 100,
       minSupportedVersionCode: 100,
-      directApkUrl: 'https://api-dev.thesplitsaathi.com/downloads/SplitSaathi-debug.apk',
+      directApkUrl: 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk',
       playStoreUrl: 'https://play.google.com/store/apps/details?id=in.splitsaathi.mobile',
-      releaseNotes: 'Initial release with expense splitting and settlement tracking.',
-      releasedAt: '2026-08-12'
+      releaseNotes: 'Official release of SplitSaathi with expense tracking and UPI settlements.',
+      releasedAt: '2026-08-24'
     };
   }
+}
+
+function parseVersionCode(versionStr: string, fallback: number): number {
+  if (!versionStr) return fallback;
+  // e.g. "1.0.1" => 101, "1.2.0" => 120, "2.0.0" => 200
+  const parts = versionStr.split('.').map((p) => Number.parseInt(p, 10));
+  if (parts.length >= 3 && !parts.some(Number.isNaN)) {
+    return parts[0] * 100 + parts[1] * 10 + parts[2];
+  }
+  const parsed = Number.parseInt(versionStr.replace(/\D/g, ''), 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
 }
