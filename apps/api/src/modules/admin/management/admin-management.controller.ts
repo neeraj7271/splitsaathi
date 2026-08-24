@@ -1,11 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { AdminJwtAuthGuard } from '../auth/guards/admin-jwt-auth.guard';
 import { AdminRolesGuard } from '../auth/guards/admin-roles.guard';
 import { AdminRoles } from '../auth/decorators/admin-roles.decorator';
 import { AdminAuditInterceptor } from '../audit-log/interceptors/admin-audit.interceptor';
-import { AdminManagementService, CreateAdminUserPayload } from './admin-management.service';
-import type { AdminRole, AdminUserStatus } from '@splitsaathi/db';
+import { AdminManagementService } from './admin-management.service';
+import { CreateAdminUserDto, UpdateAdminUserDto } from './dto/admin-management.dto';
 
 @ApiTags('admin-management')
 @ApiBearerAuth('admin-auth')
@@ -25,19 +25,20 @@ export class AdminManagementController {
   @Post('admins')
   @AdminRoles('super_admin')
   @ApiOkResponse({ description: 'Create a new admin user' })
-  createAdmin(@Body() payload: CreateAdminUserPayload) {
-    return this.adminManagementService.createAdmin(payload);
+  @ApiBody({ type: CreateAdminUserDto })
+  createAdmin(@Body() dto: CreateAdminUserDto) {
+    return this.adminManagementService.createAdmin(dto);
   }
 
   @Patch('admins/:id')
   @AdminRoles('super_admin')
   @ApiOkResponse({ description: 'Update role or status of an admin user' })
+  @ApiBody({ type: UpdateAdminUserDto })
   updateAdmin(
     @Param('id') adminId: string,
-    @Body('role') role?: AdminRole,
-    @Body('status') status?: AdminUserStatus
+    @Body() dto: UpdateAdminUserDto
   ) {
-    return this.adminManagementService.updateAdmin(adminId, role, status);
+    return this.adminManagementService.updateAdmin(adminId, dto.role, dto.status);
   }
 
   @Get('sessions')

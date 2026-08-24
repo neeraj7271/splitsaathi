@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AppVersionResponse, AppVersionService } from './app-version.service';
+import { BroadcastUpdateDto } from './dto/broadcast-update.dto';
 
 @ApiTags('App Version')
 @Controller('app')
@@ -24,10 +25,11 @@ export class AppVersionController {
   @Public()
   @Post('broadcast-update')
   @ApiOperation({ summary: 'Trigger FCM push notification broadcast for app update' })
-  async triggerBroadcast(@Body() body: { versionName?: string; releaseNotes?: string }) {
+  @ApiBody({ type: BroadcastUpdateDto })
+  async triggerBroadcast(@Body() dto: BroadcastUpdateDto) {
     return this.notificationsService.broadcastAppUpdate(
-      body.versionName ?? '1.0.0',
-      body.releaseNotes
+      dto.versionName ?? '1.0.0',
+      dto.releaseNotes
     );
   }
 }

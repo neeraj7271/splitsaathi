@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { AdminJwtAuthGuard } from '../auth/guards/admin-jwt-auth.guard';
 import { AdminRolesGuard } from '../auth/guards/admin-roles.guard';
 import { AdminRoles } from '../auth/decorators/admin-roles.decorator';
 import { CurrentAdmin, AuthenticatedAdmin } from '../auth/decorators/current-admin.decorator';
 import { AdminAuditInterceptor } from '../audit-log/interceptors/admin-audit.interceptor';
 import { AdminSupportService } from './admin-support.service';
+import { ReplyTicketDto, UpdateTicketStatusDto, RetryJobDto } from './dto/support.dto';
 
 @ApiTags('admin-support')
 @ApiBearerAuth('admin-auth')
@@ -42,22 +43,24 @@ export class AdminSupportController {
   @Post('tickets/:ticketId/reply')
   @AdminRoles('super_admin', 'ops_admin')
   @ApiOkResponse({ description: 'Reply to support ticket' })
+  @ApiBody({ type: ReplyTicketDto })
   replyTicket(
     @Param('ticketId') ticketId: string,
-    @Body('body') body: string,
+    @Body() dto: ReplyTicketDto,
     @CurrentAdmin() admin: AuthenticatedAdmin
   ) {
-    return this.adminSupportService.replyTicket(ticketId, admin.adminId, body, 'admin');
+    return this.adminSupportService.replyTicket(ticketId, admin.adminId, dto.body, 'admin');
   }
 
   @Patch('tickets/:ticketId/status')
   @AdminRoles('super_admin', 'ops_admin')
   @ApiOkResponse({ description: 'Update ticket status' })
+  @ApiBody({ type: UpdateTicketStatusDto })
   updateTicketStatus(
     @Param('ticketId') ticketId: string,
-    @Body('status') status: string
+    @Body() dto: UpdateTicketStatusDto
   ) {
-    return this.adminSupportService.updateTicketStatus(ticketId, status);
+    return this.adminSupportService.updateTicketStatus(ticketId, dto.status);
   }
 
   @Get('jobs/import-export')
@@ -70,10 +73,11 @@ export class AdminSupportController {
   @Post('jobs/import-export/:jobId/retry')
   @AdminRoles('super_admin', 'ops_admin')
   @ApiOkResponse({ description: 'Retry failed import/export job' })
+  @ApiBody({ type: RetryJobDto })
   retryJob(
     @Param('jobId') jobId: string,
-    @Body('type') type: 'import' | 'export'
+    @Body() dto: RetryJobDto
   ) {
-    return this.adminSupportService.retryJob(jobId, type);
+    return this.adminSupportService.retryJob(jobId, dto.type);
   }
 }

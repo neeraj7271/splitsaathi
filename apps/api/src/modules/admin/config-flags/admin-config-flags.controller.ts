@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { AdminJwtAuthGuard } from '../auth/guards/admin-jwt-auth.guard';
 import { AdminRolesGuard } from '../auth/guards/admin-roles.guard';
 import { AdminRoles } from '../auth/decorators/admin-roles.decorator';
 import { CurrentAdmin, AuthenticatedAdmin } from '../auth/decorators/current-admin.decorator';
 import { AdminAuditInterceptor } from '../audit-log/interceptors/admin-audit.interceptor';
-import { AdminConfigFlagsService, UpsertFeatureFlagPayload, UpdateAppConfigPayload } from './admin-config-flags.service';
+import { AdminConfigFlagsService } from './admin-config-flags.service';
+import { UpsertFeatureFlagDto, UpdateAppConfigDto } from './dto/config-flags.dto';
 
 @ApiTags('admin-config-flags')
 @ApiBearerAuth('admin-auth')
@@ -25,11 +26,12 @@ export class AdminConfigFlagsController {
   @Post('feature-flags')
   @AdminRoles('super_admin')
   @ApiOkResponse({ description: 'Create or update feature flag' })
+  @ApiBody({ type: UpsertFeatureFlagDto })
   upsertFeatureFlag(
-    @Body() payload: UpsertFeatureFlagPayload,
+    @Body() dto: UpsertFeatureFlagDto,
     @CurrentAdmin() admin: AuthenticatedAdmin
   ) {
-    return this.adminConfigFlagsService.upsertFeatureFlag(payload, admin.adminId);
+    return this.adminConfigFlagsService.upsertFeatureFlag(dto, admin.adminId);
   }
 
   @Delete('feature-flags/:key')
@@ -49,10 +51,11 @@ export class AdminConfigFlagsController {
   @Put('app-version')
   @AdminRoles('super_admin')
   @ApiOkResponse({ description: 'Update minimum supported version and force update config' })
+  @ApiBody({ type: UpdateAppConfigDto })
   updateAppConfig(
-    @Body() payload: UpdateAppConfigPayload,
+    @Body() dto: UpdateAppConfigDto,
     @CurrentAdmin() admin: AuthenticatedAdmin
   ) {
-    return this.adminConfigFlagsService.updateAppConfig(payload, admin.adminId);
+    return this.adminConfigFlagsService.updateAppConfig(dto, admin.adminId);
   }
 }
