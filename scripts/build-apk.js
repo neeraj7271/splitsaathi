@@ -59,7 +59,18 @@ const envVars = {
 
 envVars.PATH = `${envVars.JAVA_HOME}/bin:${envVars.ANDROID_HOME}/platform-tools:${envVars.PATH}`;
 
-// 3. Run Gradle build
+// 3. Clean Metro bundle assets to force re-bundling with target EXPO_PUBLIC_API_URL
+const expoCachePath = path.join(mobileDir, '.expo');
+const bundleAssetsPath = path.join(androidDir, 'app/build/generated/assets/createBundleReleaseJsAndAssets');
+if (fs.existsSync(expoCachePath)) {
+  fs.rmSync(expoCachePath, { recursive: true, force: true });
+  console.log(`✓ Cleared Expo bundler cache (.expo)`);
+}
+if (fs.existsSync(bundleAssetsPath)) {
+  fs.rmSync(bundleAssetsPath, { recursive: true, force: true });
+  console.log(`✓ Cleared JS bundle asset cache (${bundleAssetsPath})`);
+}
+
 try {
   console.log(`\n⚙️ Running Gradle build: ./gradlew ${config.gradleTask}...`);
   execSync(`./gradlew ${config.gradleTask}`, {

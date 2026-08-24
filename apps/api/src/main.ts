@@ -25,6 +25,18 @@ async function bootstrap(): Promise<void> {
     })
   );
   app.use(
+    '/downloads',
+    express.static('/var/www/downloads', {
+      maxAge: '1h'
+    })
+  );
+  app.use(
+    '/downloads',
+    express.static(resolve(__dirname, '../../../deploy'), {
+      maxAge: '1h'
+    })
+  );
+  app.use(
     json({
       verify: (request: any, _response, buffer) => {
         request.rawBody = buffer.toString('utf8');
