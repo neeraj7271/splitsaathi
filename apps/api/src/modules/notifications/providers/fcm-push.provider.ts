@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { cert, getApps, initializeApp, type App, type ServiceAccount } from 'firebase-admin/app';
 import {
   getMessaging,
@@ -149,14 +149,18 @@ export class FcmPushProvider implements NotificationProviderPort {
   }
 
   private loadServiceAccount(): ServiceAccount | null {
-    const json = this.config.env.FCM_SERVICE_ACCOUNT_JSON?.trim();
-    if (json) {
-      return JSON.parse(json) as ServiceAccount;
-    }
+    try {
+      const json = this.config.env.FCM_SERVICE_ACCOUNT_JSON?.trim();
+      if (json) {
+        return JSON.parse(json) as ServiceAccount;
+      }
 
-    const path = this.config.env.FCM_SERVICE_ACCOUNT_PATH?.trim();
-    if (path) {
-      return JSON.parse(readFileSync(path, 'utf8')) as ServiceAccount;
+      const path = this.config.env.FCM_SERVICE_ACCOUNT_PATH?.trim();
+      if (path && existsSync(path) && statSync(path).isFile()) {
+        return JSON.parse(readFileSync(path, 'utf8')) as ServiceAccount;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to load FCM service account: ${error}`);
     }
 
     return null;

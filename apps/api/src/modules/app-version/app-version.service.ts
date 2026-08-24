@@ -47,7 +47,7 @@ export class AppVersionService {
       ];
 
       for (const filePath of candidates) {
-        if (fs.existsSync(filePath)) {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
           const raw = fs.readFileSync(filePath, 'utf-8');
           return JSON.parse(raw);
         }
