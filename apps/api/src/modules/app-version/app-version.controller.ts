@@ -17,19 +17,29 @@ export class AppVersionController {
   @Get('version')
   @ApiOperation({ summary: 'Get current app version metadata and update check' })
   @ApiQuery({ name: 'versionCode', required: false, type: Number, description: 'Client Android versionCode' })
-  getVersion(@Query('versionCode') versionCode?: string): AppVersionResponse {
+  async getVersion(@Query('versionCode') versionCode?: string): Promise<AppVersionResponse> {
     const code = versionCode ? Number.parseInt(versionCode, 10) : undefined;
     return this.versionService.getVersionInfo(code);
   }
 
   @Public()
   @Post('broadcast-update')
-  @ApiOperation({ summary: 'Trigger FCM push notification broadcast for app update' })
+  @ApiOperation({ summary: 'Trigger FCM push notification broadcast and update version code' })
   @ApiBody({ type: BroadcastUpdateDto })
   async triggerBroadcast(@Body() dto: BroadcastUpdateDto) {
-    return this.notificationsService.broadcastAppUpdate(
-      dto.versionName ?? '1.0.0',
+    // 1. Automatically update backend version database config
+    await this.versionService.updateVersionConfig(dto);
+
+    // 2. Broadcast FCM notification to all active devices
+    const notificationResult = await this.notificationsService.broadcastAppUpdate(
+      dto.versionName ?? '1.0.1',
       dto.releaseNotes
     );
+
+    return {
+      success: true,
+      message: `Version updated to ${dto.versionName ?? '1.0.1'} and notification broadcasted`,
+      notificationResult
+    };
   }
 }

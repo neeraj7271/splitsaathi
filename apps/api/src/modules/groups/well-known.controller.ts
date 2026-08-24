@@ -30,6 +30,20 @@ export class WellKnownController {
     ];
   }
 
+  @Public()
+  @Get('security.txt')
+  @Header('Content-Type', 'text/plain')
+  @Header('Cache-Control', 'public, max-age=86400')
+  securityTxt() {
+    return [
+      'Contact: mailto:security@thesplitsaathi.com',
+      'Expires: 2027-12-31T23:59:59.000Z',
+      'Preferred-Languages: en',
+      'Canonical: https://api.thesplitsaathi.com/.well-known/security.txt',
+      'Policy: https://thesplitsaathi.com/security'
+    ].join('\n');
+  }
+
   private resolveFingerprints(): string[] {
     const fromEnv = (process.env.ANDROID_APP_LINK_SHA256 ?? '')
       .split(',')
