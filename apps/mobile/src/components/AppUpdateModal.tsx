@@ -7,6 +7,7 @@ import { useTheme } from "../theme";
 import { Button } from "./Button";
 import { ThemedText } from "./ThemedText";
 import { AppVersionInfo, getDirectApkDownloadUrl, resolveAppUpdatePrompt } from "../updates/checkAppVersion";
+import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
 import { setDismissedVersionCode } from "../updates/updateDismissCache";
 
 export function AppUpdateModal() {
@@ -44,6 +45,7 @@ export function AppUpdateModal() {
   const handleUpdate = () => {
     const targetUrl = getDirectApkDownloadUrl(versionInfo.directApkUrl);
     if (targetUrl) {
+      watchForPackageUpdateAfterDownload();
       void Linking.openURL(targetUrl);
     }
   };
@@ -97,6 +99,9 @@ export function AppUpdateModal() {
               {versionInfo.forceUpdate
                 ? "A critical security and feature update is required to continue using SplitSaathi."
                 : `Version ${versionInfo.latestVersionName} is now available with new improvements.`}
+            </ThemedText>
+            <ThemedText variant="caption" tone="muted" align="center" style={styles.subtitle}>
+              After installing, close SplitSaathi completely and open it again from your home screen.
             </ThemedText>
           </View>
 

@@ -1,4 +1,5 @@
 import versionConfig from "../../version.json";
+import { getAppVersionCode } from "../utils/appVersion";
 import { clearDismissedVersionCode, getDismissedVersionCode } from "./updateDismissCache";
 
 export interface AppVersionInfo {
@@ -19,7 +20,7 @@ function getApiUrl() {
 }
 
 function getCurrentVersionCode() {
-  return versionConfig.versionCode ?? 100000;
+  return getAppVersionCode();
 }
 
 export async function fetchAppVersionInfo(): Promise<AppVersionInfo | null> {
