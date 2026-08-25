@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
+const { versionCodeFromName } = require('./version-utils');
 
 const versionJsonPath = path.join(__dirname, '../apps/mobile/version.json');
 const appJsonPath = path.join(__dirname, '../apps/mobile/app.json');
@@ -37,8 +38,12 @@ if (bumpType === 'major') {
 }
 
 const newVersionName = `${major}.${minor}.${patch}`;
-// Formula: MAJOR*100000 + MINOR*1000 + PATCH*10
-const newVersionCode = major * 100000 + minor * 1000 + patch * 10;
+const newVersionCode = versionCodeFromName(newVersionName);
+
+if (newVersionCode === null) {
+  console.error(`Unable to derive versionCode from "${newVersionName}".`);
+  process.exit(1);
+}
 
 versionData.versionName = newVersionName;
 versionData.versionCode = newVersionCode;

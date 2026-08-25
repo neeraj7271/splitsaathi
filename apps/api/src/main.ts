@@ -3,8 +3,7 @@ import { resolve } from 'node:path';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import express from 'express';
-import { json, urlencoded } from 'express';
+import express, { json, NextFunction, Request, Response, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { ApiConfigService } from './config/api-config.service';
 import { loadEnvFile } from './config/load-env-file';
@@ -24,10 +23,21 @@ async function bootstrap(): Promise<void> {
       immutable: true
     })
   );
+  const downloadsDir = process.env.APK_DOWNLOADS_DIR || '/var/www/downloads';
+  app.use('/downloads', (request: Request, response: Response, next: NextFunction) => {
+    if (request.path.toLowerCase().endsWith('.apk')) {
+      response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      response.setHeader('Pragma', 'no-cache');
+      response.setHeader('Expires', '0');
+    }
+    next();
+  });
   app.use(
     '/downloads',
-    express.static('/var/www/html', {
-      maxAge: '1h'
+    express.static(downloadsDir, {
+      maxAge: 0,
+      etag: true,
+      lastModified: true
     })
   );
   app.use(

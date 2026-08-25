@@ -1,6 +1,9 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { AdminRoles } from '../admin/auth/decorators/admin-roles.decorator';
+import { AdminJwtAuthGuard } from '../admin/auth/guards/admin-jwt-auth.guard';
+import { AdminRolesGuard } from '../admin/auth/guards/admin-roles.guard';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AppVersionResponse, AppVersionService } from './app-version.service';
 import { BroadcastUpdateDto } from './dto/broadcast-update.dto';
@@ -22,23 +25,27 @@ export class AppVersionController {
     return this.versionService.getVersionInfo(code);
   }
 
-  @Public()
   @Post('broadcast-update')
+  @UseGuards(AdminJwtAuthGuard, AdminRolesGuard)
+  @AdminRoles('super_admin', 'ops_admin')
+  @ApiBearerAuth('admin-auth')
   @ApiOperation({ summary: 'Trigger FCM push notification broadcast and update version code' })
   @ApiBody({ type: BroadcastUpdateDto })
   async triggerBroadcast(@Body() dto: BroadcastUpdateDto) {
-    // 1. Automatically update backend version database config
-    await this.versionService.updateVersionConfig(dto);
+    const fileConfig = this.versionService.getVersionConfig();
+    const savedConfig = await this.versionService.updateVersionConfig(dto);
+    const versionName = dto.versionName ?? savedConfig.latestVersion ?? fileConfig.versionName;
+    const releaseNotes = dto.releaseNotes ?? savedConfig.changelog ?? fileConfig.releaseNotes;
 
-    // 2. Broadcast FCM notification to all active devices
     const notificationResult = await this.notificationsService.broadcastAppUpdate(
-      dto.versionName ?? '1.0.1',
-      dto.releaseNotes
+      versionName,
+      releaseNotes,
+      fileConfig.directApkUrl
     );
 
     return {
       success: true,
-      message: `Version updated to ${dto.versionName ?? '1.0.1'} and notification broadcasted`,
+      message: `Version updated to ${versionName} and notification broadcasted`,
       notificationResult
     };
   }

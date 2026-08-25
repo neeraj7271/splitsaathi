@@ -62,11 +62,13 @@ export class NotificationsService {
     });
   }
 
-  async broadcastAppUpdate(versionName: string, releaseNotes?: string) {
+  async broadcastAppUpdate(versionName: string, releaseNotes?: string, directApkUrl?: string) {
     const allTokens = await this.devices.listAllPushTokens();
     if (allTokens.length === 0) {
       return { status: 'skipped', message: 'No devices registered for push notifications.' };
     }
+
+    const apkUrl = directApkUrl || 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk';
 
     return this.provider.deliver({
       notificationId: 'app-update-broadcast',
@@ -78,7 +80,7 @@ export class NotificationsService {
         type: 'APP_UPDATE',
         versionName,
         releaseNotes: releaseNotes ?? '',
-        directApkUrl: 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk'
+        directApkUrl: apkUrl
       },
       targetPushTokens: allTokens
     });

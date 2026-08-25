@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { AdminAppConfigEntity } from '@splitsaathi/db';
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseVersionCode } from '../../common/mobile-version-code';
 import { BroadcastUpdateDto } from './dto/broadcast-update.dto';
 
 export interface AppVersionResponse {
@@ -16,6 +17,7 @@ export interface AppVersionResponse {
   playStoreUrl: string;
   releaseNotes: string;
   releasedAt: string;
+  apkSizeBytes: number | null;
 }
 
 @Injectable()
@@ -64,13 +66,19 @@ export class AppVersionService {
       directApkUrl: defaultData.directApkUrl,
       playStoreUrl: defaultData.playStoreUrl,
       releaseNotes: dbConfig?.changelog || defaultData.releaseNotes,
-      releasedAt: defaultData.releasedAt
+      releasedAt: defaultData.releasedAt,
+      apkSizeBytes: this.resolveApkSizeBytes(defaultData.directApkUrl)
     };
   }
 
+  getVersionConfig() {
+    return this.loadVersionConfig();
+  }
+
   async updateVersionConfig(dto: BroadcastUpdateDto): Promise<AdminAppConfigEntity> {
-    const versionName = dto.versionName ?? '1.0.1';
-    const minVersion = dto.forceUpdate ? versionName : '1.0.0';
+    const fileConfig = this.loadVersionConfig();
+    const versionName = dto.versionName ?? fileConfig.versionName;
+    const minVersion = dto.forceUpdate ? versionName : fileConfig.minSupportedVersionName ?? '1.0.0';
 
     let config = await this.configRepo.findOne({ where: { platform: 'android' } });
     if (!config) {
@@ -79,7 +87,7 @@ export class AppVersionService {
         latestVersion: versionName,
         minSupportedVersion: minVersion,
         forceUpdateEnabled: dto.forceUpdate ?? false,
-        changelog: dto.releaseNotes || 'New updates and bug fixes.'
+        changelog: dto.releaseNotes || fileConfig.releaseNotes || 'New updates and bug fixes.'
       });
     } else {
       config.latestVersion = versionName;
@@ -117,23 +125,31 @@ export class AppVersionService {
 
     return {
       versionName: '1.0.0',
-      versionCode: 100,
-      minSupportedVersionCode: 100,
+      versionCode: 100000,
+      minSupportedVersionCode: 100000,
+      minSupportedVersionName: '1.0.0',
       directApkUrl: 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk',
       playStoreUrl: 'https://play.google.com/store/apps/details?id=in.splitsaathi.mobile',
       releaseNotes: 'Official release of SplitSaathi with expense tracking and UPI settlements.',
       releasedAt: '2026-08-24'
     };
   }
-}
 
-function parseVersionCode(versionStr: string, fallback: number): number {
-  if (!versionStr) return fallback;
-  // e.g. "1.0.1" => 101, "1.2.0" => 120, "2.0.0" => 200
-  const parts = versionStr.split('.').map((p) => Number.parseInt(p, 10));
-  if (parts.length >= 3 && !parts.some(Number.isNaN)) {
-    return parts[0] * 100 + parts[1] * 10 + parts[2];
+  private resolveApkSizeBytes(directApkUrl: string): number | null {
+    try {
+      const downloadsDir = process.env.APK_DOWNLOADS_DIR || '/var/www/downloads';
+      const fileName = path.basename(new URL(directApkUrl).pathname);
+      const apkPath = path.join(downloadsDir, fileName);
+      if (fs.existsSync(apkPath)) {
+        const stats = fs.statSync(apkPath);
+        if (stats.isFile()) {
+          return stats.size;
+        }
+      }
+    } catch (error) {
+      this.logger.debug(`Unable to resolve APK size: ${error}`);
+    }
+
+    return null;
   }
-  const parsed = Number.parseInt(versionStr.replace(/\D/g, ''), 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
 }

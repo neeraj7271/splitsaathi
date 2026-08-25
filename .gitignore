@@ -15,6 +15,7 @@ deploy/api.env
 deploy/api.docker.env
 deploy/secrets/
 deploy/*.apk
+scripts/release.env
 
 # Never commit Google OAuth client secret JSON downloads
 apps/mobile/public/assets/client_secret*.json
