@@ -116,11 +116,17 @@ function verifyApkVersion(apkPath, expected, options = {}) {
   return parsed;
 }
 
+function resolveAndroidHome() {
+  const defaultAndroidHome = process.env.CI ? undefined : '/home/neeraj/Android/Sdk';
+  return process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || defaultAndroidHome;
+}
+
 module.exports = {
   VERSION_JSON_PATH,
   versionCodeFromName,
   parseVersionCode,
   readVersionJson,
+  resolveAndroidHome,
   findAapt,
   parseAaptBadging,
   verifyApkVersion
