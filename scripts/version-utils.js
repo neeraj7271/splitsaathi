@@ -4,6 +4,7 @@ const path = require('node:path');
 const { execSync } = require('node:child_process');
 
 const VERSION_JSON_PATH = path.join(__dirname, '../apps/mobile/version.json');
+const APP_JSON_PATH = path.join(__dirname, '../apps/mobile/app.json');
 
 /**
  * Deterministic Android versionCode:
@@ -35,6 +36,40 @@ function readVersionJson() {
   }
 
   return JSON.parse(fs.readFileSync(VERSION_JSON_PATH, 'utf-8'));
+}
+
+/** Keep app.json in sync with version.json so Metro embeds the correct expo.version. */
+function syncAppJsonFromVersionJson(versionData = readVersionJson()) {
+  if (!fs.existsSync(APP_JSON_PATH)) {
+    return false;
+  }
+
+  const appJson = JSON.parse(fs.readFileSync(APP_JSON_PATH, 'utf-8'));
+  if (!appJson.expo) {
+    return false;
+  }
+
+  let changed = false;
+
+  if (appJson.expo.version !== versionData.versionName) {
+    appJson.expo.version = versionData.versionName;
+    changed = true;
+  }
+
+  if (!appJson.expo.android) {
+    appJson.expo.android = {};
+  }
+
+  if (appJson.expo.android.versionCode !== versionData.versionCode) {
+    appJson.expo.android.versionCode = versionData.versionCode;
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(APP_JSON_PATH, JSON.stringify(appJson, null, 2) + '\n');
+  }
+
+  return changed;
 }
 
 function findAapt(androidHome = process.env.ANDROID_HOME) {
@@ -123,9 +158,11 @@ function resolveAndroidHome() {
 
 module.exports = {
   VERSION_JSON_PATH,
+  APP_JSON_PATH,
   versionCodeFromName,
   parseVersionCode,
   readVersionJson,
+  syncAppJsonFromVersionJson,
   resolveAndroidHome,
   findAapt,
   parseAaptBadging,

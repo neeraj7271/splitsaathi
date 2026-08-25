@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageSquare, Trash, Bell, ShieldCheck, Palette, Star, Headset, SealCheck, PencilSimple, EnvelopeSimple, CurrencyInr, Phone, X } from "phosphor-react-native";
+import { DownloadSimple, ImageSquare, Trash, Bell, ShieldCheck, Palette, Star, Headset, SealCheck, PencilSimple, EnvelopeSimple, CurrencyInr, Phone, X } from "phosphor-react-native";
 
 import { apiClient } from "../api/client";
 import { ActionSheet } from "../components/ActionSheet";
@@ -18,8 +18,11 @@ import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
+import { fetchAppVersionInfo, getDirectApkDownloadUrl } from "../updates/checkAppVersion";
+import { clearDismissedVersionCode } from "../updates/updateDismissCache";
 import { pickAndCompressAvatar } from "../utils/avatarUpload";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
+import { getAppVersionCode, getAppVersionName } from "../utils/appVersion";
 import { normalizePhoneE164 } from "../utils/phoneHash";
 
 export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
@@ -36,6 +39,25 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
   const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
+
+  async function checkForAppUpdate() {
+    const data = await fetchAppVersionInfo();
+    if (!data) {
+      Alert.alert("Update check failed", "Could not reach the server. Try again in a moment.");
+      return;
+    }
+
+    if (data.updateAvailable || data.forceUpdate) {
+      await clearDismissedVersionCode();
+      const targetUrl = getDirectApkDownloadUrl(data.directApkUrl);
+      if (targetUrl) {
+        await Linking.openURL(targetUrl);
+      }
+      return;
+    }
+
+    Alert.alert("You're up to date", `SplitSaathi ${getAppVersionName()} is the latest version.`);
+  }
 
   useEffect(() => {
     if (profileQuery.data?.displayName) {
@@ -329,6 +351,13 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
               }
             />
             <SettingsLinkRow
+              label="Check for app update"
+              subtitle="Download the latest SplitSaathi APK"
+              icon={<DownloadSimple size={20} color={theme.colors.confirmed} weight="fill" />}
+              iconTone="confirmed"
+              onPress={() => void checkForAppUpdate()}
+            />
+            <SettingsLinkRow
               label="Contact support"
               subtitle="Get help from our team"
               icon={<Headset size={20} color={theme.colors.confirmed} weight="fill" />}
@@ -348,7 +377,9 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
         <View style={styles.brandWordmarkChip}>
           <BrandLogo variant="wordmark" size={16} />
         </View>
-        <ThemedText variant="caption" tone="muted">Version 1.0.0</ThemedText>
+        <ThemedText variant="caption" tone="muted">
+          Version {getAppVersionName()} · build {getAppVersionCode()}
+        </ThemedText>
       </View>
 
       <Button label="Back to home" variant="ghost" onPress={() => navigation.go("home")} />

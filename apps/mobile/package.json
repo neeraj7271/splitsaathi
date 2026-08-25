@@ -23,6 +23,7 @@
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@tanstack/react-query": "^5.62.8",
     "expo": "~54.0.35",
+    "expo-application": "~7.0.7",
     "expo-asset": "~12.0.13",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",

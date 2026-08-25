@@ -2,7 +2,7 @@
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { readVersionJson, verifyApkVersion } = require('./version-utils');
+const { readVersionJson, syncAppJsonFromVersionJson, verifyApkVersion } = require('./version-utils');
 
 const envFlag = (process.argv[2] || 'debug').toLowerCase();
 const skipVerify = process.argv.includes('--skip-verify');
@@ -43,6 +43,9 @@ const androidDir = path.join(mobileDir, 'android');
 const mobileEnvPath = path.join(mobileDir, '.env');
 const deployDir = path.join(rootDir, 'deploy');
 const versionConfig = readVersionJson();
+if (syncAppJsonFromVersionJson(versionConfig)) {
+  console.log(`✓ Synchronized apps/mobile/app.json from version.json`);
+}
 
 console.log(`\n🚀 Starting SplitSaathi APK Build for environment: [${envFlag.toUpperCase()}]`);
 console.log(`• Target version: ${versionConfig.versionName} (versionCode=${versionConfig.versionCode})`);

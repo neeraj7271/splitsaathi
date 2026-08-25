@@ -78,7 +78,10 @@ export class AppVersionService {
   async updateVersionConfig(dto: BroadcastUpdateDto): Promise<AdminAppConfigEntity> {
     const fileConfig = this.loadVersionConfig();
     const versionName = dto.versionName ?? fileConfig.versionName;
-    const minVersion = dto.forceUpdate ? versionName : fileConfig.minSupportedVersionName ?? '1.0.0';
+    const forceUpdate = dto.forceUpdate ?? false;
+    const minVersion = forceUpdate
+      ? versionName
+      : fileConfig.minSupportedVersionName ?? '1.0.0';
 
     let config = await this.configRepo.findOne({ where: { platform: 'android' } });
     if (!config) {
@@ -86,15 +89,13 @@ export class AppVersionService {
         platform: 'android',
         latestVersion: versionName,
         minSupportedVersion: minVersion,
-        forceUpdateEnabled: dto.forceUpdate ?? false,
+        forceUpdateEnabled: forceUpdate,
         changelog: dto.releaseNotes || fileConfig.releaseNotes || 'New updates and bug fixes.'
       });
     } else {
       config.latestVersion = versionName;
-      if (dto.forceUpdate) {
-        config.minSupportedVersion = versionName;
-        config.forceUpdateEnabled = true;
-      }
+      config.forceUpdateEnabled = forceUpdate;
+      config.minSupportedVersion = minVersion;
       if (dto.releaseNotes) {
         config.changelog = dto.releaseNotes;
       }
