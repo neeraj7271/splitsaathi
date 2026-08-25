@@ -51,7 +51,9 @@ export class AppVersionService {
 
     const updateAvailable = clientCode > 0 && clientCode < latestVersionCode;
     const forceUpdate =
-      forceUpdateEnabled || (clientCode > 0 && clientCode < minSupportedVersionCode);
+      clientCode > 0
+        ? (forceUpdateEnabled && clientCode < latestVersionCode) || clientCode < minSupportedVersionCode
+        : forceUpdateEnabled;
 
     return {
       latestVersionName,

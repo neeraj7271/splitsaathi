@@ -1,9 +1,9 @@
 {
-  "versionName": "1.0.0",
-  "versionCode": 100,
+  "versionName": "1.0.1",
+  "versionCode": 101,
   "minSupportedVersionCode": 100,
   "directApkUrl": "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk",
   "playStoreUrl": "https://play.google.com/store/apps/details?id=in.splitsaathi.mobile",
-  "releaseNotes": "Official release of SplitSaathi with expense tracking, group balances, and UPI settlements.",
+  "releaseNotes": "Updated release with fixes",
   "releasedAt": "2026-08-24"
 }
