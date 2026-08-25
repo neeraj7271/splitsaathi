@@ -140,7 +140,7 @@ async function broadcastUpdate(config, versionData, options = {}) {
     versionCode: versionData.versionCode,
     minSupportedVersionCode: versionData.minSupportedVersionCode,
     releaseNotes: versionData.releaseNotes,
-    forceUpdate: false
+    forceUpdate: true
   };
 
   console.log(`\n📣 Broadcasting update via ${config.API_URL}/v1/app/broadcast-update`);

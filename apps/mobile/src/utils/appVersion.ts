@@ -13,9 +13,20 @@ function versionCodeFromName(versionName: string): number | null {
   return major * 100000 + minor * 1000 + patch * 10;
 }
 
+function parseNativeBuildVersion(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value.includes(".")) {
+    return versionCodeFromName(value);
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 export function getAppVersionName(): string {
-  // Prefer Android/iOS native version (matches Settings → App info).
-  // version.json is baked at build time with Gradle; expoConfig can lag if app.json was stale.
   return (
     Application.nativeApplicationVersion ??
     versionConfig.versionName ??
@@ -25,29 +36,20 @@ export function getAppVersionName(): string {
 }
 
 export function getAppVersionCode(): number {
-  const fromName = versionCodeFromName(getAppVersionName());
-
-  const nativeBuildVersion = Application.nativeBuildVersion;
-  let fromNativeBuild: number | null = null;
-  if (nativeBuildVersion) {
-    if (nativeBuildVersion.includes(".")) {
-      fromNativeBuild = versionCodeFromName(nativeBuildVersion);
-    } else {
-      const parsed = Number.parseInt(nativeBuildVersion, 10);
-      if (!Number.isNaN(parsed)) {
-        fromNativeBuild = parsed;
-      }
-    }
+  // Android versionCode from PackageManager — must not be mixed with bundled JS version.
+  const fromNativeBuild = parseNativeBuildVersion(Application.nativeBuildVersion);
+  if (fromNativeBuild !== null) {
+    return fromNativeBuild;
   }
 
-  const fromBundle = versionConfig.versionCode ?? null;
-  const candidates = [fromNativeBuild, fromName, fromBundle].filter(
-    (value): value is number => value !== null && value > 0
-  );
-
-  if (candidates.length === 0) {
-    return 100000;
+  const fromNativeName = versionCodeFromName(Application.nativeApplicationVersion ?? "");
+  if (fromNativeName !== null) {
+    return fromNativeName;
   }
 
-  return Math.max(...candidates);
+  if (versionConfig.versionCode) {
+    return versionConfig.versionCode;
+  }
+
+  return versionCodeFromName(getAppVersionName()) ?? 100000;
 }

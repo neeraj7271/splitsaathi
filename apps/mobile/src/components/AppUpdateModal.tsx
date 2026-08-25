@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Modal, Pressable, StyleSheet, View } from "react-native";
-import { DownloadSimple, Sparkle, Warning, X } from "phosphor-react-native";
+import { DownloadSimple, Warning } from "phosphor-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../theme";
@@ -8,7 +8,6 @@ import { Button } from "./Button";
 import { ThemedText } from "./ThemedText";
 import { AppVersionInfo, getDirectApkDownloadUrl, resolveAppUpdatePrompt } from "../updates/checkAppVersion";
 import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
-import { setDismissedVersionCode } from "../updates/updateDismissCache";
 
 export function AppUpdateModal() {
   const theme = useTheme();
@@ -50,12 +49,6 @@ export function AppUpdateModal() {
     }
   };
 
-  const handleDismiss = () => {
-    void setDismissedVersionCode(versionInfo.latestVersionCode).finally(() => {
-      setVersionInfo(null);
-    });
-  };
-
   return (
     <Modal visible={true} animationType="fade" transparent={true} onRequestClose={() => {}}>
       <Pressable style={styles.backdrop}>
@@ -70,38 +63,24 @@ export function AppUpdateModal() {
           ]}
           onPress={(e) => e.stopPropagation()}
         >
-          {!versionInfo.forceUpdate && (
-            <Pressable style={styles.closeBtn} onPress={handleDismiss} hitSlop={12}>
-              <X size={18} color={theme.colors.inkMuted} weight="bold" />
-            </Pressable>
-          )}
-
           <View style={styles.badgeContainer}>
-            <View style={[styles.iconWell, { backgroundColor: versionInfo.forceUpdate ? "rgba(239,68,68,0.12)" : "rgba(139,92,246,0.12)" }]}>
-              {versionInfo.forceUpdate ? (
-                <Warning size={32} color="#EF4444" weight="duotone" />
-              ) : (
-                <Sparkle size={32} color="#8B5CF6" weight="duotone" />
-              )}
+            <View style={[styles.iconWell, { backgroundColor: "rgba(239,68,68,0.12)" }]}>
+              <Warning size={32} color="#EF4444" weight="duotone" />
             </View>
-            <View style={[styles.tag, { backgroundColor: versionInfo.forceUpdate ? "rgba(239,68,68,0.15)" : "rgba(139,92,246,0.15)" }]}>
-              <ThemedText style={[styles.tagText, { color: versionInfo.forceUpdate ? "#EF4444" : theme.mode === "dark" ? "#A78BFA" : "#7C3AED" }]}>
-                {versionInfo.forceUpdate ? "CRITICAL UPDATE REQUIRED" : `NEW VERSION v${versionInfo.latestVersionName}`}
-              </ThemedText>
+            <View style={[styles.tag, { backgroundColor: "rgba(239,68,68,0.15)" }]}>
+              <ThemedText style={[styles.tagText, { color: "#EF4444" }]}>UPDATE REQUIRED</ThemedText>
             </View>
           </View>
 
           <View style={styles.headerTextWrap}>
             <ThemedText variant="title" align="center" style={styles.title}>
-              {versionInfo.forceUpdate ? "Update Required to Continue" : "SplitSaathi Update Available"}
+              Update Required to Continue
             </ThemedText>
             <ThemedText variant="bodySm" tone="muted" align="center" style={styles.subtitle}>
-              {versionInfo.forceUpdate
-                ? "A critical security and feature update is required to continue using SplitSaathi."
-                : `Version ${versionInfo.latestVersionName} is now available with new improvements.`}
+              Version {versionInfo.latestVersionName} must be installed to keep using SplitSaathi.
             </ThemedText>
             <ThemedText variant="caption" tone="muted" align="center" style={styles.subtitle}>
-              After installing, close SplitSaathi completely and open it again from your home screen.
+              After installing, SplitSaathi will close automatically. Open it again from your home screen.
             </ThemedText>
           </View>
 
@@ -117,15 +96,7 @@ export function AppUpdateModal() {
           ) : null}
 
           <View style={styles.actionsWrap}>
-            <Button
-              label={versionInfo.forceUpdate ? "Update Now" : "Download & Install Update"}
-              onPress={handleUpdate}
-              Icon={DownloadSimple}
-              style={styles.primaryBtn}
-            />
-            {!versionInfo.forceUpdate && (
-              <Button label="Remind Me Later" variant="ghost" onPress={handleDismiss} />
-            )}
+            <Button label="Download & Install Update" onPress={handleUpdate} Icon={DownloadSimple} style={styles.primaryBtn} />
           </View>
         </Pressable>
       </Pressable>
@@ -154,18 +125,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 24,
     elevation: 10
-  },
-  closeBtn: {
-    position: "absolute",
-    top: 16,
-    right: 16,
-    zIndex: 2,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(100,116,139,0.1)",
-    alignItems: "center",
-    justifyContent: "center"
   },
   badgeContainer: {
     alignItems: "center",
