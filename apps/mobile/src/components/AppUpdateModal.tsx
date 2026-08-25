@@ -7,7 +7,9 @@ import { useTheme } from "../theme";
 import { Button } from "./Button";
 import { ThemedText } from "./ThemedText";
 import { AppVersionInfo, getDirectApkDownloadUrl, resolveAppUpdatePrompt } from "../updates/checkAppVersion";
+import { subscribeUpdateCheck } from "../updates/updateCheckEvents";
 import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
+import { setDismissedVersionCode } from "../updates/updateDismissCache";
 
 export function AppUpdateModal() {
   const theme = useTheme();
@@ -32,8 +34,13 @@ export function AppUpdateModal() {
       }
     });
 
+    const unsubscribeUpdateCheck = subscribeUpdateCheck(() => {
+      void refreshUpdateState();
+    });
+
     return () => {
       appStateSub.remove();
+      unsubscribeUpdateCheck();
     };
   }, [refreshUpdateState]);
 
@@ -47,6 +54,12 @@ export function AppUpdateModal() {
       watchForPackageUpdateAfterDownload();
       void Linking.openURL(targetUrl);
     }
+  };
+
+  const handleRemindLater = () => {
+    void setDismissedVersionCode(versionInfo.latestVersionCode).finally(() => {
+      setVersionInfo(null);
+    });
   };
 
   return (
@@ -97,6 +110,7 @@ export function AppUpdateModal() {
 
           <View style={styles.actionsWrap}>
             <Button label="Download & Install Update" onPress={handleUpdate} Icon={DownloadSimple} style={styles.primaryBtn} />
+            <Button label="Remind Me Later" variant="ghost" onPress={handleRemindLater} />
           </View>
         </Pressable>
       </Pressable>

@@ -3,7 +3,7 @@
     "name": "SplitSaathi",
     "slug": "splitsaathi",
     "scheme": "splitsaathi",
-    "version": "1.0.3",
+    "version": "1.0.6",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "in.splitsaathi.mobile",
-      "versionCode": 100030,
+      "versionCode": 100060,
       "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {

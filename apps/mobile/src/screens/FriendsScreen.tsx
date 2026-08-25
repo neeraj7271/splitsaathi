@@ -18,6 +18,7 @@ import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import type { FriendSummary } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
+import versionConfig from "../../version.json";
 
 type FriendFilter = "all" | "outstanding" | "you_owe" | "owes_you";
 
@@ -34,8 +35,10 @@ const FILTERS: Array<{
 ];
 
 const SECTION_PREVIEW = 100;
+const INVITE_DOWNLOAD_URL =
+  versionConfig.directApkUrl || "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk";
 const INVITE_MESSAGE =
-  "Join me on SplitSaathi — split expenses with friends without the awkwardness. https://play.google.com/store/apps/details?id=in.splitsaathi.mobile";
+  `Join me on SplitSaathi — split expenses with friends without the awkwardness.\nDownload the app: ${INVITE_DOWNLOAD_URL}`;
 
 function matchesFilter(friend: FriendSummary, filter: FriendFilter): boolean {
   if (filter === "all") {

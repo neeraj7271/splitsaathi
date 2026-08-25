@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { parseVersionCode } from '../../common/mobile-version-code';
 import { AdminRoles } from '../admin/auth/decorators/admin-roles.decorator';
 import { AdminJwtAuthGuard } from '../admin/auth/guards/admin-jwt-auth.guard';
 import { AdminRolesGuard } from '../admin/auth/guards/admin-roles.guard';
@@ -35,12 +36,14 @@ export class AppVersionController {
     const fileConfig = this.versionService.getVersionConfig();
     const savedConfig = await this.versionService.updateVersionConfig(dto);
     const versionName = dto.versionName ?? savedConfig.latestVersion ?? fileConfig.versionName;
+    const versionCode = dto.versionCode ?? parseVersionCode(versionName, fileConfig.versionCode);
     const releaseNotes = dto.releaseNotes ?? savedConfig.changelog ?? fileConfig.releaseNotes;
 
     const notificationResult = await this.notificationsService.broadcastAppUpdate(
       versionName,
       releaseNotes,
-      fileConfig.directApkUrl
+      fileConfig.directApkUrl,
+      versionCode
     );
 
     return {

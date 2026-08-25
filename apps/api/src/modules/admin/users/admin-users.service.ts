@@ -98,6 +98,8 @@ export class AdminUsersService {
         return {
           id: u.id,
           displayName: u.displayName,
+          avatarAttachmentId: u.avatarAttachmentId || null,
+          avatarUrl: u.avatarAttachmentId ? `/v1/attachments/${u.avatarAttachmentId}` : null,
           phoneE164: phoneE164 || null,
           upiVpa: u.upiVpa || null,
           status: u.status,
@@ -175,6 +177,8 @@ export class AdminUsersService {
       profile: {
         id: user.id,
         displayName: user.displayName,
+        avatarAttachmentId: user.avatarAttachmentId || null,
+        avatarUrl: user.avatarAttachmentId ? `/v1/attachments/${user.avatarAttachmentId}` : null,
         phoneE164: phoneE164 || null,
         upiVpa: user.upiVpa || null,
         defaultCurrencyCode: user.defaultCurrencyCode,

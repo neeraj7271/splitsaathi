@@ -1,5 +1,6 @@
 import versionConfig from "../../version.json";
 import { getAppVersionCode } from "../utils/appVersion";
+import { clearDismissedVersionCode, getDismissedVersionCode } from "./updateDismissCache";
 
 export interface AppVersionInfo {
   latestVersionName: string;
@@ -35,6 +36,12 @@ export async function resolveAppUpdatePrompt(): Promise<AppVersionInfo | null> {
   }
 
   if (!data.updateAvailable && !data.forceUpdate) {
+    await clearDismissedVersionCode();
+    return null;
+  }
+
+  const dismissedCode = await getDismissedVersionCode();
+  if (dismissedCode !== null && dismissedCode >= data.latestVersionCode) {
     return null;
   }
 
