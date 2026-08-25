@@ -138,22 +138,31 @@ async function loadDeviceContacts(): Promise<DeviceContact[]> {
   return [...uniqueByHash.values()].sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
+const CONTACT_IMPORT_BATCH_SIZE = 400;
+
 export async function syncDeviceContacts() {
   const deviceContacts = await readDeviceContacts();
   if (!deviceContacts.length) {
     return { importedCount: 0, matchedOnSplitSaathi: 0, contacts: [] as SyncedContact[] };
   }
 
-  const importResult = await apiClient.importContacts(
-    deviceContacts.map((contact) => ({
-      phoneHash: contact.phoneHash,
-      displayName: contact.displayName
-    }))
-  );
+  let importedCount = 0;
+  let matchedOnSplitSaathi = 0;
+  const payload = deviceContacts.map((contact) => ({
+    phoneHash: contact.phoneHash,
+    displayName: contact.displayName
+  }));
+
+  for (let index = 0; index < payload.length; index += CONTACT_IMPORT_BATCH_SIZE) {
+    const batch = payload.slice(index, index + CONTACT_IMPORT_BATCH_SIZE);
+    const importResult = await apiClient.importContacts(batch);
+    importedCount += importResult.importedCount;
+    matchedOnSplitSaathi += importResult.matchedOnSplitSaathi;
+  }
 
   const serverContacts = await apiClient.listContacts();
   const contacts = mergeContacts(deviceContacts, serverContacts);
-  return { ...importResult, contacts };
+  return { importedCount, matchedOnSplitSaathi, contacts };
 }
 
 export function mergeContacts(
