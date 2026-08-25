@@ -87,7 +87,7 @@ async function notifyUsers(versionData) {
       versionCode: versionData.versionCode,
       minSupportedVersionCode: versionData.minSupportedVersionCode,
       releaseNotes: versionData.releaseNotes,
-      forceUpdate: false
+      forceUpdate: true
     })
   });
   const body = await res.text();

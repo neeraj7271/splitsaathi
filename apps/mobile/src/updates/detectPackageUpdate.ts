@@ -1,7 +1,5 @@
 import * as Application from "expo-application";
-import { Alert, AppState, BackHandler, Platform } from "react-native";
-
-import { clearDismissedVersionCode } from "./updateDismissCache";
+import { AppState, BackHandler, Platform } from "react-native";
 
 let installBaselineMs: number | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
@@ -25,23 +23,11 @@ async function handleReturnFromInstall() {
   }
 
   stopWatchingForPackageUpdate();
-  await clearDismissedVersionCode();
 
-  Alert.alert(
-    "Update installed",
-    "Close SplitSaathi completely, then open it again from your home screen to finish updating.",
-    [
-      {
-        text: "Close app",
-        onPress: () => {
-          if (Platform.OS === "android") {
-            BackHandler.exitApp();
-          }
-        }
-      }
-    ],
-    { cancelable: false }
-  );
+  // Native version constants only refresh after a full app restart.
+  if (Platform.OS === "android") {
+    BackHandler.exitApp();
+  }
 }
 
 export function watchForPackageUpdateAfterDownload() {

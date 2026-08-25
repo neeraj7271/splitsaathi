@@ -1,6 +1,5 @@
 import versionConfig from "../../version.json";
 import { getAppVersionCode } from "../utils/appVersion";
-import { clearDismissedVersionCode, getDismissedVersionCode } from "./updateDismissCache";
 
 export interface AppVersionInfo {
   latestVersionName: string;
@@ -19,12 +18,8 @@ function getApiUrl() {
   return process.env.EXPO_PUBLIC_API_URL || "https://api-dev.thesplitsaathi.com";
 }
 
-function getCurrentVersionCode() {
-  return getAppVersionCode();
-}
-
 export async function fetchAppVersionInfo(): Promise<AppVersionInfo | null> {
-  const currentCode = getCurrentVersionCode();
+  const currentCode = getAppVersionCode();
   const res = await fetch(`${getApiUrl()}/v1/app/version?versionCode=${currentCode}`);
   if (!res.ok) {
     return null;
@@ -40,15 +35,7 @@ export async function resolveAppUpdatePrompt(): Promise<AppVersionInfo | null> {
   }
 
   if (!data.updateAvailable && !data.forceUpdate) {
-    await clearDismissedVersionCode();
     return null;
-  }
-
-  if (!data.forceUpdate) {
-    const dismissedCode = await getDismissedVersionCode();
-    if (dismissedCode !== null && dismissedCode >= data.latestVersionCode) {
-      return null;
-    }
   }
 
   return data;

@@ -5,6 +5,6 @@
   "minSupportedVersionName": "1.0.0",
   "directApkUrl": "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk",
   "playStoreUrl": "https://play.google.com/store/apps/details?id=in.splitsaathi.mobile",
-  "releaseNotes": "Fix update loop after APK install; prompt to restart app",
+  "releaseNotes": "Mandatory update flow; fixes version check after install",
   "releasedAt": "2026-08-25"
 }
