@@ -23,6 +23,7 @@
     "bump:patch": "node scripts/bump-version.js patch",
     "bump:minor": "node scripts/bump-version.js minor",
     "bump:major": "node scripts/bump-version.js major",
+    "keystore:generate": "node scripts/generate-release-keystore.js",
     "build:apk:debug": "node scripts/build-apk.js debug",
     "build:apk:dev": "node scripts/build-apk.js dev",
     "build:apk:prod": "node scripts/build-apk.js prod",

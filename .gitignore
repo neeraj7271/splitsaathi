@@ -17,6 +17,11 @@ deploy/secrets/
 deploy/*.apk
 scripts/release.env
 
+# Android release signing
+apps/mobile/android/keystore.properties
+apps/mobile/android/**/*.jks
+!apps/mobile/android/app/debug.keystore
+
 # Never commit Google OAuth client secret JSON downloads
 apps/mobile/public/assets/client_secret*.json
 **/client_secret*.json

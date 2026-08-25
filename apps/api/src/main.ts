@@ -40,8 +40,10 @@ async function bootstrap(): Promise<void> {
       lastModified: true
     })
   );
+  const jsonLimit = process.env.JSON_BODY_LIMIT || '5mb';
   app.use(
     json({
+      limit: jsonLimit,
       verify: (request: any, _response, buffer) => {
         request.rawBody = buffer.toString('utf8');
       }
@@ -50,6 +52,7 @@ async function bootstrap(): Promise<void> {
   app.use(
     urlencoded({
       extended: true,
+      limit: jsonLimit,
       verify: (request: any, _response, buffer) => {
         request.rawBody = buffer.toString('utf8');
       }
