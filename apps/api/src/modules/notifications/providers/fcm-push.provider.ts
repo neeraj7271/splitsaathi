@@ -54,6 +54,29 @@ export class FcmPushProvider implements NotificationProviderPort {
       type: input.type
     });
 
+    const isAppUpdate = input.type === 'APP_UPDATE';
+    const androidConfig = isAppUpdate
+      ? {
+          priority: 'high' as const,
+          collapseKey: 'app_update',
+          ttl: 3600,
+          notification: {
+            channelId: 'app_updates',
+            tag: 'app_update',
+            priority: 'max' as const,
+            defaultSound: true,
+            visibility: 'public' as const
+          }
+        }
+      : {
+          priority: 'high' as const,
+          notification: {
+            channelId: 'default',
+            priority: 'high' as const,
+            defaultSound: true
+          }
+        };
+
     try {
       const response: BatchResponse = await messaging.sendEachForMulticast({
         tokens,
@@ -62,14 +85,7 @@ export class FcmPushProvider implements NotificationProviderPort {
           body: input.body
         },
         data,
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'default',
-            priority: 'high',
-            defaultSound: true
-          }
-        }
+        android: androidConfig
       });
 
       const messageIds: string[] = [];

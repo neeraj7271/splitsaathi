@@ -212,11 +212,35 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       .then(async (Notifications) => {
         try {
           const { invalidateQueriesForPush } = await import("./src/notifications/invalidateOnPush");
-          const { isAppUpdatePush, openAppUpdateDownload } = await import("./src/updates/handleAppUpdatePush");
+          const { getAppVersionCode } = await import("./src/utils/appVersion");
+          const {
+            isAppUpdatePush,
+            openAppUpdateDownload,
+            parsePushVersionCode
+          } = await import("./src/updates/handleAppUpdatePush");
+          const { requestUpdateCheck } = await import("./src/updates/updateCheckEvents");
+
+          async function handleAppUpdatePush(
+            data: Record<string, unknown> | undefined,
+            notificationId?: string
+          ) {
+            const pushVersionCode = parsePushVersionCode(data);
+            const currentVersionCode = getAppVersionCode();
+            if (pushVersionCode !== null && pushVersionCode <= currentVersionCode) {
+              if (notificationId) {
+                await Notifications.dismissNotificationAsync(notificationId).catch(() => undefined);
+              }
+              return;
+            }
+
+            requestUpdateCheck();
+          }
+
           if (typeof Notifications.addNotificationReceivedListener === "function") {
             receivedSub = Notifications.addNotificationReceivedListener((notification) => {
               const data = notification.request.content.data as Record<string, unknown> | undefined;
               if (isAppUpdatePush(data)) {
+                void handleAppUpdatePush(data, notification.request.identifier);
                 return;
               }
               invalidateQueriesForPush(queryClient, data);

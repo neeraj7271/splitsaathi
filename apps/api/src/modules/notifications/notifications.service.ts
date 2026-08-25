@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { parseVersionCode } from '../../common/mobile-version-code';
 import { UserPreferencesEntity } from '../users/entities/user-preferences.entity';
 import { NOTIFICATION_PROVIDER } from './notifications.constants';
 import { NotificationDeliveryEntity } from './entities/notification-delivery.entity';
@@ -62,23 +63,30 @@ export class NotificationsService {
     });
   }
 
-  async broadcastAppUpdate(versionName: string, releaseNotes?: string, directApkUrl?: string) {
+  async broadcastAppUpdate(
+    versionName: string,
+    releaseNotes?: string,
+    directApkUrl?: string,
+    versionCode?: number
+  ) {
     const allTokens = await this.devices.listAllPushTokens();
     if (allTokens.length === 0) {
       return { status: 'skipped', message: 'No devices registered for push notifications.' };
     }
 
     const apkUrl = directApkUrl || 'https://api.thesplitsaathi.com/downloads/SplitSaathi.apk';
+    const latestVersionCode = versionCode ?? parseVersionCode(versionName, 0);
 
     return this.provider.deliver({
       notificationId: 'app-update-broadcast',
       userId: 'system',
       type: 'APP_UPDATE',
-      title: 'New Update Available! 🎉',
-      body: `SplitSaathi v${versionName} is ready. Tap to download the latest features!`,
+      title: 'Update required',
+      body: `Install SplitSaathi v${versionName} to continue using the app.`,
       data: {
         type: 'APP_UPDATE',
         versionName,
+        versionCode: latestVersionCode,
         releaseNotes: releaseNotes ?? '',
         directApkUrl: apkUrl
       },

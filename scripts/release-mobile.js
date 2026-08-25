@@ -196,14 +196,14 @@ function purgeCloudflareCache(config, apiUrl, options = {}) {
     return;
   }
 
-  const downloadPath = new URL(`${apiUrl}/downloads/${config.APK_REMOTE_FILENAME}`).pathname;
-  console.log(`\n☁️ Purging Cloudflare cache for ${downloadPath}`);
+  const downloadUrl = `${apiUrl.replace(/\/$/, '')}/downloads/${config.APK_REMOTE_FILENAME}`;
+  console.log(`\n☁️ Purging Cloudflare cache for ${downloadUrl}`);
 
   if (options.dryRun) {
     return;
   }
 
-  const payload = JSON.stringify({ files: [downloadPath] });
+  const payload = JSON.stringify({ files: [downloadUrl] });
   const result = spawnSync(
     'curl',
     [

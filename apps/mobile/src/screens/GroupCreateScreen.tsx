@@ -24,6 +24,7 @@ import { DataSurface } from "../components/DataSurface";
 import { EmptyState } from "../components/EmptyState";
 import { groupTypeAccent, groupTypeIcon } from "../components/GroupTypeAvatar";
 import { GroupSummaryCard } from "../components/GroupSummaryCard";
+import { ImportComingSoonModal } from "../components/ImportComingSoonModal";
 import { InlineNotice } from "../components/InlineNotice";
 import { InputField } from "../components/InputField";
 import { QRScannerModal } from "../components/QRScannerModal";
@@ -86,6 +87,7 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
   const [contactError, setContactError] = useState<string | null>(null);
   const [groupImage, setGroupImage] = useState<{ uri: string; mimeType: string; fileName?: string } | null>(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => apiClient.listGroups() });
   const createGroup = useMutation({
@@ -209,9 +211,9 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
               <QrCode size={18} color={theme.colors.info} weight="duotone" />
             </Pressable>
             <Pressable
-              onPress={() => navigation.go("importExport")}
+              onPress={() => setShowImportModal(true)}
               accessibilityRole="button"
-              accessibilityLabel="Import CSV"
+              accessibilityLabel="Import coming soon"
               style={[
                 styles.headerIconButton,
                 {
@@ -234,6 +236,11 @@ export function GroupCreateScreen({ navigation }: { navigation: AppNavigation })
           navigation.setSelectedGroupId(groupId);
           navigation.go("groupDetail");
         }}
+      />
+
+      <ImportComingSoonModal
+        visible={showImportModal}
+        onClose={() => setShowImportModal(false)}
       />
 
       <SegmentedControl value={activeTab} options={tabOptions} onChange={setActiveTab} />

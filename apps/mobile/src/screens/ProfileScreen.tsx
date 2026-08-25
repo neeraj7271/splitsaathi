@@ -20,6 +20,7 @@ import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
 import { fetchAppVersionInfo, getDirectApkDownloadUrl } from "../updates/checkAppVersion";
 import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
+import { clearDismissedVersionCode } from "../updates/updateDismissCache";
 import { pickAndCompressAvatar } from "../utils/avatarUpload";
 import { clearAuthenticatedImageCache } from "../utils/authenticatedImage";
 import { getAppVersionCode, getAppVersionName } from "../utils/appVersion";
@@ -48,6 +49,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
     }
 
     if (data.updateAvailable || data.forceUpdate) {
+      await clearDismissedVersionCode();
       watchForPackageUpdateAfterDownload();
       const targetUrl = getDirectApkDownloadUrl(data.directApkUrl);
       if (targetUrl) {
