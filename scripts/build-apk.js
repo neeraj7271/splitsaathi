@@ -20,14 +20,14 @@ const ENV_CONFIGS = {
     gradleTask: 'assembleRelease',
     sourceApk: 'app/build/outputs/apk/release/app-release.apk',
     targetApk: 'deploy/SplitSaathi-dev.apk',
-    clean: true
+    safeNativeClean: true
   },
   prod: {
     apiUrl: 'https://api.thesplitsaathi.com',
     gradleTask: 'assembleRelease',
     sourceApk: 'app/build/outputs/apk/release/app-release.apk',
     targetApk: 'deploy/SplitSaathi.apk',
-    clean: true
+    safeNativeClean: true
   }
 };
 
@@ -89,15 +89,44 @@ for (const cachePath of [expoCachePath, metroCachePath, bundleAssetsPath]) {
   }
 }
 
-const gradleCommand = config.clean ? `clean ${config.gradleTask}` : config.gradleTask;
+// Do NOT run `./gradlew clean` on RN New Architecture — it deletes codegen JNI dirs
+// and CMake clean fails with "add_subdirectory ... which is not an existing directory".
+if (config.safeNativeClean) {
+  for (const cachePath of [
+    path.join(androidDir, 'app/.cxx'),
+    path.join(androidDir, 'app/build/generated/autolinking'),
+    path.join(androidDir, 'app/build/generated/res/createBundleReleaseJsAndAssets'),
+    path.join(androidDir, 'app/build/generated/sourcemaps/react/release'),
+    path.join(androidDir, '.gradle')
+  ]) {
+    if (fs.existsSync(cachePath)) {
+      fs.rmSync(cachePath, { recursive: true, force: true });
+      console.log(`✓ Cleared native cache: ${cachePath}`);
+    }
+  }
+}
 
-try {
-  console.log(`\n⚙️ Running Gradle build: ./gradlew ${gradleCommand}...`);
-  execSync(`./gradlew ${gradleCommand}`, {
+const gradleCommand = config.gradleTask;
+
+function runGradle(task, label) {
+  console.log(`\n⚙️ Running Gradle: ./gradlew ${task}${label ? ` (${label})` : ''}...`);
+  execSync(`./gradlew ${task}`, {
     cwd: androidDir,
     env: envVars,
     stdio: 'inherit'
   });
+}
+
+try {
+  if (config.gradleTask === 'assembleRelease') {
+    // Restore JNI codegen removed by a prior `./gradlew clean` (breaks New Architecture builds).
+    runGradle(
+      ':app:generateCodegenSchemaFromJavaScript :app:generateCodegenArtifactsFromSchema',
+      'codegen'
+    );
+  }
+
+  runGradle(gradleCommand);
   console.log(`\n✓ Gradle build completed successfully!`);
 } catch (error) {
   console.error(`\n❌ Gradle build failed for ${envFlag}.`);

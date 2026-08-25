@@ -5,7 +5,7 @@
  * Usage:
  *   node scripts/manual-deploy-apk.js              # build prod APK + upload to GCP VM
  *   node scripts/manual-deploy-apk.js --notify     # also call broadcast-update (needs release.env admin creds)
- *   node scripts/manual-deploy-apk.js --upload-only  # skip build, upload existing deploy/SplitSaathi.apk
+ *   node scripts/manual-deploy-apk.js --notify-only  # broadcast only (APK already on server)
  *
  * Requires on your laptop:
  *   - gcloud CLI logged in (gcloud auth login)
@@ -15,7 +15,7 @@ const { execSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readVersionJson, verifyApkVersion } = require('./version-utils');
+const { readVersionJson, verifyApkVersion, resolveAndroidHome } = require('./version-utils');
 
 const rootDir = path.join(__dirname, '..');
 const releaseEnvPath = path.join(__dirname, 'release.env');
@@ -23,7 +23,8 @@ const localApkPath = path.join(rootDir, 'deploy/SplitSaathi.apk');
 
 const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith('--')));
 const uploadOnly = flags.has('--upload-only');
-const notify = flags.has('--notify');
+const notifyOnly = flags.has('--notify-only');
+const notify = flags.has('--notify') || notifyOnly;
 
 const config = loadReleaseEnv();
 
@@ -100,7 +101,8 @@ function verifyLiveApk(expected) {
   console.log(`\n🔎 Verifying live APK: ${url}`);
   execSync(`curl -fsSL "${url}" -o "${tmp}"`, { stdio: 'pipe' });
   try {
-    const v = verifyApkVersion(tmp, expected, { androidHome: process.env.ANDROID_HOME });
+    const androidHome = resolveAndroidHome();
+    const v = verifyApkVersion(tmp, expected, { androidHome });
     console.log(`✓ Live APK OK: versionCode=${v.versionCode}, versionName=${v.versionName}`);
   } finally {
     fs.rmSync(tmp, { force: true });
@@ -126,13 +128,23 @@ function printTestSteps(versionData) {
 async function main() {
   console.log('\n📲 Manual APK deploy (no GitHub CI)\n');
 
+  const versionData = readVersionJson();
+
+  if (notifyOnly) {
+    console.log(`\n📣 Notify-only: v${versionData.versionName} (versionCode=${versionData.versionCode})`);
+    console.log('\n📣 Updating server version + FCM broadcast...');
+    await notifyUsers(versionData);
+    printTestSteps(versionData);
+    console.log('\n✅ Notify complete.\n');
+    return;
+  }
+
   if (!uploadOnly) {
     run('node scripts/build-apk.js prod');
   } else if (!fs.existsSync(localApkPath)) {
     throw new Error(`--upload-only but missing ${localApkPath}`);
   }
 
-  const versionData = readVersionJson();
   console.log(`\n📌 Deploying v${versionData.versionName} (versionCode=${versionData.versionCode})`);
 
   const remoteTmp = `/tmp/${config.APK_REMOTE_FILENAME}`;
