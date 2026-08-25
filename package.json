@@ -25,7 +25,11 @@
     "bump:major": "node scripts/bump-version.js major",
     "build:apk:debug": "node scripts/build-apk.js debug",
     "build:apk:dev": "node scripts/build-apk.js dev",
-    "build:apk:prod": "node scripts/build-apk.js prod"
+    "build:apk:prod": "node scripts/build-apk.js prod",
+    "deploy:apk": "node scripts/manual-deploy-apk.js",
+    "deploy:apk:notify": "node scripts/manual-deploy-apk.js --notify",
+    "release:mobile": "node scripts/release-mobile.js",
+    "release:mobile:dry-run": "node scripts/release-mobile.js patch \"Dry run\" --dry-run"
   },
   "devDependencies": {
     "@babel/helper-optimise-call-expression": "^7.29.7",

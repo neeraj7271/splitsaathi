@@ -67,6 +67,8 @@ services:
     volumes:
       # Firebase Admin SDK JSON for FCM (host path: deploy/secrets/fcm-service-account.json)
       - ./secrets/fcm-service-account.json:/run/secrets/fcm-service-account.json:ro
+      # Public APK served at GET /downloads/SplitSaathi.apk (populated by scripts/release-mobile.js)
+      - /var/www/downloads:/var/www/downloads:ro
     ports:
       # Bound to localhost only — nginx proxies public traffic here
       - "127.0.0.1:3000:3000"

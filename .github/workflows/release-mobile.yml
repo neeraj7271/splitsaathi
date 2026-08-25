@@ -1,0 +1,226 @@
+# Release SplitSaathi Android APK from GitHub Actions (no local machine required).
+#
+# Required repository secrets:
+#   GCP_SA_KEY                     - GCP service account JSON with compute SSH/SCP access to the VM
+#   MOBILE_GOOGLE_SERVICES_JSON    - Full Firebase google-services.json contents
+#   ADMIN_EMAIL                    - Super/ops admin email for broadcast-update
+#   ADMIN_PASSWORD                 - Admin password
+#
+# Optional secrets:
+#   ADMIN_JWT                      - Skip login if a long-lived JWT is provided instead
+#   CLOUDFLARE_ZONE_ID
+#   CLOUDFLARE_API_TOKEN
+#   MOBILE_GOOGLE_SERVICES_JSON_B64 - Base64-encoded google-services.json (alternative to raw JSON secret)
+#
+# Optional repository variables (Settings → Secrets and variables → Actions → Variables):
+#   GCP_PROJECT, GCP_ZONE, GCP_INSTANCE, GCP_USER, API_URL, APK_REMOTE_DIR, APK_REMOTE_FILENAME
+#
+# PR build check (no deploy): .github/workflows/build-mobile-pr.yml
+
+name: Release Mobile APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump: patch | minor | major | skip-bump | exact semver (e.g. 1.0.2)"
+        required: true
+        default: patch
+        type: string
+      release_notes:
+        description: Release notes shown in the update modal and push notification
+        required: true
+        type: string
+      skip_upload:
+        description: Build only — do not upload APK to GCP
+        required: false
+        default: false
+        type: boolean
+      skip_broadcast:
+        description: Do not call broadcast-update or send FCM
+        required: false
+        default: false
+        type: boolean
+      commit_version_bump:
+        description: Commit apps/mobile/version.json + app.json back to the branch after success
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: Print pipeline steps without building or deploying
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "mobile-v*"
+
+concurrency:
+  group: release-mobile
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GCP_PROJECT: ${{ vars.GCP_PROJECT || 'splitsaathi-api' }}
+  GCP_ZONE: ${{ vars.GCP_ZONE || 'asia-south1-c' }}
+  GCP_INSTANCE: ${{ vars.GCP_INSTANCE || 'spitsaathi-backend-instance' }}
+  GCP_USER: ${{ vars.GCP_USER || 'appadmin' }}
+  API_URL: ${{ vars.API_URL || 'https://api.thesplitsaathi.com' }}
+  APK_REMOTE_DIR: ${{ vars.APK_REMOTE_DIR || '/var/www/downloads' }}
+  APK_REMOTE_FILENAME: ${{ vars.APK_REMOTE_FILENAME || 'SplitSaathi.apk' }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Resolve release inputs
+        id: inputs
+        env:
+          INPUT_BUMP: ${{ github.event.inputs.bump_type }}
+          INPUT_NOTES: ${{ github.event.inputs.release_notes }}
+          INPUT_SKIP_UPLOAD: ${{ github.event.inputs.skip_upload }}
+          INPUT_SKIP_BROADCAST: ${{ github.event.inputs.skip_broadcast }}
+          INPUT_COMMIT: ${{ github.event.inputs.commit_version_bump }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/mobile-v*)
+              echo "bump_type=skip-bump" >> "$GITHUB_OUTPUT"
+              {
+                echo "release_notes<<EOF"
+                echo "Release ${GITHUB_REF_NAME}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+              echo "skip_upload=false" >> "$GITHUB_OUTPUT"
+              echo "skip_broadcast=false" >> "$GITHUB_OUTPUT"
+              echo "commit_version_bump=false" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "bump_type=${INPUT_BUMP:-patch}" >> "$GITHUB_OUTPUT"
+              {
+                echo "release_notes<<EOF"
+                printf '%s\n' "${INPUT_NOTES:?release_notes is required for workflow_dispatch}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+              echo "skip_upload=${INPUT_SKIP_UPLOAD:-false}" >> "$GITHUB_OUTPUT"
+              echo "skip_broadcast=${INPUT_SKIP_BROADCAST:-false}" >> "$GITHUB_OUTPUT"
+              echo "commit_version_bump=${INPUT_COMMIT:-true}" >> "$GITHUB_OUTPUT"
+              echo "dry_run=${INPUT_DRY_RUN:-false}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-36 build-tools;36.0.0 platform-tools
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            apps/mobile/android/.gradle
+          key: ${{ runner.os }}-gradle-mobile-${{ hashFiles('apps/mobile/android/**/*.gradle*', 'apps/mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-mobile-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare mobile build secrets
+        env:
+          MOBILE_GOOGLE_SERVICES_JSON: ${{ secrets.MOBILE_GOOGLE_SERVICES_JSON }}
+          MOBILE_GOOGLE_SERVICES_JSON_B64: ${{ secrets.MOBILE_GOOGLE_SERVICES_JSON_B64 }}
+        run: bash scripts/ci-prepare-mobile-build.sh
+
+      - name: Authenticate to Google Cloud
+        if: steps.inputs.outputs.dry_run != 'true' && steps.inputs.outputs.skip_upload != 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud CLI
+        if: steps.inputs.outputs.dry_run != 'true' && steps.inputs.outputs.skip_upload != 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run release pipeline
+        env:
+          GCP_PROJECT: ${{ env.GCP_PROJECT }}
+          GCP_ZONE: ${{ env.GCP_ZONE }}
+          GCP_INSTANCE: ${{ env.GCP_INSTANCE }}
+          GCP_USER: ${{ env.GCP_USER }}
+          API_URL: ${{ env.API_URL }}
+          APK_REMOTE_DIR: ${{ env.APK_REMOTE_DIR }}
+          APK_REMOTE_FILENAME: ${{ env.APK_REMOTE_FILENAME }}
+          ADMIN_JWT: ${{ secrets.ADMIN_JWT }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RELEASE_NOTES: ${{ steps.inputs.outputs.release_notes }}
+          CI: true
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [[ "${{ steps.inputs.outputs.bump_type }}" == "skip-bump" ]]; then
+            ARGS+=(--skip-bump "$RELEASE_NOTES")
+          else
+            ARGS+=("${{ steps.inputs.outputs.bump_type }}" "$RELEASE_NOTES")
+          fi
+          if [[ "${{ steps.inputs.outputs.skip_upload }}" == "true" ]]; then
+            ARGS+=(--skip-upload)
+          fi
+          if [[ "${{ steps.inputs.outputs.skip_broadcast }}" == "true" ]]; then
+            ARGS+=(--skip-broadcast)
+          fi
+          if [[ "${{ steps.inputs.outputs.commit_version_bump }}" == "true" ]]; then
+            ARGS+=(--commit-version)
+          fi
+          if [[ "${{ steps.inputs.outputs.dry_run }}" == "true" ]]; then
+            ARGS+=(--dry-run)
+          fi
+          node scripts/release-mobile.js "${ARGS[@]}"
+
+      - name: Upload APK artifact
+        if: steps.inputs.outputs.dry_run != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SplitSaathi-${{ github.run_number }}
+          path: deploy/SplitSaathi.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Release summary
+        if: always()
+        run: |
+          if [[ -f apps/mobile/version.json ]]; then
+            VERSION_NAME="$(node -p "require('./apps/mobile/version.json').versionName")"
+            VERSION_CODE="$(node -p "require('./apps/mobile/version.json').versionCode")"
+            echo "## Mobile release" >> "$GITHUB_STEP_SUMMARY"
+            echo "- versionName: \`${VERSION_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- versionCode: \`${VERSION_CODE}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- download: \`${API_URL}/downloads/${APK_REMOTE_FILENAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi

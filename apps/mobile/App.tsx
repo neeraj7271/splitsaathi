@@ -212,20 +212,24 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       .then(async (Notifications) => {
         try {
           const { invalidateQueriesForPush } = await import("./src/notifications/invalidateOnPush");
+          const { isAppUpdatePush, openAppUpdateDownload } = await import("./src/updates/handleAppUpdatePush");
           if (typeof Notifications.addNotificationReceivedListener === "function") {
             receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-              invalidateQueriesForPush(
-                queryClient,
-                notification.request.content.data as Record<string, unknown> | undefined
-              );
+              const data = notification.request.content.data as Record<string, unknown> | undefined;
+              if (isAppUpdatePush(data)) {
+                return;
+              }
+              invalidateQueriesForPush(queryClient, data);
             });
           }
           if (typeof Notifications.addNotificationResponseReceivedListener === "function") {
             responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-              invalidateQueriesForPush(
-                queryClient,
-                response.notification.request.content.data as Record<string, unknown> | undefined
-              );
+              const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+              if (isAppUpdatePush(data)) {
+                void openAppUpdateDownload(data);
+                return;
+              }
+              invalidateQueriesForPush(queryClient, data);
             });
           }
         } catch (err) {

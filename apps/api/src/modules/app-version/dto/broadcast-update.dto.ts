@@ -7,12 +7,12 @@ export class BroadcastUpdateDto {
   @IsString()
   versionName?: string;
 
-  @ApiPropertyOptional({ example: 101, description: 'Version code integer (e.g. 101 for v1.0.1)' })
+  @ApiPropertyOptional({ example: 100010, description: 'Version code integer (e.g. 100010 for v1.0.1)' })
   @IsOptional()
   @IsNumber()
   versionCode?: number;
 
-  @ApiPropertyOptional({ example: 101, description: 'Minimum supported version code for forced update' })
+  @ApiPropertyOptional({ example: 100000, description: 'Minimum supported version code for forced update' })
   @IsOptional()
   @IsNumber()
   minSupportedVersionCode?: number;
