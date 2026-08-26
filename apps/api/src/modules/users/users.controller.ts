@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -61,5 +61,11 @@ export class UsersController {
   ): Promise<UserPreferencesResponseDto> {
     const preferences = await this.usersService.updatePreferences(currentUser.userId, dto);
     return this.usersService.toPreferencesDto(preferences);
+  }
+
+  @Post('me/delete-account')
+  @ApiOkResponse({ description: 'Schedule account deletion and revoke active sessions' })
+  async deleteAccount(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.usersService.deleteAccount(currentUser.userId);
   }
 }

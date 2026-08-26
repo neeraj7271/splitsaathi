@@ -1,6 +1,6 @@
 import { Linking } from "react-native";
 
-import { getDirectApkDownloadUrl } from "./checkAppVersion";
+import { resolveUpdateTargetUrl } from "./checkAppVersion";
 
 function versionCodeFromName(versionName: string): number | null {
   const parts = versionName.split(".").map((part) => Number.parseInt(part, 10));
@@ -38,7 +38,11 @@ export function isAppUpdatePush(data: Record<string, unknown> | undefined) {
 
 export async function openAppUpdateDownload(data: Record<string, unknown> | undefined) {
   const directApkUrl = typeof data?.directApkUrl === "string" ? data.directApkUrl : undefined;
-  const targetUrl = getDirectApkDownloadUrl(directApkUrl);
+  const playStoreUrl = typeof data?.playStoreUrl === "string" ? data.playStoreUrl : undefined;
+  const targetUrl = resolveUpdateTargetUrl({
+    directApkUrl: directApkUrl ?? "",
+    playStoreUrl: playStoreUrl ?? ""
+  });
   if (!targetUrl) {
     return false;
   }

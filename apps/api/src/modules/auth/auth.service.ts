@@ -533,6 +533,11 @@ export class AuthService {
     deviceLabel?: string,
     needsOnboarding = false
   ): Promise<AuthResponseDto> {
+    const accountStatus = await this.usersService.getAccountStatus(user.id);
+    if (accountStatus !== 'active') {
+      throw new ForbiddenException('This account is no longer available.');
+    }
+
     const refreshToken = this.generateRefreshToken();
     const refreshSession = await this.refreshSessions.save(
       this.refreshSessions.create({

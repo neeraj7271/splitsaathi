@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../api/client";
 import { writeCachedBiometricPrefs } from "../auth/biometricPrefsCache";
+import { Button } from "../components/Button";
 import { DataSurface } from "../components/DataSurface";
 import { InlineNotice } from "../components/InlineNotice";
 import { Screen } from "../components/Screen";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { SettingsLinkRow } from "../components/SettingsLinkRow";
 import { SettingsToggleRow } from "../components/SettingsToggleRow";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
@@ -49,6 +51,28 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
     }
   });
 
+  const deleteAccount = useMutation({
+    mutationFn: () => apiClient.deleteAccount(),
+    onSuccess: () => {
+      navigation.signOut();
+    }
+  });
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      "Delete account?",
+      "This signs you out and schedules your SplitSaathi account for deletion. Group expense history may remain visible to other members.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: () => deleteAccount.mutate()
+        }
+      ]
+    );
+  }
+
   const timeoutLabel = TIMEOUT_OPTIONS.find((option) => option.value === timeoutSeconds)?.label ?? `${timeoutSeconds} seconds`;
 
   function cycleTimeout() {
@@ -70,6 +94,7 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
 
       {preferencesQuery.error ? <InlineNotice title="Settings could not load" body={preferencesQuery.error.message} tone="owe" /> : null}
       {savePreferences.error ? <InlineNotice title="Save failed" body={savePreferences.error.message} tone="owe" /> : null}
+      {deleteAccount.error ? <InlineNotice title="Account deletion failed" body={deleteAccount.error.message} tone="owe" /> : null}
 
       <DataSurface>
         <View style={styles.block}>
@@ -104,6 +129,38 @@ export function SecuritySettingsScreen({ navigation }: { navigation: AppNavigati
               {timeoutLabel}
             </ThemedText>
           </Pressable>
+        </View>
+      </DataSurface>
+
+      <DataSurface>
+        <View style={styles.block}>
+          <ThemedText variant="bodyMedium" style={{ fontWeight: "600" }}>Privacy & legal</ThemedText>
+          <SettingsLinkRow
+            label="Privacy policy"
+            subtitle="How SplitSaathi uses your data"
+            onPress={() => void Linking.openURL("https://thesplitsaathi.com/privacy")}
+          />
+          <SettingsLinkRow
+            label="Terms of service"
+            subtitle="Rules for using SplitSaathi"
+            onPress={() => void Linking.openURL("https://thesplitsaathi.com/terms")}
+          />
+        </View>
+      </DataSurface>
+
+      <DataSurface>
+        <View style={styles.block}>
+          <ThemedText variant="bodyMedium" style={{ fontWeight: "600" }}>Account</ThemedText>
+          <ThemedText variant="bodySm" tone="muted">
+            Deleting your account signs you out on all devices and removes your profile details from SplitSaathi.
+          </ThemedText>
+          <Button
+            label="Delete account"
+            variant="destructive"
+            onPress={confirmDeleteAccount}
+            loading={deleteAccount.isPending}
+            disabled={deleteAccount.isPending}
+          />
         </View>
       </DataSurface>
     </Screen>

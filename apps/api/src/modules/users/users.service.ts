@@ -138,6 +138,45 @@ export class UsersService {
     return UserPreferencesResponseDto.fromEntity(entity);
   }
 
+  async getAccountStatus(userId: string): Promise<string> {
+    const rows: Array<{ status: string }> = await this.users.query(`SELECT status FROM users WHERE id = $1`, [userId]);
+    return rows[0]?.status ?? 'active';
+  }
+
+  async deleteAccount(userId: string): Promise<{ success: true; message: string }> {
+    await this.findByIdOrThrow(userId);
+
+    await this.users.manager.transaction(async (manager) => {
+      await manager.query(
+        `UPDATE users
+         SET display_name = $2,
+             phone_e164 = NULL,
+             phone_hash = NULL,
+             upi_vpa = NULL,
+             avatar_attachment_id = NULL,
+             status = 'deleted_pending',
+             state = 'disabled',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [userId, `Deleted User (${userId.slice(0, 8)})`]
+      );
+
+      await manager.query(
+        `UPDATE refresh_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+        [userId]
+      );
+
+      await manager.query(`UPDATE device_installations SET push_token = NULL WHERE user_id = $1`, [userId]);
+
+      await manager.query(`DELETE FROM auth_identities WHERE user_id = $1 AND provider = 'phone'`, [userId]);
+    });
+
+    return {
+      success: true,
+      message: 'Your account has been scheduled for deletion and you have been signed out.'
+    };
+  }
+
   private async assertAvatarAttachment(userId: string, attachmentId: string): Promise<void> {
     const attachment = await this.attachments.findOne({ where: { id: attachmentId } });
     if (!attachment || attachment.ownerUserId !== userId || attachment.purpose !== 'avatar') {

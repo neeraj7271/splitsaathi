@@ -18,7 +18,8 @@ import { ThemedText } from "../components/ThemedText";
 import { UserAvatar } from "../components/UserAvatar";
 import { colorWithAlpha, useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
-import { fetchAppVersionInfo, getDirectApkDownloadUrl } from "../updates/checkAppVersion";
+import { fetchAppVersionInfo, getManualUpdateCheckSubtitle, resolveUpdateTargetUrl } from "../updates/checkAppVersion";
+import { isPlayStoreBuild } from "../utils/distributionChannel";
 import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
 import { clearDismissedVersionCode } from "../updates/updateDismissCache";
 import { pickAndCompressAvatar } from "../utils/avatarUpload";
@@ -50,8 +51,10 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
 
     if (data.updateAvailable || data.forceUpdate) {
       await clearDismissedVersionCode();
-      watchForPackageUpdateAfterDownload();
-      const targetUrl = getDirectApkDownloadUrl(data.directApkUrl);
+      if (!isPlayStoreBuild()) {
+        watchForPackageUpdateAfterDownload();
+      }
+      const targetUrl = resolveUpdateTargetUrl(data);
       if (targetUrl) {
         await Linking.openURL(targetUrl);
       }
@@ -354,7 +357,7 @@ export function ProfileScreen({ navigation }: { navigation: AppNavigation }) {
             />
             <SettingsLinkRow
               label="Check for app update"
-              subtitle="Download the latest SplitSaathi APK"
+              subtitle={getManualUpdateCheckSubtitle()}
               icon={<DownloadSimple size={20} color={theme.colors.confirmed} weight="fill" />}
               iconTone="confirmed"
               onPress={() => void checkForAppUpdate()}
