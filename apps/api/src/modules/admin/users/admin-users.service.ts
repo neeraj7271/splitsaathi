@@ -86,15 +86,23 @@ export class AdminUsersService {
           }
         }
 
-        // Query email address from auth_identities
+        // Query email address from auth_identities (provider = 'email') or email_credentials
         let email = (u as any).email;
         if (!email) {
           const emailIdent = await this.userRepo.query(
-            `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider IN ('email', 'google') LIMIT 1`,
+            `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider = 'email' LIMIT 1`,
             [u.id]
           );
           if (emailIdent && emailIdent.length > 0) {
             email = emailIdent[0].identifier;
+          } else {
+            const emailCred = await this.userRepo.query(
+              `SELECT email FROM email_credentials WHERE user_id = $1 LIMIT 1`,
+              [u.id]
+            );
+            if (emailCred && emailCred.length > 0) {
+              email = emailCred[0].email;
+            }
           }
         }
 
@@ -162,11 +170,19 @@ export class AdminUsersService {
     let email = (user as any).email;
     if (!email) {
       const emailIdent = await this.userRepo.query(
-        `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider IN ('email', 'google') LIMIT 1`,
+        `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider = 'email' LIMIT 1`,
         [userId]
       );
       if (emailIdent && emailIdent.length > 0) {
         email = emailIdent[0].identifier;
+      } else {
+        const emailCred = await this.userRepo.query(
+          `SELECT email FROM email_credentials WHERE user_id = $1 LIMIT 1`,
+          [userId]
+        );
+        if (emailCred && emailCred.length > 0) {
+          email = emailCred[0].email;
+        }
       }
     }
 
