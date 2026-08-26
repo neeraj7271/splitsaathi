@@ -86,7 +86,7 @@ export class AdminUsersService {
           }
         }
 
-        // Query email address from auth_identities or participants
+        // Query email address from auth_identities
         let email = (u as any).email;
         if (!email) {
           const emailIdent = await this.userRepo.query(
@@ -95,14 +95,6 @@ export class AdminUsersService {
           );
           if (emailIdent && emailIdent.length > 0) {
             email = emailIdent[0].identifier;
-          } else {
-            const partIdent = await this.userRepo.query(
-              `SELECT email FROM participants WHERE (linked_user_id = $1 OR registered_user_id = $1) AND email IS NOT NULL AND email != '' LIMIT 1`,
-              [u.id]
-            );
-            if (partIdent && partIdent.length > 0) {
-              email = partIdent[0].email;
-            }
           }
         }
 
@@ -175,14 +167,6 @@ export class AdminUsersService {
       );
       if (emailIdent && emailIdent.length > 0) {
         email = emailIdent[0].identifier;
-      } else {
-        const partIdent = await this.userRepo.query(
-          `SELECT email FROM participants WHERE (linked_user_id = $1 OR registered_user_id = $1) AND email IS NOT NULL AND email != '' LIMIT 1`,
-          [userId]
-        );
-        if (partIdent && partIdent.length > 0) {
-          email = partIdent[0].email;
-        }
       }
     }
 
