@@ -13,7 +13,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../theme";
 import { AppNavigation } from "../types/navigation";
-import { hasContactsConsent, syncDeviceContacts } from "../utils/contactDiscovery";
+import { ensureContactsAccess, hasContactsConsent, syncDeviceContacts } from "../utils/contactDiscovery";
 
 export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -38,7 +38,11 @@ export function ContactsSettingsScreen({ navigation }: { navigation: AppNavigati
       setError(null);
       await apiClient.recordConsent("contacts_discovery", granted, "settings");
       if (granted) {
-        await syncDeviceContacts();
+        const access = await ensureContactsAccess({ forcePrompt: true });
+        if (!access.ok) {
+          throw new Error(access.reason);
+        }
+        await syncDeviceContacts({ skipPermissionCheck: true });
       }
     },
     onSuccess: async () => {

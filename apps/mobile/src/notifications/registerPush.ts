@@ -50,7 +50,7 @@ function allowsNotifications(
   );
 }
 
-async function ensureAndroidNotificationPermission(): Promise<boolean> {
+async function ensureAndroidNotificationPermission(options?: { forcePrompt?: boolean }): Promise<boolean> {
   if (Platform.OS !== "android" || Number(Platform.Version) < 33) {
     return true;
   }
@@ -59,7 +59,14 @@ async function ensureAndroidNotificationPermission(): Promise<boolean> {
   if (alreadyGranted) {
     return true;
   }
+
+  const previouslyAsked = await getFlag(PUSH_ASKED_KEY);
+  if (!options?.forcePrompt && previouslyAsked) {
+    return false;
+  }
+
   const result = await PermissionsAndroid.request(permission);
+  await setFlag(PUSH_ASKED_KEY);
   return result === PermissionsAndroid.RESULTS.GRANTED;
 }
 
@@ -88,7 +95,7 @@ export async function registerPushIfPossible(options?: { forcePrompt?: boolean }
     return { status: "skipped", reason };
   }
 
-  const androidGranted = await ensureAndroidNotificationPermission();
+  const androidGranted = await ensureAndroidNotificationPermission(options);
   if (!androidGranted) {
     return { status: "skipped", reason: "android_post_notifications_denied" };
   }

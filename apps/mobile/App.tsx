@@ -16,7 +16,7 @@ import { BiometricGate } from "./src/components/BiometricGate";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { clearTokens } from "./src/auth/tokenStore";
 import { clearCachedBiometricPrefs } from "./src/auth/biometricPrefsCache";
-import { restoreSession } from "./src/auth/session";
+import { resolveSessionState, type SessionResolution } from "./src/auth/session";
 import { signOutFromGoogle } from "./src/auth/GoogleSignInButton";
 import { apiClient, extractInviteToken } from "./src/api/client";
 import { initOutbox } from "./src/offline/outbox";
@@ -112,7 +112,8 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
   const [dataPreloaded, setDataPreloaded] = useState(false);
   const [preloadTimedOut, setPreloadTimedOut] = useState(false);
   const [preloadStatus, setPreloadStatus] = useState("Securing App & Syncing Data...");
-  const [authenticated, setAuthenticated] = useState(false);
+  const [sessionState, setSessionState] = useState<SessionResolution>({ status: "signed_out" });
+  const isAppReady = sessionState.status === "ready";
   const [history, setHistory] = useState<AppRoute[]>(["home"]);
   const route = history[history.length - 1] ?? "home";
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
@@ -170,20 +171,20 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     async function boot() {
       await configurePushNotifications().catch(() => undefined);
       await initOutbox();
-      const sessionActive = await restoreSession();
-      setAuthenticated(sessionActive);
+      const resolved = await resolveSessionState();
+      setSessionState(resolved);
       setBooted(true);
     }
 
     boot().catch(async () => {
       await clearTokens();
-      setAuthenticated(false);
+      setSessionState({ status: "signed_out" });
       setBooted(true);
     });
   }, []);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!isAppReady) {
       return;
     }
     const syncPush = (forcePrompt = false) => {
@@ -198,8 +199,8 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
       );
     };
 
-    // Ask on login; retry whenever app returns to foreground.
-    syncPush(true);
+    // Register push when already granted; only prompt from onboarding/settings.
+    syncPush(false);
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
         syncPush(false);
@@ -279,11 +280,11 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         // Ignore unbind edge case
       }
     };
-  }, [authenticated, queryClient]);
+  }, [isAppReady, queryClient]);
 
   // Apply server appearance only after splash finishes — prevents dark→light double splash.
   useEffect(() => {
-    if (!authenticated || !splashMinElapsed) {
+    if (!isAppReady || !splashMinElapsed) {
       return;
     }
     apiClient
@@ -294,11 +295,11 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         }
       })
       .catch(() => undefined);
-  }, [authenticated, splashMinElapsed, theme]);
+  }, [isAppReady, splashMinElapsed, theme]);
 
   const claimInviteFromUrl = useCallback(
     async (url: string | null) => {
-      if (!url || !authenticated) {
+      if (!url || !isAppReady) {
         return;
       }
       const token = extractInviteToken(url);
@@ -331,11 +332,11 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
         inviteBusyRef.current = false;
       }
     },
-    [authenticated, go, showDialog]
+    [isAppReady, go, showDialog]
   );
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!isAppReady) {
       handledInitialInviteUrlRef.current = false;
       return;
     }
@@ -345,7 +346,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     }
     const sub = Linking.addEventListener("url", ({ url }) => void claimInviteFromUrl(url));
     return () => sub.remove();
-  }, [authenticated, claimInviteFromUrl]);
+  }, [isAppReady, claimInviteFromUrl]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -379,7 +380,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
             void clearCachedBiometricPrefs();
             claimedInviteTokensRef.current.clear();
             handledInitialInviteUrlRef.current = false;
-            setAuthenticated(false);
+            setSessionState({ status: "signed_out" });
             setHistory(["home"]);
             setSelectedGroupId(undefined);
             setSelectedExpenseId(undefined);
@@ -393,7 +394,7 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   // Background prefetch all primary app resources while splash screen is displaying
   useEffect(() => {
-    if (!authenticated) {
+    if (!isAppReady) {
       setDataPreloaded(true);
       return;
     }
@@ -431,16 +432,22 @@ function AppBootstrap({ fontsLoaded }: { fontsLoaded: boolean }) {
     return () => {
       isMounted = false;
     };
-  }, [authenticated, theme]);
+  }, [isAppReady, theme]);
 
-  const showSplash = !fontsLoaded || !booted || !splashMinElapsed || (authenticated && !dataPreloaded && !preloadTimedOut);
+  const showSplash = !fontsLoaded || !booted || !splashMinElapsed || (isAppReady && !dataPreloaded && !preloadTimedOut);
 
   if (showSplash) {
     return <AnimatedBrandLoader message={preloadStatus} />;
   }
 
-  if (!authenticated) {
-    return <OnboardingScreen onAuthenticated={() => setAuthenticated(true)} />;
+  if (sessionState.status !== "ready") {
+    return (
+      <OnboardingScreen
+        resumeSetup={sessionState.status === "setup_required" ? sessionState.setup : undefined}
+        onAuthenticated={() => setSessionState({ status: "ready" })}
+        onSignOut={() => setSessionState({ status: "signed_out" })}
+      />
+    );
   }
 
   return (

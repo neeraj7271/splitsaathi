@@ -1,4 +1,5 @@
 import { Linking, Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 
 import { apiClient } from "../api/client";
 import { hashPhoneE164, normalizePhoneE164 } from "./phoneHash";
@@ -11,6 +12,8 @@ type PermissionFailure = {
   openSettings?: boolean;
 };
 
+const CONTACTS_ASKED_KEY = "splitsaathi.contactsPermissionAsked.v1";
+
 async function loadContactsModule(): Promise<ContactsModule> {
   try {
     return await import("expo-contacts");
@@ -21,6 +24,23 @@ async function loadContactsModule(): Promise<ContactsModule> {
     }
     throw error;
   }
+}
+
+async function getFlag(key: string) {
+  if (Platform.OS === "web") {
+    return typeof window !== "undefined" && window.localStorage.getItem(key) === "1";
+  }
+  return (await SecureStore.getItemAsync(key)) === "1";
+}
+
+async function setFlag(key: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, "1");
+    }
+    return;
+  }
+  await SecureStore.setItemAsync(key, "1");
 }
 
 export interface DeviceContact {
@@ -40,11 +60,20 @@ function isGranted(permission: { granted?: boolean; status?: string }) {
   return Boolean(permission.granted) || permission.status === "granted";
 }
 
+export async function getContactsPermissionStatus() {
+  if (Platform.OS === "web") {
+    return { granted: false, canAskAgain: false, status: "denied" as const };
+  }
+
+  const Contacts = await loadContactsModule();
+  return Contacts.getPermissionsAsync();
+}
+
 /**
  * Ask for contacts access when the OS still allows a prompt.
  * Only falls back to Settings after the user has permanently blocked access.
  */
-export async function requestContactsPermission() {
+export async function requestContactsPermission(options?: { forcePrompt?: boolean }) {
   if (Platform.OS === "web") {
     return { granted: false, reason: "Contacts are not available in the browser preview." } satisfies PermissionFailure;
   }
@@ -63,7 +92,16 @@ export async function requestContactsPermission() {
     } satisfies PermissionFailure;
   }
 
+  const previouslyAsked = await getFlag(CONTACTS_ASKED_KEY);
+  if (!options?.forcePrompt && previouslyAsked) {
+    return {
+      granted: false as const,
+      reason: "Contacts access was denied."
+    } satisfies PermissionFailure;
+  }
+
   const requested = await Contacts.requestPermissionsAsync();
+  await setFlag(CONTACTS_ASKED_KEY);
   if (isGranted(requested)) {
     return { granted: true as const };
   }
@@ -87,8 +125,8 @@ export async function openSystemSettings() {
 }
 
 /** OS permission + in-app contacts consent before reading the address book. */
-export async function ensureContactsAccess() {
-  const permission = await requestContactsPermission();
+export async function ensureContactsAccess(options?: { forcePrompt?: boolean }) {
+  const permission = await requestContactsPermission(options);
   if (!permission.granted) {
     return {
       ok: false as const,
@@ -99,7 +137,7 @@ export async function ensureContactsAccess() {
 
   const consented = await hasContactsConsent();
   if (!consented) {
-    await apiClient.recordConsent("contacts_discovery", true, "contact_picker");
+    await apiClient.recordConsent("contacts_discovery", true, "settings");
   }
 
   return { ok: true as const };
@@ -140,8 +178,20 @@ async function loadDeviceContacts(): Promise<DeviceContact[]> {
 
 const CONTACT_IMPORT_BATCH_SIZE = 400;
 
-export async function syncDeviceContacts() {
-  const deviceContacts = await readDeviceContacts();
+export async function syncDeviceContacts(options?: { skipPermissionCheck?: boolean }) {
+  if (!options?.skipPermissionCheck) {
+    const access = await ensureContactsAccess();
+    if (!access.ok) {
+      throw new Error(access.reason);
+    }
+  } else {
+    const consented = await hasContactsConsent();
+    if (!consented) {
+      await apiClient.recordConsent("contacts_discovery", true, "settings");
+    }
+  }
+
+  const deviceContacts = await loadDeviceContacts();
   if (!deviceContacts.length) {
     return { importedCount: 0, matchedOnSplitSaathi: 0, contacts: [] as SyncedContact[] };
   }

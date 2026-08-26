@@ -172,6 +172,10 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
   const nameForParticipant = (participantId: string) =>
     (groupLookups ? resolveParticipantDisplayName(participantId, groupLookups) : undefined) ?? "Unknown participant";
   const profileQuery = useQuery({ queryKey: ["me"], queryFn: () => apiClient.getMe() });
+  const myParticipantId = useMemo(
+    () => groupQuery.data?.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.participantId,
+    [groupQuery.data?.memberships, profileQuery.data?.id]
+  );
   const myRole = groupQuery.data?.memberships.find((membership) => membership.userId === profileQuery.data?.id)?.role;
   const canManageExpense =
     typeof groupQuery.data?.canManageExpenses === "boolean"
@@ -239,10 +243,10 @@ export function ExpenseEntryScreen({ navigation }: { navigation: AppNavigation }
       return next.join() === current.join() ? current : next;
     });
     setSelectedPayers((current) => {
-      const next = reconcileParticipantSelection(current, participants, "first");
+      const next = reconcileParticipantSelection(current, participants, "self", myParticipantId);
       return next.join() === current.join() ? current : next;
     });
-  }, [participants, isEditing, selectedGroupId]);
+  }, [participants, isEditing, selectedGroupId, myParticipantId]);
 
   const activeAdjustments = showAdjustments ? adjustments : [];
   const totalMinor = splitType === "itemized" ? itemizedTotalMinor(lineItems, activeAdjustments) : parseAmountToMinor(amount);

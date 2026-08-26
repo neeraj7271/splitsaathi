@@ -51,7 +51,8 @@ export function activeGroupParticipants(group: Pick<GroupDetail, "participants" 
 export function reconcileParticipantSelection(
   selectedIds: string[],
   participants: Participant[],
-  fallback: "all" | "first" | "none" = "all"
+  fallback: "all" | "first" | "none" | "self" = "all",
+  myParticipantId?: string
 ): string[] {
   const validIds = new Set(participants.map((participant) => participant.id));
   const next = selectedIds.filter((id) => validIds.has(id));
@@ -60,6 +61,9 @@ export function reconcileParticipantSelection(
   }
   if (!participants.length || fallback === "none") {
     return [];
+  }
+  if (fallback === "self" && myParticipantId && validIds.has(myParticipantId)) {
+    return [myParticipantId];
   }
   if (fallback === "first") {
     return [participants[0].id];

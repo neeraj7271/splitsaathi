@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   KeyboardAvoidingView,
@@ -40,6 +40,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiClient } from "../api/client";
 import { isGoogleSignInConfigured } from "../auth/GoogleSignInButton";
 import { markLoggedInBefore, hasLoggedInBefore } from "../auth/loginStore";
+import { clearTokens } from "../auth/tokenStore";
+import type { ResumeSetupState } from "../auth/session";
 import { AuthIconButton } from "../components/AuthIconButton";
 import { BrandLogo } from "../components/BrandLogo";
 import { Button } from "../components/Button";
@@ -48,7 +50,10 @@ import { InputField } from "../components/InputField";
 import { ThemedText } from "../components/ThemedText";
 import { WelcomeLoginScreen } from "../components/WelcomeLoginScreen";
 import { registerPushIfPossible } from "../notifications/registerPush";
-import { syncDeviceContacts } from "../utils/contactDiscovery";
+import { ensureContactsAccess, syncDeviceContacts } from "../utils/contactDiscovery";
+import { detectDevicePhoneNumbers } from "../utils/detectDevicePhoneNumbers";
+import { isPhoneNumberHintAvailable, requestPhoneNumberHint } from "../utils/phoneNumberHint";
+import { validatePhoneNumber } from "../utils/phoneValidation";
 import { useTheme } from "../theme";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -177,7 +182,15 @@ function formatPhoneE164(phone: string) {
   return digits ? `+${digits}` : trimmed;
 }
 
-export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
+export function OnboardingScreen({
+  onAuthenticated,
+  resumeSetup,
+  onSignOut
+}: {
+  onAuthenticated: () => void;
+  resumeSetup?: ResumeSetupState;
+  onSignOut?: () => void;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<OnboardingStep>("welcome");
@@ -197,6 +210,10 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
   const [linkingPhone, setLinkingPhone] = useState(false);
   const [authSnapshot, setAuthSnapshot] = useState<AuthStepResponse | null>(null);
   const [phoneCandidates, setPhoneCandidates] = useState<string[]>([]);
+  const [phoneHintAvailable, setPhoneHintAvailable] = useState(false);
+  const [phoneHintLoading, setPhoneHintLoading] = useState(false);
+  const phoneHintAutoShownRef = useRef(false);
+  const resumeAppliedRef = useRef(false);
   const [inviteLink, setInviteLink] = useState("");
   const [scanningInvite, setScanningInvite] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -207,6 +224,16 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     proofStorage: true
   });
   const googleConfigured = isGoogleSignInConfigured();
+  const hasSavedSession = Boolean(authSnapshot);
+
+  async function handleSignOut() {
+    await clearTokens();
+    setAuthSnapshot(null);
+    setLinkingPhone(false);
+    setStep("welcome");
+    resumeAppliedRef.current = false;
+    onSignOut?.();
+  }
 
   const startOtp = useMutation({
     mutationFn: (formattedPhone: string) => apiClient.startOtp(formattedPhone),
@@ -273,7 +300,11 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
 
   const loginWithPhone = useMutation({
     mutationFn: async () => {
-      const formatted = formatPhoneE164(phone);
+      const validation = validatePhoneNumber(phone);
+      if (!validation.valid) {
+        throw new Error(validation.message);
+      }
+      const formatted = validation.phoneE164;
       if (linkingPhone) {
         return apiClient.linkPhone(formatted, displayName.trim() || undefined);
       }
@@ -358,7 +389,10 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
         apiClient.recordConsent("upi_proof_storage", consents.proofStorage)
       ]);
       if (consents.contacts) {
-        await syncDeviceContacts().catch(() => undefined);
+        const access = await ensureContactsAccess({ forcePrompt: true }).catch(() => ({ ok: false as const, reason: "" }));
+        if (access.ok) {
+          await syncDeviceContacts({ skipPermissionCheck: true }).catch(() => undefined);
+        }
       }
       if (consents.notifications) {
         await registerPushIfPossible({ forcePrompt: true }).catch(() => undefined);
@@ -373,6 +407,52 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
     }
   });
 
+  function applyPhoneCandidate(candidate: string) {
+    setPhoneCandidates((current) => (current.includes(candidate) ? current : [...current, candidate]));
+    setPhone(candidate);
+  }
+
+  async function pickPhoneFromHint() {
+    if (phoneHintLoading) {
+      return;
+    }
+    setPhoneHintLoading(true);
+    try {
+      const selected = await requestPhoneNumberHint();
+      if (selected) {
+        applyPhoneCandidate(selected);
+      }
+    } finally {
+      setPhoneHintLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!resumeSetup || resumeAppliedRef.current) {
+      return;
+    }
+    resumeAppliedRef.current = true;
+    setAuthSnapshot({
+      user: resumeSetup.user,
+      needsPhoneLink: resumeSetup.needsPhoneLink,
+      needsOnboarding: resumeSetup.needsOnboarding
+    });
+    setDisplayName(isPlaceholderDisplayName(resumeSetup.user.displayName) ? "" : resumeSetup.user.displayName);
+
+    if (resumeSetup.needsPhoneLink) {
+      setLinkingPhone(true);
+      setStep("phone");
+      return;
+    }
+    if (resumeSetup.needsOnboarding && isPlaceholderDisplayName(resumeSetup.user.displayName)) {
+      setStep("profile");
+      return;
+    }
+    if (resumeSetup.needsOnboarding) {
+      setStep("consent");
+    }
+  }, [resumeSetup]);
+
   useEffect(() => {
     hasLoggedInBefore()
       .then((loggedInBefore) => {
@@ -383,6 +463,57 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (step !== "phone") {
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      const hintAvailable = await isPhoneNumberHintAvailable();
+      if (!active) {
+        return;
+      }
+      setPhoneHintAvailable(hintAvailable);
+
+      if (hintAvailable && !phoneHintAutoShownRef.current) {
+        phoneHintAutoShownRef.current = true;
+        const selected = await requestPhoneNumberHint();
+        if (!active) {
+          return;
+        }
+        if (selected) {
+          setPhoneCandidates((current) => (current.includes(selected) ? current : [...current, selected]));
+          setPhone(selected);
+          return;
+        }
+      }
+
+      const detected = await detectDevicePhoneNumbers();
+      if (!active) {
+        return;
+      }
+
+      if (detected.length) {
+        setPhoneCandidates((current) => {
+          const merged = [...current];
+          for (const candidate of detected) {
+            if (!merged.includes(candidate)) {
+              merged.push(candidate);
+            }
+          }
+          return merged;
+        });
+        setPhone((current) => (current === "+91" || current.trim().length <= 3 ? detected[0] : current));
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [step]);
 
   useEffect(() => {
     const applyUrl = (url?: string | null) => {
@@ -660,6 +791,15 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
             body="Friends find you by number — this is required so they can add you to groups."
             icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
           >
+            {phoneHintAvailable ? (
+              <Button
+                label={phoneHintLoading ? "Opening number picker…" : "Use number on this device"}
+                variant="secondary"
+                onPress={() => void pickPhoneFromHint()}
+                loading={phoneHintLoading}
+                disabled={phoneHintLoading}
+              />
+            ) : null}
             {phoneCandidates.length > 0 ? (
               <View style={styles.phoneCandidates}>
                 <ThemedText variant="caption" tone="muted">
@@ -698,8 +838,11 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
                 loginWithPhone.mutate();
               }}
               loading={loginWithPhone.isPending}
-              disabled={phone.length < 8}
+              disabled={!validatePhoneNumber(phone).valid}
             />
+            {hasSavedSession ? (
+              <Button label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
+            ) : null}
           </AuthPanel>
         ) : null}
 
@@ -803,7 +946,11 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
           <AuthPanel title="Profile name" body="This name appears in groups, audit history, and payment confirmations." icon={<UsersThree size={24} color={theme.colors.confirmed} weight="duotone" />}>
             <InputField label="Display name" value={displayName} onChangeText={setDisplayName} />
             <Button label="Review consent choices" onPress={() => setStep("consent")} disabled={!displayName.trim()} />
-            <Button label="Back" variant="ghost" onPress={() => setStep(inviteLink.trim() ? "join" : "welcome")} />
+            {hasSavedSession ? (
+              <Button label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
+            ) : (
+              <Button label="Back" variant="ghost" onPress={() => setStep(inviteLink.trim() ? "join" : "welcome")} />
+            )}
           </AuthPanel>
         ) : null}
 
@@ -824,7 +971,14 @@ export function OnboardingScreen({ onAuthenticated }: { onAuthenticated: () => v
             />
             {finishSetup.error ? <InlineNotice title="Setup failed" body={finishSetup.error.message} tone="owe" /> : null}
             <Button label="Finish setup" onPress={() => finishSetup.mutate()} loading={finishSetup.isPending} disabled={!displayName.trim()} />
-            <Button label="Back" variant="ghost" onPress={() => setStep("profile")} />
+            {hasSavedSession && isPlaceholderDisplayName(authSnapshot?.user.displayName) ? (
+              <Button label="Back" variant="ghost" onPress={() => setStep("profile")} />
+            ) : null}
+            {hasSavedSession ? (
+              <Button label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
+            ) : (
+              <Button label="Back" variant="ghost" onPress={() => setStep("profile")} />
+            )}
           </AuthPanel>
         ) : null}
 

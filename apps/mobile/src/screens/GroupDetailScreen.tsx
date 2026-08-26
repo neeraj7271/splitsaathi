@@ -443,7 +443,7 @@ export function GroupDetailScreen({ navigation }: { navigation: AppNavigation })
     setContactPickerVisible(true);
     setContactPickerLoading(true);
     try {
-      const result = await syncDeviceContacts();
+      const result = await syncDeviceContacts({ skipPermissionCheck: true });
       setAvailableContacts(result.contacts);
     } catch (error) {
       setContactPickerVisible(false);

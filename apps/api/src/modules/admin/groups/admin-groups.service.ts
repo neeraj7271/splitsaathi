@@ -112,34 +112,34 @@ export class AdminGroupsService {
 
     // Query recent expenses from event_store
     let expenseEvents = await this.groupRepo.query(
-      `SELECT id, payload, created_at FROM event_store
+      `SELECT id, payload, occurred_at AS created_at FROM event_store
        WHERE event_type = 'ExpenseCreated' AND (payload->>'groupId' = $1 OR payload::jsonb->>'groupId' = $1)
-       ORDER BY created_at DESC LIMIT 50`,
+       ORDER BY occurred_at DESC LIMIT 50`,
       [groupId]
     );
 
     if (expenseEvents.length === 0) {
       // General recent expenses fallback
       expenseEvents = await this.groupRepo.query(
-        `SELECT id, payload, created_at FROM event_store
+        `SELECT id, payload, occurred_at AS created_at FROM event_store
          WHERE event_type = 'ExpenseCreated'
-         ORDER BY created_at DESC LIMIT 10`
+         ORDER BY occurred_at DESC LIMIT 10`
       );
     }
 
     // Query recent settlements from event_store
     let settlementEvents = await this.groupRepo.query(
-      `SELECT id, payload, created_at FROM event_store
+      `SELECT id, payload, occurred_at AS created_at FROM event_store
        WHERE event_type IN ('SettlementIntentCreated', 'CashSettlementRecorded', 'SettlementConfirmed') AND (payload->>'groupId' = $1 OR payload::jsonb->>'groupId' = $1)
-       ORDER BY created_at DESC LIMIT 50`,
+       ORDER BY occurred_at DESC LIMIT 50`,
       [groupId]
     );
 
     if (settlementEvents.length === 0) {
       settlementEvents = await this.groupRepo.query(
-        `SELECT id, payload, created_at FROM event_store
+        `SELECT id, payload, occurred_at AS created_at FROM event_store
          WHERE event_type IN ('SettlementIntentCreated', 'CashSettlementRecorded', 'SettlementConfirmed')
-         ORDER BY created_at DESC LIMIT 10`
+         ORDER BY occurred_at DESC LIMIT 10`
       );
     }
 

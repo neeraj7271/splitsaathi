@@ -18,6 +18,7 @@ import { ThemedText } from "../components/ThemedText";
 import { colorWithAlpha, useTheme } from "../theme";
 import type { FriendSummary } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
+import { friendRemindBlockedMessage, isRegisteredFriendUser } from "../utils/friendRemind";
 import versionConfig from "../../version.json";
 
 type FriendFilter = "all" | "outstanding" | "you_owe" | "owes_you";
@@ -104,6 +105,23 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
   const settled = useMemo(() => searched.filter((friend) => friend.status === "settled"), [searched]);
   const noExpenses = useMemo(() => searched.filter((friend) => friend.status === "no_expenses"), [searched]);
   const filtered = useMemo(() => searched.filter((friend) => matchesFilter(friend, filter)), [searched, filter]);
+
+  function handleRemind(friend: FriendSummary) {
+    if (!isRegisteredFriendUser(friend.otherUserId)) {
+      showDialog({
+        title: `${friend.displayName} isn't on SplitSaathi yet`,
+        message: friendRemindBlockedMessage(friend),
+        tone: "warning",
+        primaryAction: {
+          label: "Invite to SplitSaathi",
+          onPress: () => void shareInvite()
+        },
+        secondaryAction: { label: "Close", variant: "ghost" }
+      });
+      return;
+    }
+    remindMutation.mutate(friend.otherUserId);
+  }
 
   function openFriend(friendUserId: string) {
     navigation.setSelectedFriendUserId(friendUserId);
@@ -216,7 +234,7 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
                 title="Owes you"
                 friends={owesYou}
                 onOpen={openFriend}
-                onRemind={(friendUserId) => remindMutation.mutate(friendUserId)}
+                onRemind={(friend) => handleRemind(friend)}
                 remindingUserId={remindMutation.isPending ? remindMutation.variables : undefined}
                 remindedUserIds={remindedUserIds}
               />
@@ -243,7 +261,7 @@ export function FriendsScreen({ navigation }: { navigation: AppNavigation }) {
                 key={friend.otherUserId}
                 friend={friend}
                 onPress={() => openFriend(friend.otherUserId)}
-                onRemind={() => remindMutation.mutate(friend.otherUserId)}
+                onRemind={() => handleRemind(friend)}
                 isReminding={remindMutation.isPending && remindMutation.variables === friend.otherUserId}
                 isReminded={Boolean(remindedUserIds[friend.otherUserId])}
               />
@@ -311,7 +329,7 @@ function FriendSection({
   title: string;
   friends: FriendSummary[];
   onOpen: (friendUserId: string) => void;
-  onRemind?: (friendUserId: string) => void;
+  onRemind?: (friend: FriendSummary) => void;
   remindingUserId?: string;
   remindedUserIds?: Record<string, boolean>;
 }) {
@@ -330,7 +348,7 @@ function FriendSection({
             key={friend.otherUserId}
             friend={friend}
             onPress={() => onOpen(friend.otherUserId)}
-            onRemind={onRemind ? () => onRemind(friend.otherUserId) : undefined}
+            onRemind={onRemind ? () => onRemind(friend) : undefined}
             isReminding={remindingUserId === friend.otherUserId}
             isReminded={Boolean(remindedUserIds[friend.otherUserId])}
           />
