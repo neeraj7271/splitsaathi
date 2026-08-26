@@ -24,6 +24,7 @@ const ENV_CONFIGS = {
   },
   prod: {
     apiUrl: 'https://api.thesplitsaathi.com',
+    distributionChannel: 'sideload',
     gradleTask: 'assembleRelease',
     sourceApk: 'app/build/outputs/apk/release/app-release.apk',
     targetApk: 'deploy/SplitSaathi.apk',
@@ -55,9 +56,10 @@ console.log(`• Destination: ${config.targetApk}\n`);
 
 // 1. Update apps/mobile/.env with the environment's EXPO_PUBLIC_API_URL
 const googleClientId = '484458958680-bknfe7jd293kjaobf8qjeleerg820apm.apps.googleusercontent.com';
-const envContent = `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${googleClientId}\nEXPO_PUBLIC_API_URL=${config.apiUrl}\n`;
+const distributionChannel = config.distributionChannel || 'sideload';
+const envContent = `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${googleClientId}\nEXPO_PUBLIC_API_URL=${config.apiUrl}\nEXPO_PUBLIC_DISTRIBUTION_CHANNEL=${distributionChannel}\n`;
 fs.writeFileSync(mobileEnvPath, envContent);
-console.log(`✓ Updated apps/mobile/.env with EXPO_PUBLIC_API_URL=${config.apiUrl}`);
+console.log(`✓ Updated apps/mobile/.env with EXPO_PUBLIC_API_URL=${config.apiUrl}, channel=${distributionChannel}`);
 
 // 2. Set environment variables for Java & Android SDK
 const defaultJavaHome = process.env.CI ? undefined : '/usr/lib/jvm/java-17-openjdk-amd64';
@@ -73,6 +75,7 @@ if (!javaHome || !androidHome) {
 const envVars = {
   ...process.env,
   EXPO_PUBLIC_API_URL: config.apiUrl,
+  EXPO_PUBLIC_DISTRIBUTION_CHANNEL: distributionChannel,
   JAVA_HOME: javaHome,
   ANDROID_HOME: androidHome,
   ANDROID_SDK_ROOT: androidHome

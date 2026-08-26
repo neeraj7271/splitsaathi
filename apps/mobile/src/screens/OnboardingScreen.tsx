@@ -9,6 +9,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Text,
   TextInput,
   View
 } from "react-native";
@@ -19,6 +20,7 @@ import { Svg, Path, Circle } from "react-native-svg";
 import {
   Bell,
   Check,
+  CaretDown,
   CaretLeft,
   CaretRight,
   EnvelopeSimple,
@@ -31,6 +33,7 @@ import {
   QrCode,
   LockSimple,
   ShareNetwork,
+  SignOut,
   Sparkle,
   X
 } from "phosphor-react-native";
@@ -180,6 +183,30 @@ function formatPhoneE164(phone: string) {
     return `+91${digits.slice(1)}`;
   }
   return digits ? `+${digits}` : trimmed;
+}
+
+function nationalDigitsFromPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("91") && digits.length > 2) {
+    return digits.slice(2, 12);
+  }
+  if (digits.length === 10) {
+    return digits;
+  }
+  return digits.startsWith("91") ? "" : digits.slice(0, 10);
+}
+
+function OrDivider() {
+  const theme = useTheme();
+  return (
+    <View style={styles.joinOrRow}>
+      <View style={[styles.joinOrLine, { backgroundColor: theme.colors.hairline }]} />
+      <View style={styles.joinOrBadge}>
+        <ThemedText variant="caption" style={styles.joinOrText}>OR</ThemedText>
+      </View>
+      <View style={[styles.joinOrLine, { backgroundColor: theme.colors.hairline }]} />
+    </View>
+  );
 }
 
 export function OnboardingScreen({
@@ -424,6 +451,16 @@ export function OnboardingScreen({
       }
     } finally {
       setPhoneHintLoading(false);
+    }
+  }
+
+  async function useDevicePhoneNumber() {
+    if (phoneHintAvailable) {
+      await pickPhoneFromHint();
+      return;
+    }
+    if (phoneCandidates.length > 0) {
+      applyPhoneCandidate(phoneCandidates[0]);
     }
   }
 
@@ -746,6 +783,159 @@ export function OnboardingScreen({
     );
   }
 
+  if (step === "phone") {
+    const phoneValidation = validatePhoneNumber(phone);
+    const nationalDigits = nationalDigitsFromPhone(phone);
+    const canUseDeviceNumber = phoneHintAvailable || phoneCandidates.length > 0;
+
+    return (
+      <View style={styles.phoneRoot}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient
+          colors={[theme.gradients.current.start, theme.gradients.current.end]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.phoneHeaderGradient, { paddingTop: Math.max(insets.top, 16) + 8 }]}
+        />
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        >
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.phoneScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.phoneCard, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+              <View style={styles.phoneHandle} />
+
+              <View style={styles.phoneSheetHeader}>
+                <View style={styles.phoneTitleBlock}>
+                  <View style={styles.phoneTitleIcon}>
+                    <Phone size={22} color="#0D9488" weight="duotone" />
+                  </View>
+                  <View style={styles.phoneTitleText}>
+                    <ThemedText variant="title" style={styles.phoneTitle}>Add your phone</ThemedText>
+                    <ThemedText variant="bodySm" tone="muted" style={styles.phoneSubtitle}>
+                      Friends find you by number so they can add you to groups.
+                    </ThemedText>
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.phoneCloseBtn}
+                  onPress={() => void handleSignOut()}
+                  accessibilityLabel="Close"
+                >
+                  <X size={16} color="#64748B" weight="bold" />
+                </Pressable>
+              </View>
+
+              <Pressable
+                style={[
+                  styles.phoneDeviceCard,
+                  !canUseDeviceNumber || phoneHintLoading ? styles.phoneDeviceCardDisabled : null
+                ]}
+                onPress={() => void useDevicePhoneNumber()}
+                disabled={!canUseDeviceNumber || phoneHintLoading}
+              >
+                <View style={styles.phoneDeviceIcon}>
+                  <Phone size={18} color="#0D9488" weight="duotone" />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText variant="bodyMedium" style={styles.phoneDeviceTitle}>
+                    {phoneHintLoading ? "Opening number picker…" : "Use number on this device"}
+                  </ThemedText>
+                  <ThemedText variant="caption" tone="muted" style={styles.phoneDeviceSubtext}>
+                    Auto-detect and save your number
+                  </ThemedText>
+                </View>
+                <CaretRight size={18} color="#0D9488" weight="bold" />
+              </Pressable>
+
+              <OrDivider />
+
+              <View style={styles.phoneManualSection}>
+                <ThemedText variant="bodyMedium" style={styles.phoneManualLabel}>
+                  Enter your phone number
+                </ThemedText>
+                <View style={styles.phoneInputRow}>
+                  <View style={styles.phoneCountryBox}>
+                    <Text style={styles.phoneFlag}>🇮🇳</Text>
+                    <ThemedText variant="bodyMedium" style={styles.phoneCountryCode}>+91</ThemedText>
+                    <CaretDown size={12} color="#94A3B8" weight="bold" />
+                  </View>
+                  <TextInput
+                    value={nationalDigits}
+                    onChangeText={(value) => {
+                      const digits = value.replace(/\D/g, "").slice(0, 10);
+                      setPhone(digits ? `+91${digits}` : "+91");
+                    }}
+                    placeholder="Enter mobile number"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                    style={styles.phoneNumberInput}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.phonePrivacyCard}>
+                <View style={styles.phonePrivacyIcon}>
+                  <ShieldCheck size={18} color="#7C3AED" weight="duotone" />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText variant="bodyMedium" style={styles.phonePrivacyTitle}>
+                    We&apos;ll never share your number
+                  </ThemedText>
+                  <ThemedText variant="caption" style={styles.phonePrivacyBody}>
+                    Your number is used only to help friends find and add you to groups.
+                  </ThemedText>
+                </View>
+              </View>
+
+              {loginWithPhone.error ? (
+                <InlineNotice title="Phone could not be saved" body={loginWithPhone.error.message} tone="owe" />
+              ) : null}
+
+              <Pressable
+                style={[styles.phoneSavePressable, !phoneValidation.valid || loginWithPhone.isPending ? styles.phoneSaveDisabled : null]}
+                onPress={() => {
+                  setLinkingPhone(true);
+                  loginWithPhone.mutate();
+                }}
+                disabled={!phoneValidation.valid || loginWithPhone.isPending}
+              >
+                <LinearGradient
+                  colors={[theme.gradients.current.start, theme.gradients.current.end]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.phoneSaveGradient}
+                >
+                  {loginWithPhone.isPending ? (
+                    <ThemedText variant="button" style={styles.phoneSaveLabel}>Saving…</ThemedText>
+                  ) : (
+                    <>
+                      <LockSimple size={18} color="#FFFFFF" weight="duotone" />
+                      <ThemedText variant="button" style={styles.phoneSaveLabel}>Save phone and continue</ThemedText>
+                    </>
+                  )}
+                </LinearGradient>
+              </Pressable>
+
+              <OrDivider />
+              <Pressable style={styles.phoneSignOutBtn} onPress={() => void handleSignOut()}>
+                <SignOut size={18} color="#334155" weight="duotone" />
+                <ThemedText variant="bodyMedium" style={styles.phoneSignOutLabel}>Sign out</ThemedText>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
       <LinearGradient
@@ -782,67 +972,6 @@ export function OnboardingScreen({
             <Button label="Create account" onPress={() => setStep("emailSignup")} />
             <Button label="Sign in" variant="secondary" onPress={() => setStep("emailLogin")} />
             <Button label="Back" variant="ghost" onPress={() => setStep("welcome")} />
-          </AuthPanel>
-        ) : null}
-
-        {step === "phone" ? (
-          <AuthPanel
-            title="Add your phone"
-            body="Friends find you by number — this is required so they can add you to groups."
-            icon={<Phone size={24} color={theme.colors.confirmed} weight="duotone" />}
-          >
-            {phoneHintAvailable ? (
-              <Button
-                label={phoneHintLoading ? "Opening number picker…" : "Use number on this device"}
-                variant="secondary"
-                onPress={() => void pickPhoneFromHint()}
-                loading={phoneHintLoading}
-                disabled={phoneHintLoading}
-              />
-            ) : null}
-            {phoneCandidates.length > 0 ? (
-              <View style={styles.phoneCandidates}>
-                <ThemedText variant="caption" tone="muted">
-                  {phoneCandidates.length > 1 ? "Choose a number" : "Suggested number"}
-                </ThemedText>
-                <View style={styles.phoneChipRow}>
-                  {phoneCandidates.map((candidate) => {
-                    const selected = phone === candidate;
-                    return (
-                      <Pressable
-                        key={candidate}
-                        onPress={() => setPhone(candidate)}
-                        style={[
-                          styles.phoneChip,
-                          {
-                            borderColor: selected ? theme.colors.confirmed : theme.colors.hairline,
-                            backgroundColor: selected ? theme.colors.neutralChipBg : "transparent"
-                          }
-                        ]}
-                      >
-                        <ThemedText variant="bodySm" tone={selected ? "confirmed" : "ink"}>
-                          {candidate}
-                        </ThemedText>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-            <InputField label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-            {loginWithPhone.error ? <InlineNotice title="Phone could not be saved" body={loginWithPhone.error.message} tone="owe" /> : null}
-            <Button
-              label="Save phone and continue"
-              onPress={() => {
-                setLinkingPhone(true);
-                loginWithPhone.mutate();
-              }}
-              loading={loginWithPhone.isPending}
-              disabled={!validatePhoneNumber(phone).valid}
-            />
-            {hasSavedSession ? (
-              <Button label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
-            ) : null}
           </AuthPanel>
         ) : null}
 
@@ -1085,20 +1214,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12
   },
-  phoneCandidates: {
-    gap: 8
-  },
-  phoneChipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  phoneChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
   stack: {
     gap: 12
   },
@@ -1175,6 +1290,231 @@ const styles = StyleSheet.create({
   camera: {
     width: "100%",
     height: 160
+  },
+
+  // ===== PHONE SETUP (full-screen sheet) =====
+  phoneRoot: {
+    flex: 1,
+    backgroundColor: "#FFFFFF"
+  },
+  phoneHeaderGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "34%"
+  },
+  phoneScrollContent: {
+    flexGrow: 1,
+    justifyContent: "flex-end"
+  },
+  phoneCard: {
+    marginTop: "22%",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    gap: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 8
+  },
+  phoneHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E2E8F0",
+    marginBottom: 4
+  },
+  phoneSheetHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  phoneTitleBlock: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12
+  },
+  phoneTitleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(13,148,136,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  phoneTitleText: {
+    flex: 1,
+    gap: 4,
+    paddingTop: 2
+  },
+  phoneTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#0F172A"
+  },
+  phoneSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#64748B"
+  },
+  phoneCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  phoneDeviceCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+    backgroundColor: "#F0FDF4"
+  },
+  phoneDeviceCardDisabled: {
+    opacity: 0.55
+  },
+  phoneDeviceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  phoneDeviceTitle: {
+    fontWeight: "600",
+    color: "#0D9488",
+    fontSize: 14
+  },
+  phoneDeviceSubtext: {
+    fontSize: 12,
+    lineHeight: 16
+  },
+  phoneManualSection: {
+    gap: 10
+  },
+  phoneManualLabel: {
+    fontWeight: "600",
+    fontSize: 14,
+    color: "#1E293B"
+  },
+  phoneInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  phoneCountryBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC"
+  },
+  phoneFlag: {
+    fontSize: 18
+  },
+  phoneCountryCode: {
+    fontWeight: "600",
+    color: "#1E293B",
+    fontSize: 14
+  },
+  phoneNumberInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    fontSize: 14,
+    color: "#0F172A"
+  },
+  phonePrivacyCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#EDE9FE"
+  },
+  phonePrivacyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EDE9FE",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  phonePrivacyTitle: {
+    fontWeight: "600",
+    color: "#6D28D9",
+    fontSize: 13
+  },
+  phonePrivacyBody: {
+    color: "#7C3AED",
+    fontSize: 12,
+    lineHeight: 17
+  },
+  phoneSavePressable: {
+    borderRadius: 24,
+    overflow: "hidden"
+  },
+  phoneSaveDisabled: {
+    opacity: 0.45
+  },
+  phoneSaveGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 24
+  },
+  phoneSaveLabel: {
+    color: "#FFFFFF",
+    fontWeight: "700"
+  },
+  phoneSignOutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF"
+  },
+  phoneSignOutLabel: {
+    fontWeight: "600",
+    color: "#334155"
   },
 
   // ===== JOIN WITH INVITE (full-screen) =====

@@ -1,5 +1,6 @@
 import versionConfig from "../../version.json";
 import { getAppVersionCode } from "../utils/appVersion";
+import { isPlayStoreBuild } from "../utils/distributionChannel";
 import { clearDismissedVersionCode, getDismissedVersionCode } from "./updateDismissCache";
 
 export interface AppVersionInfo {
@@ -48,6 +49,24 @@ export async function resolveAppUpdatePrompt(): Promise<AppVersionInfo | null> {
   return data;
 }
 
+export function resolveUpdateTargetUrl(info: Pick<AppVersionInfo, "directApkUrl" | "playStoreUrl">): string {
+  if (isPlayStoreBuild()) {
+    return info.playStoreUrl || versionConfig.playStoreUrl;
+  }
+  return info.directApkUrl || versionConfig.directApkUrl || versionConfig.playStoreUrl;
+}
+
 export function getDirectApkDownloadUrl(fallbackUrl?: string) {
+  if (isPlayStoreBuild()) {
+    return versionConfig.playStoreUrl;
+  }
   return fallbackUrl || versionConfig.directApkUrl || versionConfig.playStoreUrl;
+}
+
+export function getUpdateActionLabel(): string {
+  return isPlayStoreBuild() ? "Update on Play Store" : "Download & Install Update";
+}
+
+export function getManualUpdateCheckSubtitle(): string {
+  return isPlayStoreBuild() ? "Open Google Play Store" : "Download the latest SplitSaathi APK";
 }

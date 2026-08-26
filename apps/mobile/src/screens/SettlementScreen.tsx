@@ -855,7 +855,7 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                   ? "Group admin confirmation"
                   : intent.paymentMethod === "cash"
                     ? "Cash settlement"
-                    : "Secure UPI payments"}
+                    : "Opens your UPI app"}
               </ThemedText>
               <ShieldCheck size={16} color={theme.colors.confirmed} weight="fill" />
             </View>
@@ -995,8 +995,10 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
           <View style={[styles.securityBanner, { backgroundColor: colorWithAlpha(theme.colors.confirmed, 0.08) }]}>
             <ShieldCheck size={24} color={theme.colors.confirmed} weight="regular" />
             <View style={{ flex: 1, gap: 2 }}>
-              <ThemedText variant="bodyMedium">Your payment is safe & secure</ThemedText>
-              <ThemedText variant="bodySm" tone="muted">Payments are encrypted and protected by SplitSaathi.</ThemedText>
+              <ThemedText variant="bodyMedium">Pay through your UPI app</ThemedText>
+              <ThemedText variant="bodySm" tone="muted">
+                SplitSaathi does not move money. It opens GPay, PhonePe, or Paytm and records the settlement in your group.
+              </ThemedText>
             </View>
           </View>
 
@@ -1383,9 +1385,9 @@ export function SettlementScreen({ navigation }: { navigation: AppNavigation }) 
                           <Line x1="200" y1="795" x2="200" y2="830" stroke="#CBD5E1" strokeWidth="1" />
                           <Line x1="400" y1="795" x2="400" y2="830" stroke="#CBD5E1" strokeWidth="1" />
 
-                          <SvgText x="100" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">✓ Secure Payments</SvgText>
-                          <SvgText x="300" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">⚡ Instant Settlement</SvgText>
-                          <SvgText x="500" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">👥 Trusted by SplitSaathi</SvgText>
+                          <SvgText x="100" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">✓ UPI app handoff</SvgText>
+                          <SvgText x="300" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">✓ Ledger tracking</SvgText>
+                          <SvgText x="500" y="818" fill="#00796B" fontSize="13" fontWeight="bold" textAnchor="middle">👥 Split with friends</SvgText>
                         </Svg>
                       </View>
 

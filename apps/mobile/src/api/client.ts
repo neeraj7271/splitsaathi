@@ -604,6 +604,12 @@ export class SplitSaathiApiClient {
     });
   }
 
+  async deleteAccount() {
+    return this.request<{ success: true; message: string }>("/v1/users/me/delete-account", {
+      method: "POST"
+    });
+  }
+
   async uploadAvatar(file: { uri: string; mimeType: string; name?: string }) {
     const formData = new FormData();
     formData.append("purpose", "avatar");

@@ -3,7 +3,7 @@
     "name": "SplitSaathi",
     "slug": "splitsaathi",
     "scheme": "splitsaathi",
-    "version": "1.0.7",
+    "version": "1.0.10",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -19,9 +19,14 @@
     },
     "android": {
       "package": "in.splitsaathi.mobile",
-      "versionCode": 100070,
+      "versionCode": 100100,
       "googleServicesFile": "./google-services.json",
-      "usesCleartextTraffic": true,
+      "usesCleartextTraffic": false,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_CONTACTS"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -33,7 +38,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "api-dev.thesplitsaathi.com",
+              "host": "api.thesplitsaathi.com",
               "pathPrefix": "/join"
             }
           ],
@@ -46,7 +51,7 @@
     },
     "extra": {
       "router": {
-        "origin": "https://api-dev.thesplitsaathi.com"
+        "origin": "https://api.thesplitsaathi.com"
       }
     },
     "plugins": [
@@ -61,7 +66,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SplitSaathi to scan invite QR codes."
+          "cameraPermission": "Allow SplitSaathi to scan invite QR codes.",
+          "recordAudioAndroid": false
         }
       ],
       "expo-notifications",
@@ -71,7 +77,8 @@
       "@react-native-community/datetimepicker",
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
-      "./plugins/withUpiAppQueries.js"
+      "./plugins/withUpiAppQueries.js",
+      "./plugins/withAndroidPlayCompliance.js"
     ]
   }
 }

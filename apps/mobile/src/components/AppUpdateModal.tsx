@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Modal, Pressable, StyleSheet, View } from "react-native";
-import { DownloadSimple, Warning } from "phosphor-react-native";
+import { DownloadSimple, Storefront, Warning } from "phosphor-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../theme";
 import { Button } from "./Button";
 import { ThemedText } from "./ThemedText";
-import { AppVersionInfo, getDirectApkDownloadUrl, resolveAppUpdatePrompt } from "../updates/checkAppVersion";
+import { AppVersionInfo, getUpdateActionLabel, resolveAppUpdatePrompt, resolveUpdateTargetUrl } from "../updates/checkAppVersion";
+import { isPlayStoreBuild } from "../utils/distributionChannel";
 import { subscribeUpdateCheck } from "../updates/updateCheckEvents";
 import { watchForPackageUpdateAfterDownload } from "../updates/detectPackageUpdate";
 import { setDismissedVersionCode } from "../updates/updateDismissCache";
@@ -49,9 +50,11 @@ export function AppUpdateModal() {
   }
 
   const handleUpdate = () => {
-    const targetUrl = getDirectApkDownloadUrl(versionInfo.directApkUrl);
+    const targetUrl = resolveUpdateTargetUrl(versionInfo);
     if (targetUrl) {
-      watchForPackageUpdateAfterDownload();
+      if (!isPlayStoreBuild()) {
+        watchForPackageUpdateAfterDownload();
+      }
       void Linking.openURL(targetUrl);
     }
   };
@@ -93,7 +96,9 @@ export function AppUpdateModal() {
               Version {versionInfo.latestVersionName} must be installed to keep using SplitSaathi.
             </ThemedText>
             <ThemedText variant="caption" tone="muted" align="center" style={styles.subtitle}>
-              After installing, SplitSaathi will close automatically. Open it again from your home screen.
+              {isPlayStoreBuild()
+                ? "Install the latest version from Google Play to keep using SplitSaathi."
+                : "After installing, SplitSaathi will close automatically. Open it again from your home screen."}
             </ThemedText>
           </View>
 
@@ -109,7 +114,12 @@ export function AppUpdateModal() {
           ) : null}
 
           <View style={styles.actionsWrap}>
-            <Button label="Download & Install Update" onPress={handleUpdate} Icon={DownloadSimple} style={styles.primaryBtn} />
+            <Button
+              label={getUpdateActionLabel()}
+              onPress={handleUpdate}
+              Icon={isPlayStoreBuild() ? Storefront : DownloadSimple}
+              style={styles.primaryBtn}
+            />
             <Button label="Remind Me Later" variant="ghost" onPress={handleRemindLater} />
           </View>
         </Pressable>

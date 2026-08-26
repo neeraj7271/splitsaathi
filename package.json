@@ -27,6 +27,7 @@
     "build:apk:debug": "node scripts/build-apk.js debug",
     "build:apk:dev": "node scripts/build-apk.js dev",
     "build:apk:prod": "node scripts/build-apk.js prod",
+    "build:aab:play": "node scripts/build-aab.js",
     "deploy:apk": "node scripts/manual-deploy-apk.js",
     "deploy:apk:notify": "node scripts/manual-deploy-apk.js --notify",
     "deploy:apk:notify-only": "node scripts/manual-deploy-apk.js --notify-only",
