@@ -86,6 +86,26 @@ export class AdminUsersService {
           }
         }
 
+        // Query email address from auth_identities or participants
+        let email = (u as any).email;
+        if (!email) {
+          const emailIdent = await this.userRepo.query(
+            `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider IN ('email', 'google') LIMIT 1`,
+            [u.id]
+          );
+          if (emailIdent && emailIdent.length > 0) {
+            email = emailIdent[0].identifier;
+          } else {
+            const partIdent = await this.userRepo.query(
+              `SELECT email FROM participants WHERE (linked_user_id = $1 OR registered_user_id = $1) AND email IS NOT NULL AND email != '' LIMIT 1`,
+              [u.id]
+            );
+            if (partIdent && partIdent.length > 0) {
+              email = partIdent[0].email;
+            }
+          }
+        }
+
         // Query distinct group count for user across group_memberships
         const groupCountRes = await this.userRepo.query(
           `SELECT COUNT(DISTINCT gm.group_id) as count FROM group_memberships gm
@@ -101,6 +121,7 @@ export class AdminUsersService {
           avatarAttachmentId: u.avatarAttachmentId || null,
           avatarUrl: u.avatarAttachmentId ? `/v1/attachments/${u.avatarAttachmentId}` : null,
           phoneE164: phoneE164 || null,
+          email: email || null,
           upiVpa: u.upiVpa || null,
           status: u.status,
           groupCount,
@@ -146,6 +167,25 @@ export class AdminUsersService {
       }
     }
 
+    let email = (user as any).email;
+    if (!email) {
+      const emailIdent = await this.userRepo.query(
+        `SELECT identifier FROM auth_identities WHERE user_id = $1 AND provider IN ('email', 'google') LIMIT 1`,
+        [userId]
+      );
+      if (emailIdent && emailIdent.length > 0) {
+        email = emailIdent[0].identifier;
+      } else {
+        const partIdent = await this.userRepo.query(
+          `SELECT email FROM participants WHERE (linked_user_id = $1 OR registered_user_id = $1) AND email IS NOT NULL AND email != '' LIMIT 1`,
+          [userId]
+        );
+        if (partIdent && partIdent.length > 0) {
+          email = partIdent[0].email;
+        }
+      }
+    }
+
     const groupCountRes = await this.userRepo.query(
       `SELECT COUNT(DISTINCT gm.group_id) as count FROM group_memberships gm
        LEFT JOIN participants p ON p.id = gm.participant_id
@@ -180,6 +220,7 @@ export class AdminUsersService {
         avatarAttachmentId: user.avatarAttachmentId || null,
         avatarUrl: user.avatarAttachmentId ? `/v1/attachments/${user.avatarAttachmentId}` : null,
         phoneE164: phoneE164 || null,
+        email: email || null,
         upiVpa: user.upiVpa || null,
         defaultCurrencyCode: user.defaultCurrencyCode,
         locale: user.locale,
