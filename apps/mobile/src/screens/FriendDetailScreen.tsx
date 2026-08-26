@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, Share, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownLeft,
@@ -29,6 +29,13 @@ import { colorWithAlpha, useTheme } from "../theme";
 import type { FriendSharedGroup, FriendSummary, FriendTransaction } from "../types/domain";
 import { AppNavigation } from "../types/navigation";
 import { formatMoney, formatSignedMoney } from "../utils/money";
+import { friendRemindBlockedMessage, isRegisteredFriendUser } from "../utils/friendRemind";
+import versionConfig from "../../version.json";
+
+const INVITE_DOWNLOAD_URL =
+  versionConfig.directApkUrl || "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk";
+const INVITE_MESSAGE =
+  `Join me on SplitSaathi — split expenses with friends without the awkwardness.\nDownload the app: ${INVITE_DOWNLOAD_URL}`;
 
 const GROUPS_PREVIEW = 3;
 const TRANSACTIONS_PREVIEW = 5;
@@ -126,6 +133,27 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
 
   const friend = detailQuery.data?.friend;
   const transactions = detailQuery.data?.transactions ?? [];
+
+  function handleRemind() {
+    if (!friend) {
+      return;
+    }
+    if (!isRegisteredFriendUser(friend.otherUserId)) {
+      showDialog({
+        title: `${friend.displayName} isn't on SplitSaathi yet`,
+        message: friendRemindBlockedMessage(friend),
+        tone: "warning",
+        primaryAction: {
+          label: "Invite to SplitSaathi",
+          onPress: () => void Share.share({ message: INVITE_MESSAGE })
+        },
+        secondaryAction: { label: "Close", variant: "ghost" }
+      });
+      return;
+    }
+    remind.mutate();
+  }
+
   const accent = friend ? friendAccent(friend, theme.colors) : theme.colors.confirmed;
 
   const visibleGroups = useMemo(() => {
@@ -204,7 +232,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
               <View style={styles.profileActions}>
                 {friend.netMinor > 0 ? (
                   <Pressable
-                    onPress={() => remind.mutate()}
+                    onPress={() => handleRemind()}
                     disabled={remind.isPending}
                     style={[
                       styles.actionPill,
@@ -467,7 +495,7 @@ export function FriendDetailScreen({ navigation }: { navigation: AppNavigation }
                       subtitle: remind.isPending ? "Sending…" : "Notify them about the balance",
                       icon: <BellRinging size={20} color={theme.colors.info} weight="duotone" />,
                       disabled: remind.isPending,
-                      onPress: () => remind.mutate()
+                      onPress: () => handleRemind()
                     }
                   ]
                 : []),

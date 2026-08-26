@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Share, StyleSheet, View } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Scales } from "phosphor-react-native";
 
@@ -19,6 +19,13 @@ import { AppNavigation } from "../types/navigation";
 import { formatSignedMoney } from "../utils/money";
 import { buildGroupDisplayLookups, enrichBalanceRows, enrichSettlementSuggestions } from "../utils/displayNames";
 import { activeGroupsByOutstandingBalance } from "../utils/groupSort";
+import { friendRemindBlockedMessage, isRegisteredFriendUser } from "../utils/friendRemind";
+import versionConfig from "../../version.json";
+
+const INVITE_DOWNLOAD_URL =
+  versionConfig.directApkUrl || "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk";
+const INVITE_MESSAGE =
+  `Join me on SplitSaathi — split expenses with friends without the awkwardness.\nDownload the app: ${INVITE_DOWNLOAD_URL}`;
 
 export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   const theme = useTheme();
@@ -97,6 +104,23 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
   const refreshing =
     groupsQuery.isRefetching || groupQuery.isRefetching || balancesQuery.isRefetching || suggestionsQuery.isRefetching;
 
+  function handleRemind(friend: { otherUserId: string; displayName: string }) {
+    if (!isRegisteredFriendUser(friend.otherUserId)) {
+      showDialog({
+        title: `${friend.displayName} isn't on SplitSaathi yet`,
+        message: friendRemindBlockedMessage(friend),
+        tone: "warning",
+        primaryAction: {
+          label: "Invite to SplitSaathi",
+          onPress: () => void Share.share({ message: INVITE_MESSAGE })
+        },
+        secondaryAction: { label: "Close", variant: "ghost" }
+      });
+      return;
+    }
+    remindMutation.mutate(friend.otherUserId);
+  }
+
   async function refreshScreen() {
     await Promise.all([
       groupsQuery.refetch(),
@@ -128,7 +152,10 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
         ) : balances.length ? (
           <DataSurface>
             {balances.map((balance) => {
-              const debtorUserId = (friendsQuery.data ?? []).find((f) => f.displayName.toLowerCase() === balance.displayName.toLowerCase())?.otherUserId;
+              const debtorFriend = (friendsQuery.data ?? []).find(
+                (f) => f.displayName.toLowerCase() === balance.displayName.toLowerCase()
+              );
+              const debtorUserId = debtorFriend?.otherUserId;
               const isDebtor = balance.balanceMinor < 0;
               const isReminded = Boolean(debtorUserId && remindedUserIds[debtorUserId]);
               const isReminding = Boolean(debtorUserId && remindMutation.isPending && remindMutation.variables === debtorUserId);
@@ -145,14 +172,14 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
                     <ThemedText variant="amount" tone={balance.balanceMinor >= 0 ? "receive" : "owe"} align="right">
                       {formatSignedMoney(balance.balanceMinor, balance.currencyCode)}
                     </ThemedText>
-                    {isDebtor && debtorUserId ? (
+                    {isDebtor && debtorFriend ? (
                       <Button
                         label={isReminded ? "Reminded" : isReminding ? "Sending..." : "Remind"}
                         variant="secondary"
                         tone="info"
                         size="compact"
                         disabled={isReminded || isReminding}
-                        onPress={() => remindMutation.mutate(debtorUserId)}
+                        onPress={() => handleRemind(debtorFriend)}
                       />
                     ) : null}
                   </View>
@@ -175,7 +202,10 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
         ) : suggestions.length ? (
           <DataSurface>
             {suggestions.map((suggestion) => {
-              const payerUserId = (friendsQuery.data ?? []).find((f) => f.displayName.toLowerCase() === suggestion.payerName.toLowerCase())?.otherUserId;
+              const payerFriend = (friendsQuery.data ?? []).find(
+                (f) => f.displayName.toLowerCase() === suggestion.payerName.toLowerCase()
+              );
+              const payerUserId = payerFriend?.otherUserId;
               const isReminded = Boolean(payerUserId && remindedUserIds[payerUserId]);
               const isReminding = Boolean(payerUserId && remindMutation.isPending && remindMutation.variables === payerUserId);
 
@@ -204,14 +234,14 @@ export function BalancesScreen({ navigation }: { navigation: AppNavigation }) {
                         navigation.go("settlement");
                       }}
                     />
-                    {payerUserId ? (
+                    {payerFriend ? (
                       <Button
                         label={isReminded ? "Reminded" : isReminding ? "Sending..." : "Remind"}
                         variant="secondary"
                         tone="info"
                         Icon={Bell}
                         disabled={isReminded || isReminding}
-                        onPress={() => remindMutation.mutate(payerUserId)}
+                        onPress={() => handleRemind(payerFriend)}
                         style={{ flex: 1 }}
                       />
                     ) : null}

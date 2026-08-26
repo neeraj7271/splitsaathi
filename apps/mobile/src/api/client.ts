@@ -631,7 +631,7 @@ export class SplitSaathiApiClient {
   }
 
   async listConsents() {
-    return this.request<Array<{ id: string; purpose: string; status: "granted" | "revoked"; recordedAt: string }>>("/v1/consents");
+    return this.request<Array<{ id: string; purpose: string; status: "granted" | "revoked"; source: string; recordedAt: string }>>("/v1/consents");
   }
 
   async importContacts(contacts: Array<{ phoneHash: string; displayName?: string }>) {

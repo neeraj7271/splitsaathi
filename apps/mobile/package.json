@@ -40,6 +40,7 @@
     "expo-media-library": "~18.2.1",
     "expo-modules-core": "~3.0.30",
     "expo-notifications": "~0.32.17",
+    "expo-phone-number-hint": "^0.6.0",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-sqlite": "~16.0.10",

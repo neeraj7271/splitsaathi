@@ -51,29 +51,33 @@ export class AdminFinancialService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.expenseRepo.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit
-    });
+    try {
+      const [items, total] = await this.expenseRepo.findAndCount({
+        order: { createdAt: 'DESC' },
+        skip,
+        take: limit
+      });
 
-    if (total > 0) {
-      return {
-        items,
-        meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
-      };
+      if (total > 0) {
+        return {
+          items,
+          meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        };
+      }
+    } catch {
+      // expense_projection empty or schema mismatch — fall through to event_store
     }
 
-    // Fallback query from event_store
+    // event_store timestamps live in occurred_at, not created_at
     const countRes = await this.expenseRepo.query(
       `SELECT COUNT(*) as count FROM event_store WHERE event_type = 'ExpenseCreated'`
     );
     const fallbackTotal = parseInt(countRes?.[0]?.count || '0', 10);
 
     const eventRows = await this.expenseRepo.query(
-      `SELECT id, payload, created_at FROM event_store
+      `SELECT id, payload, occurred_at AS created_at FROM event_store
        WHERE event_type = 'ExpenseCreated'
-       ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+       ORDER BY occurred_at DESC LIMIT $1 OFFSET $2`,
       [limit, skip]
     );
 
@@ -125,9 +129,9 @@ export class AdminFinancialService {
 
     // Event store rail fallback
     const events = await this.expenseRepo.query(
-      `SELECT id, event_type, payload, created_at FROM event_store
+      `SELECT id, event_type, payload, occurred_at AS created_at FROM event_store
        WHERE payload->>'expenseId' = $1 OR id::text = $1
-       ORDER BY created_at ASC`,
+       ORDER BY occurred_at ASC`,
       [expenseId]
     );
 
@@ -148,9 +152,9 @@ export class AdminFinancialService {
     const projection = await this.expenseRepo.findOne({ where: { id: expenseId } });
 
     const eventRows = await this.expenseRepo.query(
-      `SELECT id, event_type, payload, created_at FROM event_store
+      `SELECT id, event_type, payload, occurred_at AS created_at FROM event_store
        WHERE payload->>'expenseId' = $1 OR id::text = $1
-       ORDER BY created_at ASC`,
+       ORDER BY occurred_at ASC`,
       [expenseId]
     );
 
@@ -207,29 +211,33 @@ export class AdminFinancialService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.settlementRepo.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit
-    });
+    try {
+      const [items, total] = await this.settlementRepo.findAndCount({
+        order: { createdAt: 'DESC' },
+        skip,
+        take: limit
+      });
 
-    if (total > 0) {
-      return {
-        items,
-        meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
-      };
+      if (total > 0) {
+        return {
+          items,
+          meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        };
+      }
+    } catch {
+      // settlement_intents empty or schema mismatch — fall through to event_store
     }
 
-    // Fallback query from event_store
+    // event_store timestamps live in occurred_at, not created_at
     const countRes = await this.settlementRepo.query(
       `SELECT COUNT(*) as count FROM event_store WHERE event_type IN ('SettlementIntentCreated', 'CashSettlementRecorded', 'SettlementConfirmed')`
     );
     const fallbackTotal = parseInt(countRes?.[0]?.count || '0', 10);
 
     const eventRows = await this.settlementRepo.query(
-      `SELECT id, event_type, payload, created_at FROM event_store
+      `SELECT id, event_type, payload, occurred_at AS created_at FROM event_store
        WHERE event_type IN ('SettlementIntentCreated', 'CashSettlementRecorded', 'SettlementConfirmed')
-       ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+       ORDER BY occurred_at DESC LIMIT $1 OFFSET $2`,
       [limit, skip]
     );
 
@@ -264,7 +272,7 @@ export class AdminFinancialService {
 
     // Fallback check in event_store for proof submissions
     const proofEvents = await this.settlementRepo.query(
-      `SELECT payload, created_at FROM event_store
+      `SELECT payload, occurred_at AS created_at FROM event_store
        WHERE event_type = 'PaymentProofSubmitted' AND (payload->>'settlementIntentId' = $1 OR payload->>'intentId' = $1)`,
       [settlementId]
     );

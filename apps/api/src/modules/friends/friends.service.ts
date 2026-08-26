@@ -316,25 +316,33 @@ export class FriendsService {
 
       const otherUserMap = new Map<string, string>();
 
-      for (const m of groupMemberships) {
-        if (m.userId && m.userId !== userId && m.participantId) {
-          otherUserMap.set(m.userId, m.participantId);
+      for (const membership of groupMemberships) {
+        if (!membership.participantId || membership.participantId === myParticipantId) {
+          continue;
         }
-      }
 
-      for (const p of groupParticipants) {
-        if (p.id !== myParticipantId) {
-          const targetKey = this.friendIdentityKey({
-            linkedUserId: p.linkedUserId,
-            phoneE164: p.phoneE164,
-            displayName: p.displayName,
-            participantId: p.id
-          });
-          if (targetKey !== userId) {
-            if (!otherUserMap.has(targetKey)) {
-              otherUserMap.set(targetKey, p.id);
-            }
-          }
+        const participant = participantById.get(membership.participantId);
+        if (!participant) {
+          continue;
+        }
+
+        const targetKey =
+          membership.userId && membership.userId !== userId
+            ? membership.userId
+            : this.friendIdentityKey({
+                userId: membership.userId,
+                linkedUserId: participant.linkedUserId,
+                phoneE164: participant.phoneE164,
+                displayName: participant.displayName,
+                participantId: participant.id
+              });
+
+        if (targetKey === userId) {
+          continue;
+        }
+
+        if (!otherUserMap.has(targetKey)) {
+          otherUserMap.set(targetKey, membership.participantId);
         }
       }
 
