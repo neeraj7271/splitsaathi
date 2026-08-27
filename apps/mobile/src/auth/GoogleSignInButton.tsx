@@ -154,6 +154,12 @@ export function GoogleSignInButton({
           setLocalError("Google Play Services is required for Google sign-in on this device.");
           return;
         }
+        if (error.code === "10" || String(error.message).includes("DEVELOPER_ERROR")) {
+          setLocalError(
+            "Google Sign-In is misconfigured (DEVELOPER_ERROR). The Web client ID in this app must match a live Web OAuth client in Google Cloud, and Android OAuth clients must include this build's SHA-1 plus package in.splitsaathi.mobile."
+          );
+          return;
+        }
       }
       setLocalError(error instanceof Error ? error.message : "Google sign-in failed.");
     }
