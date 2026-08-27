@@ -55,7 +55,7 @@ console.log(`• Gradle Task: ${config.gradleTask}`);
 console.log(`• Destination: ${config.targetApk}\n`);
 
 // 1. Update apps/mobile/.env with the environment's EXPO_PUBLIC_API_URL
-const googleClientId = '484458958680-bknfe7jd293kjaobf8qjeleerg820apm.apps.googleusercontent.com';
+const { webClientId: googleClientId } = require('./google-oauth.config');
 const distributionChannel = config.distributionChannel || 'sideload';
 const envContent = `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${googleClientId}\nEXPO_PUBLIC_API_URL=${config.apiUrl}\nEXPO_PUBLIC_DISTRIBUTION_CHANNEL=${distributionChannel}\n`;
 fs.writeFileSync(mobileEnvPath, envContent);

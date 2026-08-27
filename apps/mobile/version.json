@@ -1,10 +1,10 @@
 {
-  "versionName": "1.0.11",
-  "versionCode": 100110,
+  "versionName": "1.0.12",
+  "versionCode": 100120,
   "minSupportedVersionCode": 100000,
   "minSupportedVersionName": "1.0.0",
   "directApkUrl": "https://api.thesplitsaathi.com/downloads/SplitSaathi.apk",
   "playStoreUrl": "https://play.google.com/store/apps/details?id=in.splitsaathi.mobile",
-  "releaseNotes": "What's new:\n• UI improvements",
-  "releasedAt": "2026-08-26"
+  "releaseNotes": "What's new:\n• Fix Google Sign-In for Play Store builds",
+  "releasedAt": "2026-08-27"
 }

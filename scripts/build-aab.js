@@ -38,7 +38,7 @@ console.log(`• Distribution channel: ${config.distributionChannel}`);
 console.log(`• Gradle Task: ${config.gradleTask}`);
 console.log(`• Destination: ${config.targetAab}\n`);
 
-const googleClientId = '484458958680-bknfe7jd293kjaobf8qjeleerg820apm.apps.googleusercontent.com';
+const { webClientId: googleClientId } = require('./google-oauth.config');
 const envContent = `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${googleClientId}\nEXPO_PUBLIC_API_URL=${config.apiUrl}\nEXPO_PUBLIC_DISTRIBUTION_CHANNEL=${config.distributionChannel}\n`;
 fs.writeFileSync(mobileEnvPath, envContent);
 console.log(`✓ Updated apps/mobile/.env`);
